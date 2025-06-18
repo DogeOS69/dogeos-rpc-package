@@ -3,8 +3,11 @@ services:
     image: dogeos69/dogecoin:1.14.9
     container_name: dogecoin-node
     restart: unless-stopped
+    env_file:
+      - ./envs/common/dogecoin.env
+      - ./envs/${NETWORK:-testnet}/dogecoin.env
     volumes:
-      - ./dogecoin/dogecoin.conf:/home/dogecoin/.dogecoin/dogecoin.conf
+      - ./configs/${NETWORK:-testnet}/dogecoin.conf:/home/dogecoin/.dogecoin/dogecoin.conf
       - dogecoin_data:/data
     ports:
       - "22556:22556"
@@ -15,28 +18,12 @@ services:
     image: scrolltech/l2geth:scroll-v5.8.36
     container_name: l2geth-node
     restart: unless-stopped
-    environment:
-      - CHAIN_ID=221122
-      - L2GETH_L1_ENDPOINT=http://your-l1-host:8545
-      - L2GETH_L1_CONTRACT_DEPLOYMENT_BLOCK=0
-      - L2GETH_PEER_LIST=["enode://c2255661e4748315900587a74332f996d5e0473461ec4d551297806d4c473cbc98c5e9ce7ae6aca191eb7ec70e0c9e0117a0d52a4a7748cb51a740697dfdfcca@l2-sequencer-0:30303","enode://810fba559a288e072fed7bb3056326502ced3d78370d75460bebe109b099eef114fafc2d481d7f495148aab79f21e24922fe3f6ca7c73439ee9ccfe394503e76@l2-sequencer-1:30303"]
-      - L2GETH_CCC_NUMWORKERS=5
-      - L2GETH_L1_WATCHER_CONFIRMATIONS=0x6
-      - L2GETH_RPC_HTTP_PORT=8545
-      - L2GETH_RPC_WS_PORT=8546
-      - L2GETH_P2P_PORT=30303
-      - L2GETH_CCC_FLAG=--ccc
-      - L2GETH_MIN_GAS_PRICE=1000000
-      - L2GETH_GLOBAL_QUEUE=4096
-      - L2GETH_ACCOUNT_QUEUE=256
-      - L2GETH_GLOBAL_SLOTS=40960
-      - L2GETH_ACCOUNT_SLOTS=128
-      - L2GETH_EXTRA_PARAMS=
-      - METRICS_FLAGS=
-      - LOCALS_FLAG=
+    env_file:
+      - ./envs/common/l2geth.env
+      - ./envs/${NETWORK:-testnet}/l2geth.env
     volumes:
-      - ./l2geth/genesis.json:/l2geth/genesis/genesis.json
-      - ./l2geth/entrypoint.sh:/entrypoint.sh
+      - ./configs/${NETWORK:-testnet}/genesis.json:/l2geth/genesis/genesis.json
+      - ./scripts/entrypoint.sh:/entrypoint.sh
       - l2geth_data:/l2geth/data
     ports:
       - "8545:8545"
@@ -49,17 +36,20 @@ services:
     image: ghcr.io/celestiaorg/celestia-node:v0.22.3
     container_name: celestia-light-node
     restart: unless-stopped
+    env_file:
+      - ./envs/common/celestia.env
+      - ./envs/${NETWORK:-testnet}/celestia.env
     volumes:
-      - celestia_data:/home/celestia/.celestia-light-mocha-4
+      - celestia_data:/home/celestia/.celestia-light-${CELESTIA_NETWORK:-mocha-4}
     ports:
-      - "26658:26658"
-      - "26659:26659"
+      - "${CELESTIA_RPC_PORT:-26658}:26658"
+      - "${CELESTIA_GATEWAY_PORT:-26659}:26659"
     command: >
       sh -c "
-      celestia light init --p2p.network mocha &&
+      celestia light init --p2p.network ${CELESTIA_NETWORK:-mocha} &&
       celestia light start
-      --core.ip https://rpc-mocha.pops.one
-      --p2p.network mocha
+      --core.ip ${CELESTIA_CORE_IP:-https://rpc-mocha.pops.one}
+      --p2p.network ${CELESTIA_NETWORK:-mocha}
       --gateway
       --gateway.addr 0.0.0.0
       --gateway.port 26659
