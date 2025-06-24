@@ -10,8 +10,10 @@ services:
       - ./configs/${NETWORK:-testnet}/dogecoin.conf:/home/dogecoin/.dogecoin/dogecoin.conf
       - dogecoin_data:/data
     ports:
-      - "22556:22556"
-      - "22555:22555"
+      # Mainnet ports: P2P=22556, RPC=22555
+      # Testnet ports: P2P=44556, RPC=44555
+      - "${DOGECOIN_P2P_PORT:-44556}:${DOGECOIN_P2P_PORT:-44556}"
+      - "${DOGECOIN_RPC_PORT:-44555}:${DOGECOIN_RPC_PORT:-44555}"
     command: ["/dogecoin/bin/dogecoind", "-conf=/home/dogecoin/.dogecoin/dogecoin.conf", "-datadir=/data", "-printtoconsole"]
 
   l2geth-node:
