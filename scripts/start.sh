@@ -19,6 +19,33 @@ echo "Starting DogeOS RPC Package with network: $NETWORK"
 # Export NETWORK environment variable for docker-compose
 export NETWORK=$NETWORK
 
+# Export variables used directly in docker-compose.yml (for variable substitution)
+echo "Loading variables for docker-compose variable substitution..."
+
+# Load variables safely (ignore comments and malformed lines)
+load_env_file() {
+    if [ -f "$1" ]; then
+        export $(grep -v '^#' "$1" | grep -v '^$' | xargs -d '\n')
+    fi
+}
+
+# Load common variables used in docker-compose.yml
+load_env_file envs/common/dogecoin.env
+load_env_file envs/common/l2geth.env  
+load_env_file envs/common/celestia.env
+load_env_file envs/common/l1-interface.env
+
+# Load network-specific variables used in docker-compose.yml
+load_env_file envs/$NETWORK/dogecoin.env
+load_env_file envs/$NETWORK/celestia.env
+load_env_file envs/$NETWORK/l2geth.env
+load_env_file envs/$NETWORK/l1-interface.env
+
+echo "Environment configuration:"
+echo "  - Network: $NETWORK"
+echo "  - Common configs: envs/common/"
+echo "  - Network configs: envs/$NETWORK/"
+
 # Start services
 docker-compose up -d
 
