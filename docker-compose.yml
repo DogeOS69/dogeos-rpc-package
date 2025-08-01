@@ -1,6 +1,6 @@
 services:
   dogecoin-node:
-    image: dogeos69/dogecoin:1.14.9
+    image: ${DOGECOIN_IMAGE}
     container_name: dogecoin-node
     restart: unless-stopped
     env_file:
@@ -17,7 +17,7 @@ services:
     command: ["/dogecoin/bin/dogecoind", "-conf=/home/dogecoin/.dogecoin/dogecoin.conf", "-datadir=/data", "-printtoconsole"]
 
   l2geth-node:
-    image: scrolltech/l2geth:scroll-v5.8.36
+    image: ${L2GETH_IMAGE}
     container_name: l2geth-node
     restart: unless-stopped
     env_file:
@@ -35,7 +35,7 @@ services:
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
 
   celestia-light-node:
-    image: ghcr.io/celestiaorg/celestia-node:v0.22.3
+    image: ${CELESTIA_IMAGE}
     container_name: celestia-light-node
     restart: unless-stopped
     env_file:
@@ -59,7 +59,7 @@ services:
       --rpc.port 26658
       "
   l1-interface:
-    image: dogeos69/l1-interface:071425-00
+    image: ${L1_INTERFACE_IMAGE}
     container_name: l1-interface
     restart: unless-stopped
     env_file:
@@ -81,7 +81,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
-    command: ["/usr/local/bin/l1_interface"]
 
 volumes:
   dogecoin_data:
