@@ -86,7 +86,31 @@ The configuration uses a layered approach:
 1. **Common settings** (`envs/common/*.env`) - Applied to all networks
 2. **Network-specific settings** (`envs/{network}/*.env`) - Override common settings
 
-### Adding New Networks
+### Generating Configuration Files[For internal DogeOS developers only]
+
+You can automatically generate configuration files using the Scroll SDK CLI:
+
+```bash
+# Generate configuration files from a Scroll SDK deployment
+
+# Install scroll-sdk-cli
+git clone git@github.com:DogeOS69/scroll-sdk-cli.git
+cd scroll-sdk-cli && yarn install && yarn build && npm install -g .
+
+# Generate configuration
+cd /path/to/scroll-setup-repo
+scrollsdk setup gen-rpc-package -d /path/to/dogeos-rpc-package
+```
+
+This command will:
+- Generate `l2geth.env` with updated peer list and network settings
+- Generate `l1-interface.env` with contract addresses and network configuration
+- Extract `genesis.json` from your deployment
+- Preserve local service configurations (dogecoin RPC, celestia RPC)
+
+**Note**: The generated `l1-interface.env` will not include the `DOGEOS_L1_INTERFACE_DOGECOIN_RPC__BLOCKBOOK_API_KEY` secret. You need to manually add this API key to the configuration file.
+
+### Manual Configuration
 
 1. Create network-specific environment files in `envs/{network}/`
 2. Create network-specific configuration files in `configs/{network}/`
