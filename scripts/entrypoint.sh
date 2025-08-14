@@ -26,14 +26,14 @@ exec geth \
     $METRICS_FLAGS \
     --scroll-mpt \
     --gcmode archive \
-    --cache.noprefetch \
+    --cache.noprefetch --cache.snapshot=0 \
+    --snapshot=false \
     --verbosity 3 \
     --txpool.globalqueue "$L2GETH_GLOBAL_QUEUE" --txpool.accountqueue "$L2GETH_ACCOUNT_QUEUE" \
     --txpool.globalslots "$L2GETH_GLOBAL_SLOTS" --txpool.accountslots "$L2GETH_ACCOUNT_SLOTS" \
-    --txpool.pricelimit "$L2GETH_MIN_GAS_PRICE" $LOCALS_FLAG \
     --miner.gasprice "$L2GETH_MIN_GAS_PRICE" --rpc.gascap 0 \
     --gpo.ignoreprice "$L2GETH_MIN_GAS_PRICE" --gpo.percentile 20 --gpo.blocks 100 \
-    --gpo.congestionthreshold 500 \
+    --gpo.maxprice "$L2GETH_GPO_MAX_PRICE" \
     --l1.endpoint "$L2GETH_L1_ENDPOINT" --l1.confirmations "$L2GETH_L1_WATCHER_CONFIRMATIONS" --l1.sync.startblock "$L2GETH_L1_CONTRACT_DEPLOYMENT_BLOCK" \
     --metrics --metrics.expensive \
     $L2GETH_EXTRA_PARAMS 

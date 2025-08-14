@@ -17,7 +17,7 @@ services:
     command: ["/dogecoin/bin/dogecoind", "-conf=/home/dogecoin/.dogecoin/dogecoin.conf", "-datadir=/data", "-printtoconsole"]
 
   l2geth-node:
-    image: ${L2GETH_IMAGE:-scrolltech/l2geth:scroll-v5.8.36}
+    image: ${L2GETH_IMAGE:-scrolltech/l2geth:scroll-v5.9.2}
     container_name: l2geth-node
     restart: unless-stopped
     env_file:
@@ -35,31 +35,22 @@ services:
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
 
   celestia-light-node:
-    image: ${CELESTIA_IMAGE:-ghcr.io/celestiaorg/celestia-node:v0.24.1-mocha}
+    image: ghcr.io/celestiaorg/celestia-node:v0.24.1-mocha
     container_name: celestia-light-node
     restart: unless-stopped
-    env_file:
-      - ./envs/common/celestia.env
-      - ./envs/${NETWORK:-testnet}/celestia.env
     volumes:
-      - celestia_data:/home/celestia/.celestia-light-${CELESTIA_NETWORK:-mocha-4}
+      - ./configs/${NETWORK:-testnet}/celestia/config.toml:/etc/celestia/config.toml
+      - celestia_data:/home/celestia
     ports:
-      - "${CELESTIA_RPC_PORT:-26658}:26658"
-      - "${CELESTIA_GATEWAY_PORT:-26659}:26659"
+      - "26658:26658"
+      - "26659:26659"
     command: >
       sh -c "
-      celestia light init --p2p.network ${CELESTIA_NETWORK:-mocha} &&
-      celestia light start
-      --core.ip ${CELESTIA_CORE_IP:-https://rpc-mocha.pops.one}
-      --p2p.network ${CELESTIA_NETWORK:-mocha}
-      --gateway
-      --gateway.addr 0.0.0.0
-      --gateway.port 26659
-      --rpc.addr 0.0.0.0
-      --rpc.port 26658
+      celestia light init --p2p.network mocha --node.config /etc/celestia/config.toml &&
+      celestia light start --p2p.network mocha --node.config /etc/celestia/config.toml
       "
   l1-interface:
-    image: ${L1_INTERFACE_IMAGE:-dogeos69/l1-interface:072425-01}
+    image: ${L1_INTERFACE_IMAGE:-dogeos69/l1-interface:081225-00}
     container_name: l1-interface
     restart: unless-stopped
     env_file:
