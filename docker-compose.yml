@@ -32,6 +32,8 @@ services:
       - "8546:8546"
       - "30303:30303/tcp"
       - "30303:30303/udp"
+    depends_on:
+      - l1-interface
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
 
   celestia-light-node:
@@ -66,12 +68,6 @@ services:
     depends_on:
       - dogecoin-node
       - celestia-light-node
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9090/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
 
 volumes:
   dogecoin_data:

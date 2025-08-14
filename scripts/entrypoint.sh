@@ -25,6 +25,7 @@ exec geth \
     $L2GETH_CCC_FLAG --ccc.numworkers "$L2GETH_CCC_NUMWORKERS" \
     $METRICS_FLAGS \
     --scroll-mpt \
+    --rollup.verify --da.blob.beaconnode "$L2GETH_DA_BLOB_BEACON_NODE" \
     --gcmode archive \
     --cache.noprefetch --cache.snapshot=0 \
     --snapshot=false \
