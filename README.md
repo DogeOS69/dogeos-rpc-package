@@ -108,8 +108,6 @@ This command will:
 - Extract `genesis.json` from your deployment
 - Preserve local service configurations (dogecoin RPC, celestia RPC)
 
-**Note**: The generated `l1-interface.env` will not include the `DOGEOS_L1_INTERFACE_DOGECOIN_RPC__BLOCKBOOK_API_KEY` secret. You need to manually add this API key to the configuration file.
-
 ### Manual Configuration
 
 1. Create network-specific environment files in `envs/{network}/`
