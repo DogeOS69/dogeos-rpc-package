@@ -74,14 +74,14 @@ TrustedHeight = 8040790
 [Header.Server]
   WriteDeadline = "8s"
   ReadDeadline = "1m0s"
-  RangeRequestTimeout = "10s"
+  RequestTimeout = "10s"
 [Header.Client]
   MaxHeadersPerRangeRequest = 64
-  RangeRequestTimeout = "8s"
+  RequestTimeout = "8s"
 
 [DASer]
 SamplingRange = 128
 ConcurrencyLimit = 8
 BackgroundStoreInterval = "10m0s"
-SampleFrom = 7613000
+SampleFrom = 8040790
 SampleTimeout = "2m40s"
