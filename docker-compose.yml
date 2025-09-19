@@ -1,11 +1,8 @@
 services:
   dogecoin-node:
-    image: ${DOGECOIN_IMAGE:-dogeos69/dogecoin:1.14.9}
+    image: dogeos69/dogecoin:1.14.9
     container_name: dogecoin-node
     restart: unless-stopped
-    env_file:
-      - ./envs/common/dogecoin.env
-      - ./envs/${NETWORK:-testnet}/dogecoin.env
     volumes:
       - ./configs/${NETWORK:-testnet}/dogecoin.conf:/home/dogecoin/.dogecoin/dogecoin.conf
       - dogecoin_data:/data
@@ -37,7 +34,7 @@ services:
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
 
   celestia-light-node:
-    image: ghcr.io/celestiaorg/celestia-node:v0.24.1-mocha
+    image: ghcr.io/celestiaorg/celestia-node:v0.25.2-mocha
     container_name: celestia-light-node
     restart: unless-stopped
     volumes:

@@ -30,8 +30,7 @@ load_env_file() {
 }
 
 # Load common variables used in docker-compose.yml
-load_env_file envs/common/dogecoin.env
-load_env_file envs/common/l2geth.env  
+load_env_file envs/common/l2geth.env
 load_env_file envs/common/celestia.env
 load_env_file envs/common/l1-interface.env
 
