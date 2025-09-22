@@ -49,7 +49,7 @@ services:
       celestia light start --p2p.network mocha --node.config /etc/celestia/config.toml
       "
   l1-interface:
-    image: ${L1_INTERFACE_IMAGE:-dogeos69/l1-interface:091825-00}
+    image: ${L1_INTERFACE_IMAGE:-dogeos69/l1-interface:092225-00}
     container_name: l1-interface
     restart: unless-stopped
     env_file:
