@@ -62,9 +62,9 @@ UseShareExchange = true
   AdvertiseInterval = "1h0m0s"
 
 [Header]
-TrustedHash = "BD2DF1FA5320B3FC5E7CC47A7FDFFEB8799147C82427CF82F8B590E0DE8CF569"
+TrustedHash = "9C8A5323A4E68F47F2B9EAA01400E11BEAC8F779ACFF90469EECF57BF1FDE694"
 TrustedPeers = []
-TrustedHeight = 7613000
+TrustedHeight = 8040790
 [Header.Store]
   StoreCacheSize = 512
   IndexCacheSize = 2048
@@ -74,14 +74,14 @@ TrustedHeight = 7613000
 [Header.Server]
   WriteDeadline = "8s"
   ReadDeadline = "1m0s"
-  RangeRequestTimeout = "10s"
+  RequestTimeout = "10s"
 [Header.Client]
   MaxHeadersPerRangeRequest = 64
-  RangeRequestTimeout = "8s"
+  RequestTimeout = "8s"
 
 [DASer]
 SamplingRange = 128
 ConcurrencyLimit = 8
 BackgroundStoreInterval = "10m0s"
-SampleFrom = 7613000
+SampleFrom = 8040790
 SampleTimeout = "2m40s"
