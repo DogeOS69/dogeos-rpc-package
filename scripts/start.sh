@@ -45,8 +45,19 @@ echo "  - Network: $NETWORK"
 echo "  - Common configs: envs/common/"
 echo "  - Network configs: envs/$NETWORK/"
 
+# Detect docker-compose command
+if docker compose version >/dev/null 2>&1; then
+    COMPOSE_CMD="docker compose"
+elif docker-compose version >/dev/null 2>&1; then
+    COMPOSE_CMD="docker-compose"
+else
+    echo "Error: Neither 'docker compose' nor 'docker-compose' is available." >&2
+    exit 1
+fi
+
 # Start services
-docker-compose up -d
+echo "Starting services with '$COMPOSE_CMD'..."
+$COMPOSE_CMD up -d
 
 echo "Services started successfully!"
-echo "You can check the status with: docker-compose ps" 
+echo "You can check the status with: $COMPOSE_CMD ps" 
