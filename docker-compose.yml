@@ -50,7 +50,7 @@ services:
 
 
   l1-interface:
-    image: ${L1_INTERFACE_IMAGE:-dogeos69/l1-interface:101025-00}
+    image: ${L1_INTERFACE_IMAGE:-dogeos69/l1-interface:101225-00}
     container_name: l1-interface
     restart: unless-stopped
     env_file:
