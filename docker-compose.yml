@@ -14,7 +14,7 @@ services:
     command: ["/dogecoin/bin/dogecoind", "-conf=/home/dogecoin/.dogecoin/dogecoin.conf", "-datadir=/data", "-printtoconsole"]
 
   l2geth-node:
-    image: scrolltech/l2geth:scroll-v5.9.4
+    image: scrolltech/l2geth:scroll-v5.9.6
     container_name: l2geth-node
     restart: unless-stopped
     env_file:
