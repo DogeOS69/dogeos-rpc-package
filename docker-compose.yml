@@ -14,7 +14,7 @@ services:
     command: ["/dogecoin/bin/dogecoind", "-conf=/home/dogecoin/.dogecoin/dogecoin.conf", "-datadir=/data", "-printtoconsole"]
 
   l2geth-node:
-    image: ${L2GETH_IMAGE:-scrolltech/l2geth:scroll-v5.9.4}
+    image: scrolltech/l2geth:scroll-v5.9.4
     container_name: l2geth-node
     restart: unless-stopped
     env_file:
@@ -50,7 +50,7 @@ services:
 
 
   l1-interface:
-    image: ${L1_INTERFACE_IMAGE:-dogeos69/l1-interface:101225-00}
+    image: dogeos69/l1-interface:101225-00
     container_name: l1-interface
     restart: unless-stopped
     env_file:
@@ -72,3 +72,4 @@ volumes:
   l2geth_data:
   celestia_data:
   l1_interface_data:
+  

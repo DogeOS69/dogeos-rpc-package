@@ -37,4 +37,5 @@ exec geth \
     --gpo.maxprice "$L2GETH_GPO_MAX_PRICE" \
     --l1.endpoint "$L2GETH_L1_ENDPOINT" --l1.confirmations "$L2GETH_L1_WATCHER_CONFIRMATIONS" --l1.sync.startblock "$L2GETH_L1_CONTRACT_DEPLOYMENT_BLOCK" \
     --metrics --metrics.expensive \
-    $L2GETH_EXTRA_PARAMS 
+    $L2GETH_EXTRA_PARAMS
+    
