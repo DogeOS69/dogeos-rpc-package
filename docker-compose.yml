@@ -74,7 +74,7 @@ services:
       - ./envs/common/l1-interface.env
       - ./envs/${NETWORK:-testnet}/l1-interface.env
     volumes:
-      - ./configs/${NETWORK:-testnet}/genesis.json:/app/genesis/genesis.json:ro
+      - ./configs/${NETWORK:-testnet}/l2geth-genesis.json:/app/genesis/genesis.json:ro
       - l1_interface_data:/data
     ports:
       - "8547:8545"
