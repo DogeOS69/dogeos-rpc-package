@@ -12,6 +12,6 @@ exec rollup-node node --chain /l2reth/genesis/genesis.json --datadir=/l2reth --m
   --rpc.max-connections=5000 \
   --trusted-peers="$L2GETH_PEER_0" --trusted-peers="$L2GETH_PEER_1" \
   --engine.sync-at-startup false \
-  --l1.url http://l1-node:8545 \
+  --l1.url "$L2RETH_L1_ENDPOINT" \
   --blob.beacon_node_urls="$L2RETH_DA_BLOB_BEACON_NODE" \
   --network.valid_signer="$L2RETH_VALID_SIGNER"
