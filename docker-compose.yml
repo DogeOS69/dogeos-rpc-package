@@ -88,7 +88,7 @@ services:
 volumes:
   dogecoin_data:
   l2geth_data:
-  l2reth_data
+  l2reth_data:
   celestia_data:
   l1_interface_data:
   
