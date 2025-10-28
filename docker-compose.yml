@@ -33,10 +33,13 @@ services:
       - l1-interface
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
 
-    l2reth-node:
-    image: ${L2RETH_IMAGE:-scrolltech/rollup-node:v0.0.1-rc47}
+  l2reth-node:
+    image: scrolltech/rollup-node:v0.0.1-rc63
     container_name: l2reth-node
     restart: unless-stopped
+    env_file:
+      - ./envs/common/l2geth.env
+      - ./envs/${NETWORK:-testnet}/l2reth.env
     volumes:
       - ./configs/${NETWORK:-testnet}/l2reth-genesis.json:/l2reth/genesis/genesis.json
       - ./scripts/l2reth_entrypoint.sh:/entrypoint.sh
@@ -66,7 +69,7 @@ services:
       celestia light start --p2p.network mocha --node.config /etc/celestia/config.toml
       "
   l1-interface:
-    image: dogeos69/l1-interface:101425-01
+    image: jayjayjayjay/l1-interface:102725-01
     container_name: l1-interface
     restart: unless-stopped
     env_file:
