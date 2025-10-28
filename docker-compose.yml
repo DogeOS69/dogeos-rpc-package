@@ -38,7 +38,6 @@ services:
     container_name: l2reth-node
     restart: unless-stopped
     env_file:
-      - ./envs/common/l2geth.env
       - ./envs/${NETWORK:-testnet}/l2reth.env
     volumes:
       - ./configs/${NETWORK:-testnet}/l2reth-genesis.json:/l2reth/genesis/genesis.json
@@ -89,6 +88,7 @@ services:
 volumes:
   dogecoin_data:
   l2geth_data:
+  l2reth_data
   celestia_data:
   l1_interface_data:
   
