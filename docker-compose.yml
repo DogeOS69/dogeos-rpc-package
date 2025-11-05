@@ -34,7 +34,7 @@ services:
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
 
   celestia-light-node:
-    image: ghcr.io/celestiaorg/celestia-node:v0.27.5-mocha
+    image: ghcr.io/celestiaorg/celestia-node:v0.28.2-mocha
     container_name: celestia-light-node
     restart: unless-stopped
     env_file:
