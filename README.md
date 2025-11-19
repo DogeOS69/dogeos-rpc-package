@@ -154,14 +154,19 @@ docker compose logs -f [service_name]
 
 ### Stop Services
 ```bash
-docker-compose down
-#OR
-docker compose down
+./scripts/stop.sh <network>
+# Example:
+./scripts/stop.sh testnet
 ```
 
 ### Clean Up
 ```bash
-docker-compose down -v  # Remove volumes
-#OR
-docker compose down -v  # Remove volumes
-``` 
+./scripts/clean.sh <network>
+# Example (WARNING: Deletes all data):
+./scripts/clean.sh testnet
+```
+
+## Data Isolation & Migration
+
+- **Data Isolation**: Data is isolated by network. `testnet` data is stored in volumes prefixed with `dogeos-testnet_`, and `mainnet` data in `dogeos-mainnet_`. This prevents accidental data overwrites.
+- **Automatic Migration**: If you are upgrading from an older version (where volumes were prefixed with `dogeos-rpc-package_`), the startup script will automatically detect and migrate your data to the new isolated volumes. The old data is preserved as a backup. 
