@@ -52,6 +52,7 @@ echo "Starting DogeOS RPC Package with network: $NETWORK and ETH client: $ETHCLI
 
 # Export NETWORK environment variable for docker-compose
 export NETWORK=$NETWORK
+export COMPOSE_PROJECT_NAME=dogeos-${NETWORK}
 
 # Export variables used directly in docker-compose.yml (for variable substitution)
 echo "Loading variables for docker-compose variable substitution..."
@@ -89,6 +90,73 @@ else
     echo "Error: Neither 'docker compose' nor 'docker-compose' is available." >&2
     exit 1
 fi
+
+# --- Migration Logic ---
+
+# 1. Detect Old Project Name (Default is directory name)
+CURRENT_DIR_NAME=$(basename "$PWD")
+OLD_PROJECT_NAME=$CURRENT_DIR_NAME
+NEW_PROJECT_NAME="dogeos-${NETWORK}"
+
+# List of volumes defined in docker-compose.yml
+VOLUMES=("dogecoin_data" "l2geth_data" "l2reth_data" "celestia_data" "l1_interface_data")
+
+# Function to migrate a single volume
+migrate_volume() {
+    local vol_suffix=$1
+    local old_vol="${OLD_PROJECT_NAME}_${vol_suffix}"
+    local new_vol="${NEW_PROJECT_NAME}_${vol_suffix}"
+
+    # Check if old volume exists
+    if docker volume ls -q | grep -q "^${old_vol}$"; then
+        # Check if new volume does NOT exist (avoid overwriting)
+        if ! docker volume ls -q | grep -q "^${new_vol}$"; then
+            echo "Migrating data from '$old_vol' to '$new_vol'..."
+            
+            # Create new volume
+            docker volume create "$new_vol" >/dev/null
+
+            # Copy data using a temporary container
+            # Using dogeos69/dogecoin:1.14.9 as it's likely available
+            docker run --rm \
+                -v "$old_vol":/from \
+                -v "$new_vol":/to \
+                dogeos69/dogecoin:1.14.9 \
+                cp -av /from/. /to/
+            
+            echo "Migration for '$vol_suffix' completed."
+        else
+            echo "New volume '$new_vol' already exists. Skipping migration."
+        fi
+    fi
+}
+
+# 2. Perform Volume Migration
+echo "Checking for legacy data to migrate..."
+for vol in "${VOLUMES[@]}"; do
+    migrate_volume "$vol"
+done
+
+# 3. Cleanup Conflicting Containers
+# Since container_name is fixed in docker-compose.yml, we must remove containers
+# from the "old" project if they exist, otherwise the new project cannot start them.
+echo "Checking for conflicting containers..."
+CONTAINERS=("dogecoin-node" "l2geth-node" "l2reth-node" "celestia-light-node" "l1-interface")
+
+for container in "${CONTAINERS[@]}"; do
+    # Check if container exists
+    if docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
+        # Check which project it belongs to
+        project_label=$(docker inspect "$container" --format '{{ index .Config.Labels "com.docker.compose.project" }}')
+        
+        if [ "$project_label" != "$NEW_PROJECT_NAME" ]; then
+            echo "Removing conflicting container '$container' from project '$project_label'..."
+            docker rm -f "$container"
+        fi
+    fi
+done
+
+# --- End Migration Logic ---
 
 # Start services
 echo "Starting services with '$COMPOSE_CMD'..."
