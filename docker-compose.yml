@@ -4,7 +4,7 @@ services:
     container_name: dogecoin-node
     restart: unless-stopped
     volumes:
-      - ./configs/${NETWORK:-testnet}/dogecoin.conf:/home/dogecoin/.dogecoin/dogecoin.conf
+      - ./configs/${NETWORK:?Use_scripts_start.sh}/dogecoin.conf:/home/dogecoin/.dogecoin/dogecoin.conf
       - dogecoin_data:/data
     ports:
       # Mainnet ports: P2P=22556, RPC=22555
@@ -19,9 +19,9 @@ services:
     restart: unless-stopped
     env_file:
       - ./envs/common/l2geth.env
-      - ./envs/${NETWORK:-testnet}/l2geth.env
+      - ./envs/${NETWORK:?Use_scripts_start.sh}/l2geth.env
     volumes:
-      - ./configs/${NETWORK:-testnet}/l2geth-genesis.json:/l2geth/genesis/genesis.json
+      - ./configs/${NETWORK:?Use_scripts_start.sh}/l2geth-genesis.json:/l2geth/genesis/genesis.json
       - ./scripts/l2geth_entrypoint.sh:/entrypoint.sh
       - l2geth_data:/l2geth/data
     ports:
@@ -38,9 +38,9 @@ services:
     container_name: l2reth-node
     restart: unless-stopped
     env_file:
-      - ./envs/${NETWORK:-testnet}/l2reth.env
+      - ./envs/${NETWORK:?Use_scripts_start.sh}/l2reth.env
     volumes:
-      - ./configs/${NETWORK:-testnet}/l2reth-genesis.json:/l2reth/genesis/genesis.json
+      - ./configs/${NETWORK:?Use_scripts_start.sh}/l2reth-genesis.json:/l2reth/genesis/genesis.json
       - ./scripts/l2reth_entrypoint.sh:/entrypoint.sh
       - l2reth_data:/l2reth
     ports:
@@ -57,10 +57,10 @@ services:
     container_name: celestia-light-node
     restart: unless-stopped
     env_file:
-      - ./envs/${NETWORK:-testnet}/celestia.env
+      - ./envs/${NETWORK:?Use_scripts_start.sh}/celestia.env
     volumes:
       - ./scripts/celestia-entrypoint.sh:/entrypoint.sh
-      - ./configs/${NETWORK:-testnet}/celestia/config.toml:/etc/celestia/config.toml
+      - ./configs/${NETWORK:?Use_scripts_start.sh}/celestia/config.toml:/etc/celestia/config.toml
       - celestia_data:/home/celestia
     ports:
       - "26658:26658"
@@ -72,9 +72,9 @@ services:
     restart: unless-stopped
     env_file:
       - ./envs/common/l1-interface.env
-      - ./envs/${NETWORK:-testnet}/l1-interface.env
+      - ./envs/${NETWORK:?Use_scripts_start.sh}/l1-interface.env
     volumes:
-      - ./configs/${NETWORK:-testnet}/l2geth-genesis.json:/app/genesis/genesis.json:ro
+      - ./configs/${NETWORK:?Use_scripts_start.sh}/l2geth-genesis.json:/app/genesis/genesis.json:ro
       - l1_interface_data:/data
     ports:
       - "8547:8545"
