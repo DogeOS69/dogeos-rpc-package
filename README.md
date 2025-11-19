@@ -7,57 +7,63 @@ This project provides a Docker-based deployment of DogeOS RPC services including
 The project follows a modular configuration approach with support for multiple networks:
 
 ```
-dogeos-rpc-package/
-├── docker-compose.yml          # Main Docker Compose configuration
-├── configs/                    # Network-specific configuration files
-│   ├── testnet/
-│   │   ├── dogecoin.conf
-│   │   └── genesis.json
-│   └── mainnet/
+├── configs                     # Network-specific configuration files
+│   ├── mainnet
+│   │   └── dogecoin.conf
+│   └── testnet
+│       ├── celestia
+│       │   └── config.toml
 │       ├── dogecoin.conf
-│       └── genesis.json
-├── envs/                       # Environment variables
-│   ├── common/                 # Common settings for all networks
-│   │   ├── dogecoin.env
-│   │   ├── l2geth.env
+│       ├── l2geth-genesis.json
+│       └── l2reth-genesis.json
+├── docker-compose.yml          # Main Docker Compose configuration
+├── envs                        # Environment variables
+│   ├── common                  # Common settings for all networks
+│   │   ├── l1-interface.env
+│   │   └── l2geth.env
+│   ├── mainnet                # Mainnet-specific settings
 │   │   ├── celestia.env
-│   │   └── l1-interface.env
-│   ├── testnet/               # Testnet-specific settings
 │   │   ├── dogecoin.env
-│   │   ├── l2geth.env
-│   │   ├── celestia.env
-│   │   └── l1-interface.env
-│   └── mainnet/               # Mainnet-specific settings
+│   │   ├── l1-interface.env
+│   │   └── l2geth.env
+│   └── testnet                # Testnet-specific settings
+│       ├── celestia.env
 │       ├── dogecoin.env
+│       ├── l1-interface.env
 │       ├── l2geth.env
-│       └── l1-interface.env
-└── scripts/                   # Utility scripts
-    ├── start.sh              # Network-aware startup script
-    └── entrypoint.sh         # L2Geth entrypoint
+│       └── l2reth.env
+├── README.md
+└── scripts                     # Utility scripts
+    ├── celestia-entrypoint.sh
+    ├── l2geth_entrypoint.sh    # L2Geth entrypoint
+    ├── l2reth_entrypoint.sh    # L2Reth entrypoint
+    └── start.sh                # Network-aware startup script
 ```
 
 ## Quick Start
 
 ### 1. Start Services
 
-Use the provided script to start with your chosen network:
+Use the provided script to start with your chosen network and ETH client:
 ```bash
-# Start with testnet (default)
-./scripts/start.sh
+# Testnet with l2geth
+./scripts/start.sh testnet l2geth
 
-# Start with mainnet
-./scripts/start.sh mainnet
+# Mainnet with l2geth
+./scripts/start.sh mainnet l2geth
 
-# Or use docker-compose directly with environment variable
-NETWORK=testnet docker-compose up -d
-NETWORK=mainnet docker-compose up -d
+# Start testnet with the l2reth client
+./scripts/start.sh testnet l2reth
 ```
+The `network` argument must match a directory in `envs/` (currently `testnet` or `mainnet`), and the `ethclient` argument must be either `l2geth` or `l2reth`.
 
 ### 2. Verify Services
 
 Check that all services are running:
 ```bash
 docker-compose ps
+#OR
+docker compose ps
 ```
 
 
@@ -114,11 +120,14 @@ This command will:
 2. Create network-specific configuration files in `configs/{network}/`
 3. The startup script will automatically detect the new network
 
+
 ### Customizing Configuration
 
 Edit the appropriate environment files in `envs/` directory:
 - `envs/common/` - for settings shared across all networks
 - `envs/{network}/` - for network-specific overrides
+
+If you need to decide which APIs to enable, you can modify them in `scripts/l2geth_entrypoint.sh` or `scripts/l2reth_entrypoint.sh`.
 
 ## Development
 
@@ -139,14 +148,20 @@ Edit the appropriate environment files in `envs/` directory:
 ### Logs
 ```bash
 docker-compose logs -f [service_name]
+#OR 
+docker compose logs -f [service_name]
 ```
 
 ### Stop Services
 ```bash
 docker-compose down
+#OR
+docker compose down
 ```
 
 ### Clean Up
 ```bash
 docker-compose down -v  # Remove volumes
+#OR
+docker compose down -v  # Remove volumes
 ``` 
