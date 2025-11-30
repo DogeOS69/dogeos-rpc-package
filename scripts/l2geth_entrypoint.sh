@@ -15,13 +15,15 @@ fi
 echo "[Node.P2P] StaticNodes = $L2GETH_PEER_LIST" > "$CONFIG_FILE"
 
 # Start geth with exact parameters matching DogeOS official configuration
+#Available API
+#admin,debug,eth,net,trace,txpool,web3,rpc,ots,flashbots,miner,mev
 exec geth \
     --datadir "$DATADIR" \
-    --port "$L2GETH_P2P_PORT" --nodiscover --syncmode full --networkid "$CHAIN_ID" \
+    --port 30303 --nodiscover --syncmode full --networkid "$CHAIN_ID" \
     --config "$CONFIG_FILE" \
-    --http --http.port "$L2GETH_RPC_HTTP_PORT" --http.addr "0.0.0.0" --http.vhosts="*" --http.corsdomain '*' --http.api "eth,scroll,net,web3,debug" \
+    --http --http.port 8545 --http.addr "0.0.0.0" --http.vhosts="*" --http.corsdomain '*' --http.api "eth,net,web3,debug,trace,scroll" \
     --pprof --pprof.addr "0.0.0.0" --pprof.port 6060 \
-    --ws --ws.port "$L2GETH_RPC_WS_PORT" --ws.addr "0.0.0.0" --ws.api "eth,scroll,net,web3,debug" \
+    --ws --ws.port 8546 --ws.addr "0.0.0.0" --ws.api "eth,net,web3,debug,trace,scroll" \
     $L2GETH_CCC_FLAG --ccc.numworkers "$L2GETH_CCC_NUMWORKERS" \
     $METRICS_FLAGS \
     --scroll-mpt \

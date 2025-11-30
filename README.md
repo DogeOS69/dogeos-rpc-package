@@ -7,69 +7,77 @@ This project provides a Docker-based deployment of DogeOS RPC services including
 The project follows a modular configuration approach with support for multiple networks:
 
 ```
-dogeos-rpc-package/
-├── docker-compose.yml          # Main Docker Compose configuration
-├── configs/                    # Network-specific configuration files
-│   ├── testnet/
-│   │   ├── dogecoin.conf
-│   │   └── genesis.json
-│   └── mainnet/
+├── .env.example.mainnet        # Mainnet environment template
+├── .env.example.testnet        # Testnet environment template
+├── configs                     # Network-specific configuration files
+│   ├── mainnet
+│   │   └── dogecoin.conf
+│   └── testnet
+│       ├── celestia
+│       │   └── config.toml
 │       ├── dogecoin.conf
-│       └── genesis.json
-├── envs/                       # Environment variables
-│   ├── common/                 # Common settings for all networks
-│   │   ├── dogecoin.env
-│   │   ├── l2geth.env
+│       ├── l2geth-genesis.json
+│       └── l2reth-genesis.json
+├── docker-compose.yml          # Main Docker Compose configuration
+├── envs                        # Environment variables
+│   ├── common                  # Common settings for all networks
+│   │   ├── l1-interface.env
+│   │   └── l2geth.env
+│   ├── mainnet                 # Mainnet-specific settings
 │   │   ├── celestia.env
-│   │   └── l1-interface.env
-│   ├── testnet/               # Testnet-specific settings
 │   │   ├── dogecoin.env
-│   │   ├── l2geth.env
-│   │   ├── celestia.env
-│   │   └── l1-interface.env
-│   └── mainnet/               # Mainnet-specific settings
+│   │   ├── l1-interface.env
+│   │   └── l2geth.env
+│   └── testnet                 # Testnet-specific settings
+│       ├── celestia.env
 │       ├── dogecoin.env
+│       ├── l1-interface.env
 │       ├── l2geth.env
-│       └── l1-interface.env
-└── scripts/                   # Utility scripts
-    ├── start.sh              # Network-aware startup script
-    └── entrypoint.sh         # L2Geth entrypoint
+│       └── l2reth.env
+├── README.md
+└── scripts                     # Utility scripts
+    ├── celestia-entrypoint.sh
+    ├── l2geth_entrypoint.sh    # L2Geth entrypoint
+    └── l2reth_entrypoint.sh    # L2Reth entrypoint
 ```
 
 ## Quick Start
 
-### 1. Start Services
+### 1. Configure Environment
+Choose your network (testnet or mainnet) and copy the example configuration:
 
-Use the provided script to start with your chosen network:
 ```bash
-# Start with testnet (default)
-./scripts/start.sh
+# For Testnet
+cp .env.example.testnet .env
 
-# Start with mainnet
-./scripts/start.sh mainnet
-
-# Or use docker-compose directly with environment variable
-NETWORK=testnet docker-compose up -d
-NETWORK=mainnet docker-compose up -d
+# For Mainnet
+cp .env.example.mainnet .env
 ```
 
-### 2. Verify Services
+### 2. Start Services
+Start the services using Docker Compose:
 
-Check that all services are running:
 ```bash
-docker-compose ps
+docker compose up -d
+```
+
+### 3. Verify Services
+Check that all services are running:
+
+```bash
+docker compose ps
 ```
 
 
 
 ## Service Endpoints
 
-- **Dogecoin RPC**: `http://localhost:22555`
+- **Dogecoin RPC**: `http://localhost:22555` (mainnet) or `http://localhost:44555` (testnet)
 - **L1 Interface RPC**: `http://localhost:8547` (L1 Ethereum client for L2Geth)
 - **L1 Interface Beacon API**: `http://localhost:5052`
 - **L1 Interface Health**: `http://localhost:9090`
-- **L2Geth HTTP RPC**: `http://localhost:8545`
-- **L2Geth WebSocket**: `ws://localhost:8546`
+- **L2 Client HTTP RPC**: `http://localhost:8545` (l2geth or l2reth)
+- **L2 Client WebSocket**: `ws://localhost:8546` (l2geth or l2reth)
 - **Celestia RPC**: `http://localhost:26658`
 - **Celestia Gateway**: `http://localhost:26659`
 
@@ -81,6 +89,31 @@ The L1 Interface service acts as an L1 Ethereum client that provides Ethereum-co
 ## Configuration
 
 ### Environment Variables
+
+The project uses a `.env` file for configuration. Start by copying one of the example templates:
+- `.env.example.testnet` - Template for Testnet
+- `.env.example.mainnet` - Template for Mainnet
+
+The `.env` file contains:
+- `NETWORK` - Network selection (testnet or mainnet)
+- `COMPOSE_PROJECT_NAME` - Docker Compose project name (for volume and container isolation)
+- `COMPOSE_PROFILES` - ETH client selection (`l2geth` or `l2reth`)
+- Port configurations
+
+**Note**: The `.env` file is gitignored to prevent accidental commits of local configurations.
+
+### Docker Compose Profiles
+
+This project uses Docker Compose Profiles to select which ETH client to run:
+- `l2geth` - Scroll L2Geth client (supported on both testnet and mainnet)
+- `l2reth` - Scroll Reth client (currently testnet only)
+
+To switch clients, edit `COMPOSE_PROFILES` in your `.env` file.
+
+> [!WARNING]
+> **Port Conflict**: Both `l2geth` and `l2reth` use the same ports (8545, 8546, 30303). You can only run ONE client at a time. If you need to run both simultaneously, you must modify the port mappings in `docker-compose.yml`.
+
+### Layered Configuration
 
 The configuration uses a layered approach:
 1. **Common settings** (`envs/common/*.env`) - Applied to all networks
@@ -112,13 +145,21 @@ This command will:
 
 1. Create network-specific environment files in `envs/{network}/`
 2. Create network-specific configuration files in `configs/{network}/`
-3. The startup script will automatically detect the new network
+3. Copy the appropriate `.env.example.*` to `.env` and start services with 
+```
+docker compose up -d
+#OR
+docker-compose up -d
+```
+
 
 ### Customizing Configuration
 
 Edit the appropriate environment files in `envs/` directory:
 - `envs/common/` - for settings shared across all networks
 - `envs/{network}/` - for network-specific overrides
+
+If you need to decide which APIs to enable, you can modify them in `scripts/l2geth_entrypoint.sh` or `scripts/l2reth_entrypoint.sh`.
 
 ## Development
 
@@ -139,14 +180,26 @@ Edit the appropriate environment files in `envs/` directory:
 ### Logs
 ```bash
 docker-compose logs -f [service_name]
+#OR 
+docker compose logs -f [service_name]
 ```
 
 ### Stop Services
 ```bash
-docker-compose down
+docker compose down
 ```
 
 ### Clean Up
+**WARNING: This will delete all data!**
+
 ```bash
-docker-compose down -v  # Remove volumes
-``` 
+docker compose down -v
+```
+
+## Data Isolation
+
+- **Project naming**: The Compose project name (defined in `.env`) controls volume prefixes.
+  - `testnet` uses `dogeos-rpc-package` to keep existing data intact (no migration required).
+  - `mainnet` uses `dogeos-rpc-package-mainnet` to ensure isolation from testnet data.
+- **Resulting volume names**: Docker Compose will create volumes like `dogeos-rpc-package_dogecoin_data` (testnet) and `dogeos-rpc-package-mainnet_dogecoin_data` (mainnet).
+- **Switching networks**: To switch between testnet and mainnet, run `docker compose down`, copy the appropriate `.env.example.*` to `.env`, and run `docker compose up -d`.
