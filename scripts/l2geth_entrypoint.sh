@@ -27,7 +27,7 @@ exec geth \
     $L2GETH_CCC_FLAG --ccc.numworkers "$L2GETH_CCC_NUMWORKERS" \
     $METRICS_FLAGS \
     --scroll-mpt \
-    --rollup.verify --da.blob.beaconnode "$L2GETH_DA_BLOB_BEACON_NODE" \
+    --rollup.verify --da.blob.beaconnode "http://l1-interface:5052" \
     --gcmode archive \
     --cache.noprefetch --cache.snapshot=0 \
     --snapshot=false \
@@ -37,7 +37,7 @@ exec geth \
     --miner.gasprice "$L2GETH_MIN_GAS_PRICE" --rpc.gascap 0 \
     --gpo.ignoreprice "$L2GETH_MIN_GAS_PRICE" --gpo.percentile 20 --gpo.blocks 100 \
     --gpo.maxprice "$L2GETH_GPO_MAX_PRICE" \
-    --l1.endpoint "$L2GETH_L1_ENDPOINT" --l1.confirmations "$L2GETH_L1_WATCHER_CONFIRMATIONS" --l1.sync.startblock "$L2GETH_L1_CONTRACT_DEPLOYMENT_BLOCK" \
+    --l1.endpoint "http://l1-interface:8545" --l1.confirmations "$L2GETH_L1_WATCHER_CONFIRMATIONS" --l1.sync.startblock "$L2GETH_L1_CONTRACT_DEPLOYMENT_BLOCK" \
     --metrics --metrics.expensive \
     --l1.sync.fetchblockrange "8" \
     $L2GETH_EXTRA_PARAMS

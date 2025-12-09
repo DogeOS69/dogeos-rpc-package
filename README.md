@@ -84,7 +84,7 @@ docker compose ps
 ## Services Overview
 
 ### L1 Interface
-The L1 Interface service acts as an L1 Ethereum client that provides Ethereum-compatible RPC endpoints. It serves as the L1 endpoint for L2Geth (`L2GETH_L1_ENDPOINT`) and enables cross-chain functionality between Dogecoin, Celestia, and the L2 network.
+The L1 Interface service acts as an L1 Ethereum client that provides Ethereum-compatible RPC endpoints. It serves as the L1 endpoint for L2Geth and enables cross-chain functionality between Dogecoin, Celestia, and the L2 network.
 
 ## Configuration
 
