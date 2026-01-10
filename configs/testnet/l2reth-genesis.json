@@ -38,14 +38,14 @@
       "maxTxPayloadBytesPerBlock": 122880,
       "feeVaultAddress": "0x5300000000000000000000000000000000000005",
       "l1Config": {
-        "l1ChainId": "111111",
+        "l1ChainId": 111111,
         "l1MessageQueueAddress": "0xC5180E71A838cC5ef63356e7c4373D5484990571",
         "l1MessageQueueV2Address": "0xe0FF161D1a68DbED9404bD34bD7f93198Fc33f45",
         "l1MessageQueueV2DeploymentBlock": 0,
         "scrollChainAddress": "0xB272Bb21B7B6e23Ec079A2DF90Adb52000768B4d",
         "l2SystemConfigAddress": "0xA18F2550728d602Ca2A5BB4Ea8e726ceA27b9305",
-        "numL1MessagesPerBlock": "10",
-        "startL1Block": "14090415",
+        "numL1MessagesPerBlock": 10,
+        "startL1Block": 14090415,
         "systemContractAddress": "0xB38EB8335F32e681163e404Fe52d80398bb5F8c2"
       },
       "genesisStateRoot": null,
