@@ -67,7 +67,7 @@ services:
       - "26659:26659"
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
   l1-interface:
-    image: dogeos69/l1-interface:0.2.0-rc.5
+    image: dogeos69/l1-interface:0.2.0-rc.6
     container_name: l1-interface
     restart: unless-stopped
     env_file:
