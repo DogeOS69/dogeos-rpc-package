@@ -93,6 +93,24 @@ docker compose ps
 ### L1 Interface
 The L1 Interface service acts as an L1 Ethereum client that provides Ethereum-compatible RPC endpoints. It serves as the L1 endpoint for L2Geth (`L2GETH_L1_ENDPOINT`) and enables cross-chain functionality between Dogecoin, Celestia, and the L2 network.
 
+#### Blob Data Pruning
+
+To manage storage space, L1 Interface supports automatic pruning of historical blob data. Pruning behavior is controlled via the following configuration options:
+file: `envs/testnet/l1-interface.env`
+- **`DOGEOS_L1_INTERFACE_BLOB_RETENTION`** (Default: `1000`)
+  - The number of most recent distinct Celestia block heights to retain.
+  - For example, setting it to `1000` means keeping blob data for the 1000 most recent heights.
+  - Blob data for older heights will be pruned (set to `NULL`).
+
+- **`DOGEOS_L1_INTERFACE_BLOB_PRUNING_INTERVAL_SECS`** (Default: `3600`)
+  - The execution interval of the pruning task in seconds.
+  - For example, setting it to `3600` means pruning runs once every hour.
+  - Smaller values allow for more frequent pruning but may increase database load.
+
+> [!IMPORTANT]
+> If you add a new `l2geth` or `l2reth` node and connect it to this `l1-interface`, please comment out these two options and restart `l1-interface`. This is because the new node requires historical Blob Data during the finalization process.
+
+
 ## Configuration
 
 ### Environment Variables

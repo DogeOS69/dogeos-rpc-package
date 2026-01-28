@@ -40,5 +40,6 @@ exec geth \
     --l1.endpoint "$L2GETH_L1_ENDPOINT" --l1.confirmations "$L2GETH_L1_WATCHER_CONFIRMATIONS" --l1.sync.startblock "$L2GETH_L1_CONTRACT_DEPLOYMENT_BLOCK" \
     --metrics --metrics.expensive \
     --l1.sync.fetchblockrange "8" \
+    --l1.sync.interval 2s \
     $L2GETH_EXTRA_PARAMS
     
