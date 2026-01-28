@@ -61,7 +61,14 @@ Start the services using Docker Compose:
 docker compose up -d
 ```
 
-### 3. Verify Services
+### 3. Restore from Snapshot (Optional)
+
+If you want to speed up the synchronization process, you can restore data from a snapshot.
+
+- [Dogecoin Testnet Snapshot Guide](snapshot_testnet.md)
+- [Dogecoin Mainnet Snapshot Guide](snapshot_mainnet.md)
+
+### 4. Verify Services
 Check that all services are running:
 
 ```bash
