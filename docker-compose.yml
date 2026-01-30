@@ -53,7 +53,7 @@ services:
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
 
   celestia-light-node:
-    image: ghcr.io/celestiaorg/celestia-node:v0.28.2-mocha
+    image: ghcr.io/celestiaorg/celestia-node:v0.28.5-mocha
     container_name: celestia-light-node
     restart: unless-stopped
     env_file:
@@ -67,7 +67,7 @@ services:
       - "26659:26659"
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
   l1-interface:
-    image: dogeos69/l1-interface:0.2.0-rc.4
+    image: dogeos69/l1-interface:0.2.0-rc.6
     container_name: l1-interface
     restart: unless-stopped
     env_file:
