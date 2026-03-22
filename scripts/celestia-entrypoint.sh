@@ -2,10 +2,19 @@
 set -e
 
 # Define paths
+CELESTIA_USER="celestia"
+CELESTIA_HOME="/home/celestia"
 NODE_STORE_PATH="/home/celestia/.celestia-light-${CELESTIA_P2P_NETWORK}"
 CONFIG_FILE="/etc/celestia/config.toml"
 AUTH_TOKEN_PATH="/home/celestia/celestia-auth"
 AUTH_TOKEN_FILE="${AUTH_TOKEN_PATH}/xtoken.json"
+
+if [ "$(id -u)" = "0" ] && [ "${CELESTIA_DROP_PRIVS_DONE:-0}" != "1" ]; then
+  echo "=== Repairing Celestia data directory ownership... ==="
+  mkdir -p "${CELESTIA_HOME}"
+  chown -R "${CELESTIA_USER}:${CELESTIA_USER}" "${CELESTIA_HOME}"
+  exec su "${CELESTIA_USER}" -s /bin/sh -c "CELESTIA_DROP_PRIVS_DONE=1 exec /bin/sh /entrypoint.sh"
+fi
 
 echo "=== Celestia Light Node Configuration ==="
 echo "Network: ${CELESTIA_P2P_NETWORK}"
