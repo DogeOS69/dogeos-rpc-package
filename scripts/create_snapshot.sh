@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# Ensure script runs from the project root
+cd "$(dirname "$0")/.."
+
 # Configuration
 BUCKET="dogecoin-testnet-snapshots-usa-west-2"
 REGION="us-west-2"
@@ -109,7 +112,7 @@ update_latest_txt() {
     
     log_info "Uploading new latest.txt..."
     aws s3 cp "$temp_latest" "s3://$BUCKET/$PREFIX/latest.txt" --region "$REGION"
-    #rm "$temp_latest"
+    rm -f "$temp_latest"
     log_info "latest.txt updated."
 }
 
@@ -153,7 +156,8 @@ snapshot_dogecoin() {
     # Create snapshot using pipe to show progress and handle permissions
     # zstd --progress shows processed data size
     # Running zstd as current user ensures output file is owned by user
-    sudo tar -c -C "$MOUNTPOINT/testnet3" blocks chainstate | zstd -T0 --progress > "$SNAPSHOT_FILE"
+    # --numeric-owner strictly preserves the container's native numeric UIDs, ignoring host usernames.
+    sudo tar -c --numeric-owner -C "$MOUNTPOINT/testnet3" blocks chainstate | zstd -T0 --progress > "$SNAPSHOT_FILE"
     
     log_info "Starting $SERVICE_NAME..."
     docker compose start "$SERVICE_NAME"
@@ -168,7 +172,7 @@ snapshot_dogecoin() {
     upload_file "$SNAPSHOT_FILE.sha256"
     
     # Cleanup
-    #rm "$SNAPSHOT_FILE"
+    rm -f "$SNAPSHOT_FILE" "$SNAPSHOT_FILE.sha256"
 }
 
 snapshot_l1() {
@@ -192,7 +196,8 @@ snapshot_l1() {
     
     log_info "Creating archive $SNAPSHOT_FILE..."
     
-    sudo tar -c -C "$MOUNTPOINT" . | zstd -T0 --progress > "$SNAPSHOT_FILE"
+    # --numeric-owner strictly preserves the container's native numeric UIDs, ignoring host usernames.
+    sudo tar -c --numeric-owner -C "$MOUNTPOINT" . | zstd -T0 --progress > "$SNAPSHOT_FILE"
     
     log_info "Starting $SERVICE_NAME..."
     docker compose start "$SERVICE_NAME"
@@ -206,7 +211,8 @@ snapshot_l1() {
     upload_file "$SNAPSHOT_FILE"
     upload_file "$SNAPSHOT_FILE.sha256"
     
-    #rm "$SNAPSHOT_FILE"
+    # Cleanup
+    rm -f "$SNAPSHOT_FILE" "$SNAPSHOT_FILE.sha256"
 }
 
 # Main execution

@@ -25,6 +25,11 @@ DOGE_URL=$(curl -s https://dogecoin-testnet-snapshots-usa-west-2.s3.us-west-2.am
 
 # Download
 wget $DOGE_URL -O dogecoin-snapshot.tar.zst
+
+# Verify Checksum
+wget ${DOGE_URL}.sha256 -O dogecoin-snapshot.tar.zst.sha256
+EXPECTED_HASH=$(awk '{print $1}' dogecoin-snapshot.tar.zst.sha256)
+echo "$EXPECTED_HASH  dogecoin-snapshot.tar.zst" | sha256sum -c
 ```
 
 ## Step 2: Locate Volume
@@ -48,7 +53,7 @@ sudo rm -rf <MOUNTPOINT>/testnet3/blocks
 sudo rm -rf <MOUNTPOINT>/testnet3/chainstate
 
 # Extract
-sudo tar -I zstd -xvf dogecoin-snapshot.tar.zst -C <MOUNTPOINT>/testnet3
+sudo tar -I zstd --numeric-owner -xvf dogecoin-snapshot.tar.zst -C <MOUNTPOINT>/testnet3
 ```
 
 **3. Restart:**
@@ -71,6 +76,11 @@ L1_URL=$(curl -s https://dogecoin-testnet-snapshots-usa-west-2.s3.us-west-2.amaz
 
 # Download
 wget $L1_URL -O l1-interface-snapshot.tar.zst
+
+# Verify Checksum
+wget ${L1_URL}.sha256 -O l1-interface-snapshot.tar.zst.sha256
+EXPECTED_HASH=$(awk '{print $1}' l1-interface-snapshot.tar.zst.sha256)
+echo "$EXPECTED_HASH  l1-interface-snapshot.tar.zst" | sha256sum -c
 ```
 
 ## Step 2: Locate Volume
@@ -92,7 +102,7 @@ docker compose down l1-interface
 sudo rm -rf <MOUNTPOINT>/*
 
 # Extract
-sudo tar -I zstd -xvf l1-interface-snapshot.tar.zst -C <MOUNTPOINT>
+sudo tar -I zstd --numeric-owner -xvf l1-interface-snapshot.tar.zst -C <MOUNTPOINT>
 ```
 
 **3. Restart:**
