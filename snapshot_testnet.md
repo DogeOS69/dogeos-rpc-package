@@ -8,7 +8,7 @@ This guide describes how to download and restore snapshots for the **Dogecoin No
 - Ensure `wget` and `tar` (with `zstd` support) are installed.
 - Ensure you have the `latest.txt` URL:
   ```
-  https://dogecoin-testnet-snapshots-usa-west-2.s3.us-west-2.amazonaws.com/testnet/latest.txt
+  https://dogeos-rpc-snapshots.s3.us-west-2.amazonaws.com/testnet/latest.txt
   ```
 
 ---
@@ -21,7 +21,7 @@ Get the latest Dogecoin snapshot URL and download it.
 
 ```bash
 # Get URL
-DOGE_URL=$(curl -s https://dogecoin-testnet-snapshots-usa-west-2.s3.us-west-2.amazonaws.com/testnet/latest.txt | grep "^dogecoin|" | cut -d'|' -f2)
+DOGE_URL=$(curl -s https://dogeos-rpc-snapshots.s3.us-west-2.amazonaws.com/testnet/latest.txt | grep "^dogecoin|" | cut -d'|' -f2)
 
 # Download
 wget $DOGE_URL -O dogecoin-snapshot.tar.zst
@@ -72,7 +72,7 @@ Get the latest L1 Interface snapshot URL and download it.
 
 ```bash
 # Get URL
-L1_URL=$(curl -s https://dogecoin-testnet-snapshots-usa-west-2.s3.us-west-2.amazonaws.com/testnet/latest.txt | grep "^l1-interface|" | cut -d'|' -f2)
+L1_URL=$(curl -s https://dogeos-rpc-snapshots.s3.us-west-2.amazonaws.com/testnet/latest.txt | grep "^l1-interface|" | cut -d'|' -f2)
 
 # Download
 wget $L1_URL -O l1-interface-snapshot.tar.zst

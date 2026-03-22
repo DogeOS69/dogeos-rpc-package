@@ -5,8 +5,8 @@ set -e
 cd "$(dirname "$0")/.."
 
 # Configuration
-BUCKET="dogecoin-testnet-snapshots-usa-west-2"
-REGION="us-west-2"
+BUCKET="${SNAPSHOT_BUCKET:-dogeos-rpc-snapshots}"
+REGION="${SNAPSHOT_REGION:-us-west-2}"
 # Load .env if it exists
 if [ -f .env ]; then
     source .env
