@@ -8,7 +8,7 @@ This guide describes how to download and restore snapshots for the **Dogecoin No
 - Ensure `wget` and `tar` (with `zstd` support) are installed.
 - Ensure you have the `latest.txt` URL:
   ```
-  https://dogecoin-testnet-snapshots-usa-west-2.s3.us-west-2.amazonaws.com/testnet/latest.txt
+  https://dogeos-rpc-snapshots.s3.us-west-2.amazonaws.com/testnet/latest.txt
   ```
 
 ---
@@ -21,10 +21,15 @@ Get the latest Dogecoin snapshot URL and download it.
 
 ```bash
 # Get URL
-DOGE_URL=$(curl -s https://dogecoin-testnet-snapshots-usa-west-2.s3.us-west-2.amazonaws.com/testnet/latest.txt | grep "^dogecoin|" | cut -d'|' -f2)
+DOGE_URL=$(curl -s https://dogeos-rpc-snapshots.s3.us-west-2.amazonaws.com/testnet/latest.txt | grep "^dogecoin|" | cut -d'|' -f2)
 
 # Download
 wget $DOGE_URL -O dogecoin-snapshot.tar.zst
+
+# Verify Checksum
+wget ${DOGE_URL}.sha256 -O dogecoin-snapshot.tar.zst.sha256
+EXPECTED_HASH=$(awk '{print $1}' dogecoin-snapshot.tar.zst.sha256)
+echo "$EXPECTED_HASH  dogecoin-snapshot.tar.zst" | sha256sum -c
 ```
 
 ## Step 2: Locate Volume
@@ -48,7 +53,7 @@ sudo rm -rf <MOUNTPOINT>/testnet3/blocks
 sudo rm -rf <MOUNTPOINT>/testnet3/chainstate
 
 # Extract
-sudo tar -I zstd -xvf dogecoin-snapshot.tar.zst -C <MOUNTPOINT>/testnet3
+sudo tar -I zstd --numeric-owner -xvf dogecoin-snapshot.tar.zst -C <MOUNTPOINT>/testnet3
 ```
 
 **3. Restart:**
@@ -67,10 +72,15 @@ Get the latest L1 Interface snapshot URL and download it.
 
 ```bash
 # Get URL
-L1_URL=$(curl -s https://dogecoin-testnet-snapshots-usa-west-2.s3.us-west-2.amazonaws.com/testnet/latest.txt | grep "^l1-interface|" | cut -d'|' -f2)
+L1_URL=$(curl -s https://dogeos-rpc-snapshots.s3.us-west-2.amazonaws.com/testnet/latest.txt | grep "^l1-interface|" | cut -d'|' -f2)
 
 # Download
 wget $L1_URL -O l1-interface-snapshot.tar.zst
+
+# Verify Checksum
+wget ${L1_URL}.sha256 -O l1-interface-snapshot.tar.zst.sha256
+EXPECTED_HASH=$(awk '{print $1}' l1-interface-snapshot.tar.zst.sha256)
+echo "$EXPECTED_HASH  l1-interface-snapshot.tar.zst" | sha256sum -c
 ```
 
 ## Step 2: Locate Volume
@@ -92,7 +102,7 @@ docker compose down l1-interface
 sudo rm -rf <MOUNTPOINT>/*
 
 # Extract
-sudo tar -I zstd -xvf l1-interface-snapshot.tar.zst -C <MOUNTPOINT>
+sudo tar -I zstd --numeric-owner -xvf l1-interface-snapshot.tar.zst -C <MOUNTPOINT>
 ```
 
 **3. Restart:**
