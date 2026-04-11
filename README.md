@@ -41,6 +41,42 @@ The project follows a modular configuration approach with support for multiple n
     └── l2reth_entrypoint.sh    # L2Reth entrypoint
 ```
 
+## Hardware Requirements
+
+### Minimum Specifications (Testnet)
+
+| Resource | Minimum | Recommended |
+|----------|---------|-------------|
+| RAM | 32 GB | 64 GB |
+| CPU | 4 cores | 8 cores |
+| Disk | 300 GB SSD | 500 GB NVMe SSD |
+
+### Memory Limits
+
+Each service has a default memory limit configured in `docker-compose.yml`. The defaults are tuned for a **64 GB** host:
+
+| Service | Default Limit | Notes |
+|---------|--------------|-------|
+| dogecoin-node | 20 GB | Largest consumer; RSS grows over time |
+| l2geth-node | 8 GB | RSS grows with RPC traffic |
+| l2reth-node | 8 GB | RSS grows with RPC traffic |
+| celestia-light-node | 6 GB | RSS is small but can spike during sync |
+| l1-interface | 2 GB | Lightweight; higher usage during startup |
+
+> [!NOTE]
+> Only one of l2geth or l2reth runs at a time, so the actual total is **~36 GB** (not 44 GB).
+
+To override any limit, set the corresponding environment variable in your `.env` file:
+
+```bash
+# Example: reduce dogecoin limit for a 32 GB host
+DOGECOIN_MEM_LIMIT=16g
+```
+
+Available variables: `DOGECOIN_MEM_LIMIT`, `L2GETH_MEM_LIMIT`, `L2RETH_MEM_LIMIT`, `CELESTIA_MEM_LIMIT`, `L1_INTERFACE_MEM_LIMIT`.
+
+Swap is disabled for all containers (`memswap_limit` == `mem_limit`), so containers will be OOM-killed rather than swapping to disk. This provides more predictable performance.
+
 ## Quick Start
 
 ### 1. Configure Environment
