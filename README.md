@@ -70,7 +70,7 @@ To override any limit, set the corresponding environment variable in your `.env`
 
 ```bash
 # Example: reduce dogecoin limit for a 32 GB host
-DOGECOIN_MEM_LIMIT=16g
+DOGECOIN_MEM_LIMIT=20g
 ```
 
 Available variables: `DOGECOIN_MEM_LIMIT`, `L2GETH_MEM_LIMIT`, `L2RETH_MEM_LIMIT`, `CELESTIA_MEM_LIMIT`, `L1_INTERFACE_MEM_LIMIT`.
