@@ -37,6 +37,7 @@ The project follows a modular configuration approach with support for multiple n
 ├── README.md
 └── scripts                     # Utility scripts
     ├── celestia-entrypoint.sh
+    ├── l1-interface-entrypoint.sh  # L1 Interface entrypoint (auto-downloads DB)
     ├── l2geth_entrypoint.sh    # L2Geth entrypoint
     └── l2reth_entrypoint.sh    # L2Reth entrypoint
 ```
@@ -97,10 +98,24 @@ Start the services using Docker Compose:
 docker compose up -d
 ```
 
-### 3. Restore from Snapshot (Optional)
+### 3. L1 Interface Database
 
-If you want to speed up the synchronization process, you can restore data from a snapshot.
+The L1 Interface needs a pre-synced SQLite database. On first start, the entrypoint can auto-download it if you set a snapshot URL in your `.env`:
 
+```bash
+# Direct URL to a snapshot file (.sqlite.gz, .tar.zst, or .sqlite)
+L1_INTERFACE_SNAPSHOT_URL=https://your-bucket.s3.amazonaws.com/l1-interface-snapshot.sqlite.gz
+```
+
+If the database already exists in the volume, the download is skipped. To force a re-download, remove the volume first:
+
+```bash
+docker compose down
+docker volume rm dogeos-rpc-package_l1_interface_data
+docker compose up -d
+```
+
+For manual snapshot restoration, see:
 - [Dogecoin Testnet Snapshot Guide](snapshot_testnet.md)
 - [Dogecoin Mainnet Snapshot Guide](snapshot_mainnet.md)
 
