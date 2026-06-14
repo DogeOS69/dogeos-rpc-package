@@ -11,13 +11,17 @@ services:
       - ./configs/${NETWORK}/dogecoin.conf:/home/dogecoin/.dogecoin/dogecoin.conf
       - dogecoin_data:/data
     ports:
-      - "${DOGECOIN_P2P_PORT}:${DOGECOIN_P2P_PORT}"
-      - "${DOGECOIN_RPC_PORT}:${DOGECOIN_RPC_PORT}"
-    command: ["/dogecoin/bin/dogecoind", "-conf=/home/dogecoin/.dogecoin/dogecoin.conf", "-datadir=/data", "-printtoconsole"]
-
+      - ${DOGECOIN_P2P_PORT}:${DOGECOIN_P2P_PORT}
+      - ${DOGECOIN_RPC_PORT}:${DOGECOIN_RPC_PORT}
+    command:
+      - /dogecoin/bin/dogecoind
+      - "-conf=/home/dogecoin/.dogecoin/dogecoin.conf"
+      - "-datadir=/data"
+      - "-printtoconsole"
   l2geth-node:
-    image: scrolltech/l2geth:scroll-v5.9.6
-    profiles: ["l2geth"]
+    image: scrolltech/l2geth:scroll-v5.10.2
+    profiles:
+      - l2geth
     container_name: l2geth-node
     restart: unless-stopped
     mem_reservation: 1g
@@ -25,7 +29,6 @@ services:
     memswap_limit: ${L2GETH_MEM_LIMIT:-8g}
     oom_score_adj: -100
     env_file:
-      - ./envs/common/l2geth.env
       - ./envs/${NETWORK}/l2geth.env
     volumes:
       - ./configs/${NETWORK}/l2geth-genesis.json:/l2geth/genesis/genesis.json
@@ -34,15 +37,20 @@ services:
     ports:
       - "8545:8545"
       - "8546:8546"
-      - "30303:30303/tcp"
-      - "30303:30303/udp"
+      - 30303:30303/tcp
+      - 30303:30303/udp
     depends_on:
-      - l1-interface
-    entrypoint: ["/bin/sh", "/entrypoint.sh"]
-
+      l1-interface:
+        condition: service_started
+      l2-rpc-init-wait-for-l1:
+        condition: service_completed_successfully
+    entrypoint:
+      - /bin/sh
+      - /entrypoint.sh
   l2reth-node:
     image: scrolltech/rollup-node:v0.0.1-rc63
-    profiles: ["l2reth"]
+    profiles:
+      - l2reth
     container_name: l2reth-node
     restart: unless-stopped
     mem_reservation: 1g
@@ -58,32 +66,18 @@ services:
     ports:
       - "8545:8545"
       - "8546:8546"
-      - "30303:30303/tcp"
-      - "30303:30303/udp"
+      - 30303:30303/tcp
+      - 30303:30303/udp
     depends_on:
-      - l1-interface
-    entrypoint: ["/bin/sh", "/entrypoint.sh"]
-
-  celestia-light-node:
-    image: ghcr.io/celestiaorg/celestia-node:v0.30.2-mocha
-    container_name: celestia-light-node
-    restart: unless-stopped
-    mem_reservation: 512m
-    mem_limit: ${CELESTIA_MEM_LIMIT:-6g}
-    memswap_limit: ${CELESTIA_MEM_LIMIT:-6g}
-    oom_score_adj: -100
-    env_file:
-      - ./envs/${NETWORK}/celestia.env
-    volumes:
-      - ./scripts/celestia-entrypoint.sh:/entrypoint.sh
-      - ./configs/${NETWORK}/celestia/config.toml:/etc/celestia/config.toml
-      - celestia_data:/home/celestia
-    ports:
-      - "26658:26658"
-      - "26659:26659"
-    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+      l1-interface:
+        condition: service_started
+      l2-rpc-init-wait-for-l1:
+        condition: service_completed_successfully
+    entrypoint:
+      - /bin/sh
+      - /entrypoint.sh
   l1-interface:
-    image: dogeos69/l1-interface:0.2.0-rc.7
+    image: dogeos69/l1-interface:dev-PR562
     container_name: l1-interface
     restart: unless-stopped
     mem_reservation: 512m
@@ -91,23 +85,119 @@ services:
     memswap_limit: ${L1_INTERFACE_MEM_LIMIT:-2g}
     oom_score_adj: -100
     env_file:
-      - ./envs/common/l1-interface.env
       - ./envs/${NETWORK}/l1-interface.env
+      - path: ./envs/${NETWORK}/l1-interface.local.env
+        required: false
     volumes:
       - ./configs/${NETWORK}/l2geth-genesis.json:/app/genesis/genesis.json:ro
+      - ./configs/${NETWORK}/protocol_context.json:/app/protocol_context.json:ro
       - l1_interface_data:/data
     ports:
       - "8547:8545"
       - "5052:5052"
       - "9090:9090"
     depends_on:
-      - dogecoin-node
-      - celestia-light-node
+      dogecoin-node:
+        condition: service_started
+      l1-interface-init-fetch-sqlite:
+        condition: service_completed_successfully
+  l1-interface-init-fetch-sqlite:
+    container_name: l1-interface-init-fetch-sqlite
+    image: curlimages/curl:8.20.0
+    restart: "no"
+    environment:
+      ARTIFACT_URL: https://dogeos-eth-da-archive-testnet.s3.us-west-2.amazonaws.com/rehearsal/history/l1-interface-historical-artifact-bc627e39a36c52ca4ac8151a2502a77b3057416eb81dec418538ea48ac68313c.sqlite
+      REPLAY_DB_URL: https://dogeos-eth-da-archive-testnet.s3.us-west-2.amazonaws.com/rehearsal/history/replay-4073a3b58da6ec6e7da651f2bb8752164501a0783f4c076b9ea2af4e847d8d77.sqlite
+      DOGEOS_L1_INTERFACE_EVENT_PLANE_ARTIFACT_PATH: /data/l1-interface-historical-artifact.sqlite
+      DOGEOS_L1_INTERFACE_REPLAY_READ__SQLITE_PATH: /data/replay.sqlite
+    user: "0:0"
+    volumes:
+      - l1_interface_data:/data
+    entrypoint:
+      - /bin/sh
+      - "-c"
+    command:
+      - |
+        set -eu
 
+        checksum_from_url() {
+          url_no_query=$${1%%\?*}
+          url_no_fragment=$${url_no_query%%#*}
+          filename=$${url_no_fragment##*/}
+          stem=$${filename%.*}
+          checksum=$${stem##*-}
+
+          if ! printf '%s' "$$checksum" | grep -Eq '^[0-9a-fA-F]{64}$$'; then
+            echo "URL basename must end with -<sha256> before the extension: $$filename" >&2
+            exit 1
+          fi
+
+          printf '%s' "$$checksum"
+        }
+
+        # --- Task 1: Artifact Download ---
+        DEST_PATH="$$DOGEOS_L1_INTERFACE_EVENT_PLANE_ARTIFACT_PATH"
+        DEST_DIR=$$(dirname "$$DEST_PATH")
+        ARTIFACT_SHA256=$$(checksum_from_url "$$ARTIFACT_URL")
+        mkdir -p "$$DEST_DIR"
+
+        if [ -f "$$DEST_PATH" ] && echo "$$ARTIFACT_SHA256  $$DEST_PATH" | sha256sum -c - >/dev/null 2>&1; then
+          echo "Artifact cached and verified."
+        else
+          echo "Downloading artifact..."
+          curl -fSL --retry 5 --retry-delay 5 -o "$$DEST_PATH.tmp" "$$ARTIFACT_URL"
+          echo "$$ARTIFACT_SHA256  $$DEST_PATH.tmp" | sha256sum -c -
+          mv "$$DEST_PATH.tmp" "$$DEST_PATH"
+        fi
+        chmod 444 "$$DEST_PATH"
+
+        # --- Task 2: Replay DB Download ---
+        REPLAY_PATH="$$DOGEOS_L1_INTERFACE_REPLAY_READ__SQLITE_PATH"
+        REPLAY_DIR=$$(dirname "$$REPLAY_PATH")
+        REPLAY_DB_SHA256=$$(checksum_from_url "$$REPLAY_DB_URL")
+        mkdir -p "$$REPLAY_DIR"
+
+        if [ -f "$$REPLAY_PATH" ]; then
+          echo "Replay DB exists; not overwriting mutable replay DB."
+        else
+          echo "Downloading bootstrap Replay DB..."
+          curl -fSL --retry 5 --retry-delay 5 -o "$$REPLAY_PATH.tmp" "$$REPLAY_DB_URL"
+          echo "$$REPLAY_DB_SHA256  $$REPLAY_PATH.tmp" | sha256sum -c -
+          echo "{\"source_url\":\"$$REPLAY_DB_URL\",\"source_sha256\":\"$$REPLAY_DB_SHA256\"}" > "$$REPLAY_PATH.tmp.bootstrap-source.json"
+          mv "$$REPLAY_PATH.tmp" "$$REPLAY_PATH"
+          mv "$$REPLAY_PATH.tmp.bootstrap-source.json" "$$REPLAY_PATH.bootstrap-source.json"
+        fi
+
+        chmod 666 "$$REPLAY_PATH"
+        chmod 777 "$$REPLAY_DIR" || echo "WARN: could not chmod $$REPLAY_DIR; continuing because mounted PVC permissions are managed by Kubernetes/storage driver"
+  l2-rpc-init-wait-for-l1:
+    command:
+      - |-
+        set -eu
+        endpoint="$${L2GETH_L1_ENDPOINT:-http://l1-interface:8545}"
+        echo "Waiting for L1 interface at $$endpoint"
+        for i in $$(seq 1 120); do
+          if curl -fsS --max-time 2 -H "content-type: application/json" --data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' "$$endpoint" >/dev/null; then
+            echo "L1 interface is ready"
+            exit 0
+          fi
+          sleep 5
+        done
+        echo "Timed out waiting for L1 interface at $$endpoint" >&2
+        exit 1
+    container_name: l2-rpc-init-wait-for-l1
+    depends_on:
+      l1-interface:
+        condition: service_started
+    entrypoint:
+      - /bin/sh
+      - "-c"
+    env_file:
+      - ./envs/${NETWORK}/l2geth.env
+    image: curlimages/curl:8.20.0
+    restart: "no"
 volumes:
-  dogecoin_data:
-  l2geth_data:
-  l2reth_data:
-  celestia_data:
-  l1_interface_data:
-  
+  dogecoin_data: null
+  l2geth_data: null
+  l2reth_data: null
+  l1_interface_data: null

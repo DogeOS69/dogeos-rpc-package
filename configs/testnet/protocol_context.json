@@ -1,0 +1,36 @@
+{
+  "protocol": {
+    "protocol_version": 2,
+    "dogecoin_chain_id": 111111,
+    "l2_chain_id": 6281971,
+    "eth_chain_id": 32382
+  },
+  "genesis": {
+    "genesis_sequencer_outpoint": {
+      "txid": "0xb8805abaea71c7417638128e135ed505c3d599efd364cfd4ee63781352609003",
+      "vout": 0
+    },
+    "genesis_bridge_key_hash": "0xd401c2b95bc35c852b620f8c3cef41736f0735cb",
+    "initial_confirmed_block_number": 62692677,
+    "initial_confirmed_block_hash": "0x723b0f4b926df6e6eff0a25bd755e1360d9de9728bb557144b653d82e3029fc2",
+    "initial_ethereum_block_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "initial_tx_index": 0,
+    "initial_tx_blob_index": 0,
+    "genesis_batch_hash": "0x8c873ede475f2831e9d57b1f32641c4409a24311c4df6f1a3d7114eb9358b1de",
+    "genesis_state_root": "0x81c777d8b8d3f71224b8e8d6c38e84efa20ff55bcecfd7ff74a5ce108db5a4f2"
+  },
+  "protocol_config_seed": {
+    "protocol_config": {
+      "l2_chain_id": 6281971,
+      "eth_chain_id": 32382,
+      "key_rotation_min_grace_wf_txs": 100,
+      "min_deposit_sats": 100000,
+      "deposit_queue_transform": {
+        "l1_scroll_messenger_address": "0xbdcface31b496ed536c93483e3a4e7b4a2c19a55",
+        "l2_messenger_address": "0xe9c53ca91528246e4e29304058b9d78d7999c96a",
+        "moat_address": "0xb46985d56f57d138bfaa7acbae0de38dc3cfc00f",
+        "message_queue_gas_limit": 10000000
+      }
+    }
+  }
+}

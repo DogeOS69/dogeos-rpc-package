@@ -21,6 +21,8 @@
     "euclidTime": 0,
     "euclidV2Time": 0,
     "feynmanTime": 0,
+    "galileoTime": 1781339980,
+    "galileoV2Time": 1781339980,
     "clique": {
       "period": 3,
       "epoch": 30000,
@@ -29,7 +31,8 @@
     "systemContract": {
       "period": 3,
       "system_contract_address": "0x2000369731833cBf00e97146999442ADf10a4E59",
-      "system_contract_slot": "0x0000000000000000000000000000000000000000000000000000000000000067"
+      "system_contract_slot": "0x0000000000000000000000000000000000000000000000000000000000000067",
+      "relaxed_period": true
     },
     "scroll": {
       "useZktrie": false,
