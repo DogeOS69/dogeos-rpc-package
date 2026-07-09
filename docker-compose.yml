@@ -1,15 +1,14 @@
 services:
   dogecoin-node:
     image: dogeos69/dogecoin:1.14.9
-    container_name: dogecoin-node
     restart: unless-stopped
     mem_reservation: ${DOGECOIN_MEM_RESERVATION:-14g}
     mem_limit: ${DOGECOIN_MEM_LIMIT:-20g}
     memswap_limit: ${DOGECOIN_MEM_LIMIT:-20g}
     oom_score_adj: -100
     volumes:
-      - ./configs/${NETWORK}/dogecoin.conf:/home/dogecoin/.dogecoin/dogecoin.conf
-      - dogecoin_data:/data
+      - ./configs/${NETWORK}/dogecoin.conf:/home/dogecoin/.dogecoin/dogecoin.conf:ro
+      - ${DATA_ROOT:?DATA_ROOT must be set}/dogecoin:/data
     ports:
       - ${DOGECOIN_P2P_PORT}:${DOGECOIN_P2P_PORT}
       - ${DOGECOIN_RPC_PORT}:${DOGECOIN_RPC_PORT}
@@ -18,40 +17,8 @@ services:
       - "-conf=/home/dogecoin/.dogecoin/dogecoin.conf"
       - "-datadir=/data"
       - "-printtoconsole"
-  l2geth-node:
-    image: scrolltech/l2geth:scroll-v5.10.2
-    profiles:
-      - l2geth
-    container_name: l2geth-node
-    restart: unless-stopped
-    mem_reservation: 1g
-    mem_limit: ${L2GETH_MEM_LIMIT:-8g}
-    memswap_limit: ${L2GETH_MEM_LIMIT:-8g}
-    oom_score_adj: -100
-    env_file:
-      - ./envs/${NETWORK}/l2geth.env
-    volumes:
-      - ./configs/${NETWORK}/l2geth-genesis.json:/l2geth/genesis/genesis.json
-      - ./scripts/l2geth_entrypoint.sh:/entrypoint.sh
-      - l2geth_data:/l2geth/data
-    ports:
-      - "8545:8545"
-      - "8546:8546"
-      - 30303:30303/tcp
-      - 30303:30303/udp
-    depends_on:
-      l1-interface:
-        condition: service_started
-      l2-rpc-init-wait-for-l1:
-        condition: service_completed_successfully
-    entrypoint:
-      - /bin/sh
-      - /entrypoint.sh
   l2reth-node:
     image: scrolltech/rollup-node:v0.0.1-rc63
-    profiles:
-      - l2reth
-    container_name: l2reth-node
     restart: unless-stopped
     mem_reservation: 1g
     mem_limit: ${L2RETH_MEM_LIMIT:-8g}
@@ -60,14 +27,14 @@ services:
     env_file:
       - ./envs/${NETWORK}/l2reth.env
     volumes:
-      - ./configs/${NETWORK}/l2reth-genesis.json:/l2reth/genesis/genesis.json
-      - ./scripts/l2reth_entrypoint.sh:/entrypoint.sh
-      - l2reth_data:/l2reth
+      - ./configs/${NETWORK}/l2reth-genesis.json:/l2reth/genesis/genesis.json:ro
+      - ./scripts/l2reth_entrypoint.sh:/entrypoint.sh:ro
+      - ${DATA_ROOT:?DATA_ROOT must be set}/l2reth:/l2reth
     ports:
-      - "8545:8545"
-      - "8546:8546"
-      - 30303:30303/tcp
-      - 30303:30303/udp
+      - ${L2_HTTP_PORT:-8545}:8545
+      - ${L2_WS_PORT:-8546}:8546
+      - ${L2_P2P_PORT:-30303}:30303/tcp
+      - ${L2_P2P_PORT:-30303}:30303/udp
     depends_on:
       l1-interface:
         condition: service_started
@@ -77,8 +44,7 @@ services:
       - /bin/sh
       - /entrypoint.sh
   l1-interface:
-    image: dogeos69/l1-interface:dev-PR562
-    container_name: l1-interface
+    image: dogeos69/l1-interface:dev-20260707-043e7f3
     restart: unless-stopped
     mem_reservation: 512m
     mem_limit: ${L1_INTERFACE_MEM_LIMIT:-2g}
@@ -89,9 +55,9 @@ services:
       - path: ./envs/${NETWORK}/l1-interface.local.env
         required: false
     volumes:
-      - ./configs/${NETWORK}/l2geth-genesis.json:/app/genesis/genesis.json:ro
+      - ./configs/${NETWORK}/l2reth-genesis.json:/app/genesis/genesis.json:ro
       - ./configs/${NETWORK}/protocol_context.json:/app/protocol_context.json:ro
-      - l1_interface_data:/data
+      - ${DATA_ROOT:?DATA_ROOT must be set}/l1-interface:/data
     ports:
       - "8547:8545"
       - "5052:5052"
@@ -102,17 +68,16 @@ services:
       l1-interface-init-fetch-sqlite:
         condition: service_completed_successfully
   l1-interface-init-fetch-sqlite:
-    container_name: l1-interface-init-fetch-sqlite
     image: curlimages/curl:8.20.0
     restart: "no"
     environment:
-      ARTIFACT_URL: https://dogeos-eth-da-archive-testnet.s3.us-west-2.amazonaws.com/rehearsal/history/l1-interface-historical-artifact-bc627e39a36c52ca4ac8151a2502a77b3057416eb81dec418538ea48ac68313c.sqlite
-      REPLAY_DB_URL: https://dogeos-eth-da-archive-testnet.s3.us-west-2.amazonaws.com/rehearsal/history/replay-4073a3b58da6ec6e7da651f2bb8752164501a0783f4c076b9ea2af4e847d8d77.sqlite
+      ARTIFACT_URL: https://dogeos-eth-da-archive-testnet.s3.us-west-2.amazonaws.com/rehearsal/history/l1-interface-historical-artifact-8dae5f190a4152454a350c5b8e5bec87411ea60567a2b061317f69687cb4f28d.sqlite
+      REPLAY_DB_URL: https://dogeos-eth-da-archive-testnet.s3.us-west-2.amazonaws.com/rehearsal/history/replay-d16fb4508e6dd207c2f334f68789d3003956f795701b801a3aa2da497d272b6a.sqlite
       DOGEOS_L1_INTERFACE_EVENT_PLANE_ARTIFACT_PATH: /data/l1-interface-historical-artifact.sqlite
       DOGEOS_L1_INTERFACE_REPLAY_READ__SQLITE_PATH: /data/replay.sqlite
     user: "0:0"
     volumes:
-      - l1_interface_data:/data
+      - ${DATA_ROOT:?DATA_ROOT must be set}/l1-interface:/data
     entrypoint:
       - /bin/sh
       - "-c"
@@ -174,7 +139,7 @@ services:
     command:
       - |-
         set -eu
-        endpoint="$${L2GETH_L1_ENDPOINT:-http://l1-interface:8545}"
+        endpoint="$${L2RETH_L1_ENDPOINT:-http://l1-interface:8545}"
         echo "Waiting for L1 interface at $$endpoint"
         for i in $$(seq 1 120); do
           if curl -fsS --max-time 2 -H "content-type: application/json" --data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' "$$endpoint" >/dev/null; then
@@ -185,7 +150,6 @@ services:
         done
         echo "Timed out waiting for L1 interface at $$endpoint" >&2
         exit 1
-    container_name: l2-rpc-init-wait-for-l1
     depends_on:
       l1-interface:
         condition: service_started
@@ -193,11 +157,6 @@ services:
       - /bin/sh
       - "-c"
     env_file:
-      - ./envs/${NETWORK}/l2geth.env
+      - ./envs/${NETWORK}/l2reth.env
     image: curlimages/curl:8.20.0
     restart: "no"
-volumes:
-  dogecoin_data: null
-  l2geth_data: null
-  l2reth_data: null
-  l1_interface_data: null

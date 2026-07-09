@@ -5,14 +5,18 @@ export RUST_LOG=sqlx=off,scroll=trace,reth=trace,rollup=trace,info
 
 #Available API
 #admin,debug,eth,net,trace,txpool,web3,rpc,reth,ots,flashbots,miner,mev
-# Parse L2GETH_PEER_LIST
+# Parse L2RETH_PEER_LIST.
+PEER_LIST="${L2RETH_PEER_LIST:-}"
 PEER_FLAGS=""
-if [ -n "$L2GETH_PEER_LIST" ]; then
-    CLEAN_LIST=$(echo "$L2GETH_PEER_LIST" | sed 's/[][]//g' | sed 's/"//g')
+if [ -n "$PEER_LIST" ]; then
+    CLEAN_LIST=$(echo "$PEER_LIST" | sed 's/[][]//g' | sed 's/"//g')
     for peer in $(echo "$CLEAN_LIST" | tr ',' ' '); do
         PEER_FLAGS="$PEER_FLAGS --trusted-peers=$peer"
     done
 fi
+
+L1_ENDPOINT="${L2RETH_L1_ENDPOINT:-http://l1-interface:8545}"
+DA_BLOB_BEACON_NODE="${L2RETH_DA_BLOB_BEACON_NODE:-http://l1-interface:5052}"
 
 exec rollup-node node --chain /l2reth/genesis/genesis.json --datadir=/l2reth --metrics=0.0.0.0:6060 --network.scroll-wire=true --network.bridge=true  \
   --http --http.addr=0.0.0.0 --http.port=8545 --http.corsdomain "*" --http.api eth,net,web3,debug,trace \
@@ -23,6 +27,6 @@ exec rollup-node node --chain /l2reth/genesis/genesis.json --datadir=/l2reth --m
   --rpc.max-connections=5000 \
   $PEER_FLAGS \
   --engine.sync-at-startup false \
-  --l1.url "http://l1-interface:8545" \
-  --blob.beacon_node_urls="http://l1-interface:5052" \
+  --l1.url "$L1_ENDPOINT" \
+  --blob.beacon_node_urls="$DA_BLOB_BEACON_NODE" \
   --network.valid_signer="$L2RETH_VALID_SIGNER"

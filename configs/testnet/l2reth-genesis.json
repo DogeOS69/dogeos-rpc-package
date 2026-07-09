@@ -21,8 +21,9 @@
     "euclidTime": 0,
     "euclidV2Time": 0,
     "feynmanTime": 0,
-    "galileoTime": 1781339980,
-    "galileoV2Time": 1781339980,
+    "galileoTime": 1780654404,
+    "galileoV2Time": 1780654404,
+    "tsukiTime": 1783560682,
     "clique": {
       "period": 3,
       "epoch": 30000,
@@ -39,16 +40,17 @@
       "maxTxPerBlock": 100,
       "maxTxPayloadBytesPerBlock": 122880,
       "feeVaultAddress": "0x5300000000000000000000000000000000000005",
+      "l1DataFeeBufferCheck": false,
       "l1Config": {
         "l1ChainId": "111111",
         "l1MessageQueueAddress": "0x3396BeD5adB7d83CC6C424264d229478556d3C02",
         "l1MessageQueueV2Address": "0x6B72155A3aC485Ea8C4CCacF243F6e634D4869bD",
         "l1MessageQueueV2DeploymentBlock": 0,
         "scrollChainAddress": "0x8cB645a973e0C595aaAb55361fe917915b4E656c",
+        "systemContractAddress": "0x2000369731833cBf00e97146999442ADf10a4E59",
         "l2SystemConfigAddress": "0x2669B071E88e272CBDA1e12182D8C754CB737400",
         "numL1MessagesPerBlock": "10",
-        "startL1Block": "62692670",
-        "systemContractAddress": "0x2000369731833cBf00e97146999442ADf10a4E59"
+        "startL1Block": "62930366"
       },
       "genesisStateRoot": null,
       "missingHeaderFieldsSHA256": null

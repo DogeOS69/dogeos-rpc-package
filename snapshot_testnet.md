@@ -5,6 +5,7 @@ This guide describes how to download and restore snapshots for the **Dogecoin No
 ## Prerequisites
 
 - Ensure `dogeos-rpc-package` is set up.
+- Copy `.env.example.testnet` to `.env.testnet`, set `DATA_ROOT`, and run `./scripts/prepare-data-dir.sh .env.testnet`.
 - Ensure `wget` and `tar` (with `zstd` support) are installed.
 - Ensure you have the `latest.txt` URL:
   ```
@@ -27,33 +28,33 @@ DOGE_URL=$(curl -s https://dogecoin-testnet-snapshots-usa-west-2.s3.us-west-2.am
 wget $DOGE_URL -O dogecoin-snapshot.tar.zst
 ```
 
-## Step 2: Locate Volume
-Find the host path for `dogecoin_data`:
+## Step 2: Locate Data Directory
+Use the Dogecoin data directory under `DATA_ROOT`:
+
 ```bash
-docker volume inspect dogeos-rpc-package_dogecoin_data --format '{{.Mountpoint}}'
-# Example: /var/lib/docker/volumes/dogeos-rpc-package_dogecoin_data/_data
+# Example if DATA_ROOT=/mnt/wsl/data/dogeos-data/testnet
+DOGECOIN_DATA=/mnt/wsl/data/dogeos-data/testnet/dogecoin
 ```
 
 ## Step 3: Restore
 **1. Stop services:**
 ```bash
-docker compose down
+docker compose --env-file .env.testnet down
 ```
 
 **2. Clean and Extract:**
 ```bash
-# Replace <MOUNTPOINT> with the path found in Step 2
-sudo mkdir -p <MOUNTPOINT>/testnet3
-sudo rm -rf <MOUNTPOINT>/testnet3/blocks 
-sudo rm -rf <MOUNTPOINT>/testnet3/chainstate
+sudo mkdir -p "$DOGECOIN_DATA/testnet3"
+sudo rm -rf "$DOGECOIN_DATA/testnet3/blocks"
+sudo rm -rf "$DOGECOIN_DATA/testnet3/chainstate"
 
 # Extract
-sudo tar -I zstd -xvf dogecoin-snapshot.tar.zst -C <MOUNTPOINT>/testnet3
+sudo tar -I zstd -xvf dogecoin-snapshot.tar.zst -C "$DOGECOIN_DATA/testnet3"
 ```
 
 **3. Restart:**
 ```bash
-docker compose up -d dogecoin-node
+docker compose --env-file .env.testnet up -d dogecoin-node
 ```
 
 
@@ -73,29 +74,29 @@ L1_URL=$(curl -s https://dogecoin-testnet-snapshots-usa-west-2.s3.us-west-2.amaz
 wget $L1_URL -O l1-interface-snapshot.tar.zst
 ```
 
-## Step 2: Locate Volume
-Find the host path for `l1_interface_data`:
+## Step 2: Locate Data Directory
+Use the L1 Interface data directory under `DATA_ROOT`:
+
 ```bash
-docker volume inspect dogeos-rpc-package_l1_interface_data --format '{{.Mountpoint}}'
-# Example: /var/lib/docker/volumes/dogeos-rpc-package_l1_interface_data/_data
+# Example if DATA_ROOT=/mnt/wsl/data/dogeos-data/testnet
+L1_INTERFACE_DATA=/mnt/wsl/data/dogeos-data/testnet/l1-interface
 ```
 
 ## Step 3: Restore
 **1. Stop services:**
 ```bash
-docker compose down l1-interface
+docker compose --env-file .env.testnet down
 ```
 
 **2. Clean and Extract:**
 ```bash
-# Replace <MOUNTPOINT> with the path found in Step 2
-sudo rm -rf <MOUNTPOINT>/*
+sudo rm -rf "$L1_INTERFACE_DATA"/*
 
 # Extract
-sudo tar -I zstd -xvf l1-interface-snapshot.tar.zst -C <MOUNTPOINT>
+sudo tar -I zstd -xvf l1-interface-snapshot.tar.zst -C "$L1_INTERFACE_DATA"
 ```
 
 **3. Restart:**
 ```bash
-docker compose up -d
+docker compose --env-file .env.testnet up -d
 ```
