@@ -147,7 +147,6 @@ docker compose --env-file .env.testnet ps
 
 - **Dogecoin RPC**: `http://localhost:22555` (mainnet) or `http://localhost:44555` (testnet)
 - **L1 Interface RPC**: `http://localhost:8547` (L1 Ethereum client for L2Reth)
-- **L1 Interface Beacon API**: `http://localhost:5052`
 - **L1 Interface Health**: `http://localhost:9090`
 - **L2Reth HTTP RPC**: `http://localhost:${L2_HTTP_PORT}` (`8545` by default on testnet)
 - **L2Reth WebSocket**: `ws://localhost:${L2_WS_PORT}` (`8546` by default on testnet)
@@ -155,7 +154,7 @@ docker compose --env-file .env.testnet ps
 ## Services Overview
 
 ### L1 Interface
-The L1 Interface service acts as an L1 Ethereum client that provides Ethereum-compatible RPC endpoints and a Beacon-style blob API. It serves as the L1 endpoint for L2Reth (`L2RETH_L1_ENDPOINT`) and bridges the Dogecoin chain into the L2 network. As of v0.3.0 the Data Availability layer is Ethereum-based: DA batches/blobs are read from a public S3 archive (`DOGEOS_L1_INTERFACE_ETHEREUM_DA__BLOB_SOURCE__AWS_S3__URL`), and the pre-v0.3.0 history is supplied as S3 archive files that the `l1-interface-init-fetch-sqlite` init container downloads on first start. Set your own Ethereum L1 RPC endpoint in `l1-interface.local.env` (`DOGEOS_L1_INTERFACE_ETHEREUM_DA__L1_RPC_URL`).
+The L1 Interface service provides the Ethereum-compatible L1 RPC data consumed by L2Reth (`L2RETH_L1_ENDPOINT`) and bridges the Dogecoin chain into the L2 network. It is not a Beacon blob source for L2Reth: L2Reth reads DA blobs directly from the public S3 archive configured by `L2RETH_BLOB_S3_URL`. L1 Interface also uses its configured Ethereum DA source for replay, while the pre-v0.3.0 history is supplied by the S3 archive files that the `l1-interface-init-fetch-sqlite` init container downloads on first start. Set your own Ethereum L1 RPC endpoint in `l1-interface.local.env` (`DOGEOS_L1_INTERFACE_ETHEREUM_DA__L1_RPC_URL`).
 
 #### Blob Data Pruning
 
@@ -224,7 +223,7 @@ scrollsdk setup gen-rpc-package -d /path/to/dogeos-rpc-package
 ```
 
 This command will:
-- Generate `l2reth.env` with updated peer list, network settings, and tuning defaults
+- Generate `l2reth.env` with the public S3 blob URL, updated peer list, network settings, and tuning defaults
 - Generate `l1-interface.env` (complete, self-contained) and scaffold `l1-interface.local.env` for operator overrides
 - Extract `genesis.json` and `protocol_context.json` from your deployment
 - Never overwrite operator values in `*.local.env`

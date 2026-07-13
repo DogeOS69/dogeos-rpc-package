@@ -1,12 +1,14 @@
 #!/bin/bash
 set -e
 
-export RUST_LOG=sqlx=off,scroll=trace,reth=trace,rollup=trace,info
+export RUST_LOG=sqlx=off,info
 
 #Available API
 #admin,debug,eth,net,trace,txpool,web3,rpc,reth,ots,flashbots,miner,mev
-# Parse L2RETH_PEER_LIST.
-PEER_LIST="${L2RETH_PEER_LIST:-}"
+# Parse the trusted peer list. Prefer L2RETH_PEER_LIST (manual override);
+# fall back to L2GETH_PEER_LIST, the historical name gen-rpc-package writes
+# with auto-resolved LoadBalancer domains.
+PEER_LIST="${L2RETH_PEER_LIST:-${L2GETH_PEER_LIST:-}}"
 PEER_FLAGS=""
 if [ -n "$PEER_LIST" ]; then
     CLEAN_LIST=$(echo "$PEER_LIST" | sed 's/[][]//g' | sed 's/"//g')
@@ -16,9 +18,25 @@ if [ -n "$PEER_LIST" ]; then
 fi
 
 L1_ENDPOINT="${L2RETH_L1_ENDPOINT:-http://l1-interface:8545}"
-DA_BLOB_BEACON_NODE="${L2RETH_DA_BLOB_BEACON_NODE:-http://l1-interface:5052}"
+BLOB_S3_URL="${L2RETH_BLOB_S3_URL:?L2RETH_BLOB_S3_URL must be set (DA blob archive URL)}"
+
+# Must match the cluster's --network-id (NOT the chain id): the eth Status
+# handshake compares network ids and silently drops peers on mismatch.
+NETWORK_ID="${L2RETH_NETWORK_ID:?L2RETH_NETWORK_ID must be set (cluster p2p network id)}"
+
+# Wait for the L1 interface RPC before starting the node. Waiting here instead
+# of in a compose init container keeps the dependency daemon-managed, so
+# startup survives the compose client (e.g. SSH session) going away.
+echo "Waiting for L1 interface at $L1_ENDPOINT"
+until curl -fsS --max-time 2 -H "content-type: application/json" \
+    --data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' \
+    "$L1_ENDPOINT" >/dev/null 2>&1; do
+  sleep 5
+done
+echo "L1 interface is ready"
 
 exec rollup-node node --chain /l2reth/genesis/genesis.json --datadir=/l2reth --metrics=0.0.0.0:6060 --network.scroll-wire=true --network.bridge=true  \
+  --network-id "$NETWORK_ID" \
   --http --http.addr=0.0.0.0 --http.port=8545 --http.corsdomain "*" --http.api eth,net,web3,debug,trace \
   --ws --ws.addr=0.0.0.0 --ws.port=8546 --ws.api eth,net,web3,debug,trace \
   --log.stdout.format log-fmt -vvv \
@@ -28,5 +46,7 @@ exec rollup-node node --chain /l2reth/genesis/genesis.json --datadir=/l2reth --m
   $PEER_FLAGS \
   --engine.sync-at-startup false \
   --l1.url "$L1_ENDPOINT" \
-  --blob.beacon_node_urls="$DA_BLOB_BEACON_NODE" \
+  --l1.liveness-threshold 2147483647 \
+  --l1.liveness-check-interval 3600 \
+  --blob.s3_url "$BLOB_S3_URL" \
   --network.valid_signer="$L2RETH_VALID_SIGNER"

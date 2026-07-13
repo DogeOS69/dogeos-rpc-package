@@ -3,16 +3,16 @@
     "protocol_version": 2,
     "dogecoin_chain_id": 111111,
     "l2_chain_id": 6281971,
-    "eth_chain_id": 32382
+    "eth_chain_id": 11155111
   },
   "genesis": {
     "genesis_sequencer_outpoint": {
-      "txid": "0x8cce951e8313a9119333df805b67b18466d2c97e01c411caef169e5a6e19e6b4",
+      "txid": "0x450f92d2582041486157f19240128b53ba0293676e69b1dae3f86f114cabc177",
       "vout": 0
     },
-    "genesis_bridge_key_hash": "0x497fb600d08895a4f26cb7f976b761ab6afefba1",
-    "initial_confirmed_block_number": 62930372,
-    "initial_confirmed_block_hash": "0xd3160a6694c4d43be78971ec739d0686a22c341e54a5790132094556f929f8cf",
+    "genesis_bridge_key_hash": "0x0d4a23b84ebfd69ad13302ae21a3dcc51dfa21e6",
+    "initial_confirmed_block_number": 62942949,
+    "initial_confirmed_block_hash": "0x2137c5f99c98edbe812d7c0a1f6f098d7bf70f5866c32268afa559210a569fd9",
     "initial_ethereum_block_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
     "initial_tx_index": 0,
     "initial_tx_blob_index": 0,
@@ -23,7 +23,7 @@
   "protocol_config_seed": {
     "protocol_config": {
       "l2_chain_id": 6281971,
-      "eth_chain_id": 32382,
+      "eth_chain_id": 11155111,
       "key_rotation_min_grace_wf_txs": 100,
       "min_deposit_sats": 100000,
       "deposit_queue_transform": {

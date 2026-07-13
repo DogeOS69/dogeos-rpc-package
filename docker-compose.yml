@@ -18,7 +18,7 @@ services:
       - "-datadir=/data"
       - "-printtoconsole"
   l2reth-node:
-    image: scrolltech/rollup-node:v0.0.1-rc63
+    image: dogeos69/rollup-node:tsuki-762e47f-reth4036577
     restart: unless-stopped
     mem_reservation: 1g
     mem_limit: ${L2RETH_MEM_LIMIT:-8g}
@@ -38,13 +38,11 @@ services:
     depends_on:
       l1-interface:
         condition: service_started
-      l2-rpc-init-wait-for-l1:
-        condition: service_completed_successfully
     entrypoint:
       - /bin/sh
       - /entrypoint.sh
   l1-interface:
-    image: dogeos69/l1-interface:dev-20260707-043e7f3
+    image: dogeos69/l1-interface:dev-support-eip7594-wrapper
     restart: unless-stopped
     mem_reservation: 512m
     mem_limit: ${L1_INTERFACE_MEM_LIMIT:-2g}
@@ -68,11 +66,12 @@ services:
       l1-interface-init-fetch-sqlite:
         condition: service_completed_successfully
   l1-interface-init-fetch-sqlite:
+    container_name: l1-interface-init-fetch-sqlite
     image: curlimages/curl:8.20.0
     restart: "no"
     environment:
-      ARTIFACT_URL: https://dogeos-eth-da-archive-testnet.s3.us-west-2.amazonaws.com/rehearsal/history/l1-interface-historical-artifact-8dae5f190a4152454a350c5b8e5bec87411ea60567a2b061317f69687cb4f28d.sqlite
-      REPLAY_DB_URL: https://dogeos-eth-da-archive-testnet.s3.us-west-2.amazonaws.com/rehearsal/history/replay-d16fb4508e6dd207c2f334f68789d3003956f795701b801a3aa2da497d272b6a.sqlite
+      ARTIFACT_URL: https://dogeos-eth-da-archive-testnet.s3.us-west-2.amazonaws.com/rehearsal/history/l1-interface-historical-artifact-00b31225537acaff706f5ca78d241512ce3d715dc21e8a307056ac41899ef49a.sqlite
+      REPLAY_DB_URL: https://dogeos-eth-da-archive-testnet.s3.us-west-2.amazonaws.com/rehearsal/history/replay-051f63433978ce7e41f52a00ec96c1f016251577446bc7226ea03f120334c6ec.sqlite
       DOGEOS_L1_INTERFACE_EVENT_PLANE_ARTIFACT_PATH: /data/l1-interface-historical-artifact.sqlite
       DOGEOS_L1_INTERFACE_REPLAY_READ__SQLITE_PATH: /data/replay.sqlite
     user: "0:0"
@@ -135,28 +134,3 @@ services:
 
         chmod 666 "$$REPLAY_PATH"
         chmod 777 "$$REPLAY_DIR" || echo "WARN: could not chmod $$REPLAY_DIR; continuing because mounted PVC permissions are managed by Kubernetes/storage driver"
-  l2-rpc-init-wait-for-l1:
-    command:
-      - |-
-        set -eu
-        endpoint="$${L2RETH_L1_ENDPOINT:-http://l1-interface:8545}"
-        echo "Waiting for L1 interface at $$endpoint"
-        for i in $$(seq 1 120); do
-          if curl -fsS --max-time 2 -H "content-type: application/json" --data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' "$$endpoint" >/dev/null; then
-            echo "L1 interface is ready"
-            exit 0
-          fi
-          sleep 5
-        done
-        echo "Timed out waiting for L1 interface at $$endpoint" >&2
-        exit 1
-    depends_on:
-      l1-interface:
-        condition: service_started
-    entrypoint:
-      - /bin/sh
-      - "-c"
-    env_file:
-      - ./envs/${NETWORK}/l2reth.env
-    image: curlimages/curl:8.20.0
-    restart: "no"
