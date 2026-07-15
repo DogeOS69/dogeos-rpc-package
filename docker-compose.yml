@@ -8,7 +8,7 @@ services:
     oom_score_adj: -100
     volumes:
       - ./configs/${NETWORK}/dogecoin.conf:/home/dogecoin/.dogecoin/dogecoin.conf:ro
-      - ${DATA_ROOT:?DATA_ROOT must be set}/dogecoin:/data
+      - dogecoin_data:/data
     ports:
       - ${DOGECOIN_P2P_PORT}:${DOGECOIN_P2P_PORT}
       - ${DOGECOIN_RPC_PORT}:${DOGECOIN_RPC_PORT}
@@ -134,3 +134,9 @@ services:
 
         chmod 666 "$$REPLAY_PATH"
         chmod 777 "$$REPLAY_DIR" || echo "WARN: could not chmod $$REPLAY_DIR; continuing because mounted PVC permissions are managed by Kubernetes/storage driver"
+
+volumes:
+  dogecoin_data:
+    # Explicit name so existing pre-v0.3.0 volumes are reused without a resync,
+    # independent of COMPOSE_PROJECT_NAME. Set DOGECOIN_VOLUME_NAME in the env file.
+    name: ${DOGECOIN_VOLUME_NAME:?DOGECOIN_VOLUME_NAME must be set}

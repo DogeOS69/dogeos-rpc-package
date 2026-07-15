@@ -29,11 +29,11 @@ wget $DOGE_URL -O dogecoin-snapshot.tar.zst
 ```
 
 ## Step 2: Locate Data Directory
-Use the Dogecoin data directory under `DATA_ROOT`:
+Dogecoin data lives in the named Docker volume set by `DOGECOIN_VOLUME_NAME` in `.env.testnet`. Resolve its host path (create the volume first if it does not exist yet):
 
 ```bash
-# Example if DATA_ROOT=/mnt/wsl/data/dogeos-data/testnet
-DOGECOIN_DATA=/mnt/wsl/data/dogeos-data/testnet/dogecoin
+docker volume create dogeos-rpc-package_dogecoin_data
+DOGECOIN_DATA=$(docker volume inspect -f '{{ .Mountpoint }}' dogeos-rpc-package_dogecoin_data)
 ```
 
 ## Step 3: Restore

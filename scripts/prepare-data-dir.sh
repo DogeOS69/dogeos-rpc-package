@@ -61,12 +61,10 @@ echo "Data root: $DATA_ROOT_ABS"
 echo
 
 mkdir -p \
-  "$DATA_ROOT_ABS/dogecoin" \
   "$DATA_ROOT_ABS/l2reth" \
   "$DATA_ROOT_ABS/l1-interface"
 
 for dir in \
-  "$DATA_ROOT_ABS/dogecoin" \
   "$DATA_ROOT_ABS/l2reth" \
   "$DATA_ROOT_ABS/l1-interface"
 do
@@ -78,9 +76,10 @@ do
 done
 
 echo "Prepared directories:"
-echo "  $DATA_ROOT_ABS/dogecoin"
 echo "  $DATA_ROOT_ABS/l2reth"
 echo "  $DATA_ROOT_ABS/l1-interface"
+echo
+echo "Note: Dogecoin data lives in the named Docker volume \${DOGECOIN_VOLUME_NAME}, not under DATA_ROOT."
 echo
 
 echo "Filesystem:"

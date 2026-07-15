@@ -98,7 +98,9 @@ cp .env.example.mainnet .env.mainnet
 ```
 
 ### 2. Prepare Data Directory
-This package follows the same operational model as Arbitrum Nitro: chain databases live in an explicit host directory, not in anonymous Docker volumes. `DATA_ROOT` should point to a dedicated data disk, for example `/mnt/wsl/data/dogeos-data/testnet` or `/mnt/wsl/data/dogeos-data/mainnet`.
+L2Reth and L1 Interface follow the same operational model as Arbitrum Nitro: chain databases live in an explicit host directory, not in anonymous Docker volumes. `DATA_ROOT` should point to a dedicated data disk, for example `/mnt/wsl/data/dogeos-data/testnet` or `/mnt/wsl/data/dogeos-data/mainnet`.
+
+Dogecoin is the exception: its data stays in the named Docker volume used by earlier releases (`DOGECOIN_VOLUME_NAME` in the env file), so nodes upgrading from pre-v0.3.0 keep their synced chain without migration. If you changed `COMPOSE_PROJECT_NAME` in an earlier release, set `DOGECOIN_VOLUME_NAME=<your-old-project-name>_dogecoin_data` (check with `docker volume ls | grep dogecoin_data`).
 
 ```bash
 ./scripts/prepare-data-dir.sh .env.testnet
@@ -109,7 +111,6 @@ This package follows the same operational model as Arbitrum Nitro: chain databas
 The script creates:
 
 ```text
-${DATA_ROOT}/dogecoin
 ${DATA_ROOT}/l2reth
 ${DATA_ROOT}/l1-interface
 ```
@@ -188,7 +189,8 @@ The project uses an explicit env file for configuration. Start by copying one of
 The env file contains:
 - `NETWORK` - Network selection (testnet or mainnet)
 - `COMPOSE_PROJECT_NAME` - Docker Compose project name (for container and network isolation)
-- `DATA_ROOT` - Host path for persistent Dogecoin, L2Reth, and L1 Interface data
+- `DATA_ROOT` - Host path for persistent L2Reth and L1 Interface data
+- `DOGECOIN_VOLUME_NAME` - Named Docker volume holding Dogecoin chain data (kept compatible with pre-v0.3.0 releases)
 - Port configurations
 
 Recommended filenames are `.env.testnet` and `.env.mainnet`, and both are gitignored to prevent accidental commits of local configurations.
@@ -280,20 +282,22 @@ docker compose --env-file .env.testnet down
 ### Clean Up
 **WARNING: This will delete all data!**
 
-Docker Compose no longer stores chain data in named volumes. Persistent data lives under `DATA_ROOT`. Stop services first, verify the path, then delete only the intended network directory:
+L2Reth and L1 Interface data lives under `DATA_ROOT`; Dogecoin data lives in the named Docker volume `DOGECOIN_VOLUME_NAME`. Stop services first, verify the path, then delete only the intended network data:
 
 ```bash
 docker compose --env-file .env.testnet down
 # Example only. Verify this is the intended DATA_ROOT before running:
 rm -rf /mnt/wsl/data/dogeos-data/testnet
+# Only if you also want to delete the synced Dogecoin chain (days to resync):
+docker volume rm dogeos-rpc-package_dogecoin_data
 ```
 
 ## Data Isolation
 
-- **Data root**: `DATA_ROOT` controls where all persistent chain data is stored. Use a dedicated data disk path, not a path inside this repository.
+- **Data root**: `DATA_ROOT` controls where L2Reth and L1 Interface data is stored. Use a dedicated data disk path, not a path inside this repository.
   - Testnet example: `/mnt/wsl/data/dogeos-data/testnet`
   - Mainnet example: `/mnt/wsl/data/dogeos-data/mainnet`
-- **Directory layout**: Docker bind-mounts `${DATA_ROOT}/dogecoin`, `${DATA_ROOT}/l2reth`, and `${DATA_ROOT}/l1-interface` into the corresponding containers.
+- **Directory layout**: Docker bind-mounts `${DATA_ROOT}/l2reth` and `${DATA_ROOT}/l1-interface` into the corresponding containers. Dogecoin uses the named Docker volume `DOGECOIN_VOLUME_NAME`; use different volume names for mainnet and testnet (the defaults already differ).
 - **Project naming**: `COMPOSE_PROJECT_NAME` controls Compose container and network names. Use different values for mainnet and testnet.
 - **Ports**: Use different `L2_HTTP_PORT`, `L2_WS_PORT`, and `L2_P2P_PORT` values when running multiple networks on the same host.
 - **Switching networks**: Stop the current environment with `docker compose --env-file <env-file> down`, then start the target environment with its own env file. Do not reuse the same `DATA_ROOT` across networks.
