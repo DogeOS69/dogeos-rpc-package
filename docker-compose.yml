@@ -18,7 +18,7 @@ services:
       - "-datadir=/data"
       - "-printtoconsole"
   l2reth-node:
-    image: dogeos69/rollup-node:tsuki-762e47f-reth4036577
+    image: dogeos69/rollup-node:tsuki-5bce327d-reth-39b31f82
     restart: unless-stopped
     mem_reservation: 1g
     mem_limit: ${L2RETH_MEM_LIMIT:-8g}
@@ -42,7 +42,7 @@ services:
       - /bin/sh
       - /entrypoint.sh
   l1-interface:
-    image: dogeos69/l1-interface:dev-support-eip7594-wrapper
+    image: dogeos69/l1-interface:d570eebf
     restart: unless-stopped
     mem_reservation: 512m
     mem_limit: ${L1_INTERFACE_MEM_LIMIT:-2g}
@@ -70,8 +70,8 @@ services:
     image: curlimages/curl:8.20.0
     restart: "no"
     environment:
-      ARTIFACT_URL: https://dogeos-eth-da-archive-testnet.s3.us-west-2.amazonaws.com/rehearsal/history/l1-interface-historical-artifact-00b31225537acaff706f5ca78d241512ce3d715dc21e8a307056ac41899ef49a.sqlite
-      REPLAY_DB_URL: https://dogeos-eth-da-archive-testnet.s3.us-west-2.amazonaws.com/rehearsal/history/replay-051f63433978ce7e41f52a00ec96c1f016251577446bc7226ea03f120334c6ec.sqlite
+      ARTIFACT_URL: https://dogeos-eth-da-archive-testnet.s3.us-west-2.amazonaws.com/rehearsal/history/l1-interface-historical-artifact-614be9703fa8be638f124e40a1e5c172524a9b567816d72735d42898501d6405.sqlite
+      REPLAY_DB_URL: https://dogeos-eth-da-archive-testnet.s3.us-west-2.amazonaws.com/rehearsal/history/replay-7ea484e61668b8ad2e1ef9fa805bdffb25ac2966b80ec4517654f8c8062de22e.sqlite
       DOGEOS_L1_INTERFACE_EVENT_PLANE_ARTIFACT_PATH: /data/l1-interface-historical-artifact.sqlite
       DOGEOS_L1_INTERFACE_REPLAY_READ__SQLITE_PATH: /data/replay.sqlite
     user: "0:0"
@@ -134,9 +134,6 @@ services:
 
         chmod 666 "$$REPLAY_PATH"
         chmod 777 "$$REPLAY_DIR" || echo "WARN: could not chmod $$REPLAY_DIR; continuing because mounted PVC permissions are managed by Kubernetes/storage driver"
-
 volumes:
   dogecoin_data:
-    # Explicit name so existing pre-v0.3.0 volumes are reused without a resync,
-    # independent of COMPOSE_PROJECT_NAME. Set DOGECOIN_VOLUME_NAME in the env file.
     name: ${DOGECOIN_VOLUME_NAME:?DOGECOIN_VOLUME_NAME must be set}

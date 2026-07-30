@@ -41,8 +41,9 @@ The project follows a modular configuration approach with support for multiple n
 │       └── l2reth.env
 ├── README.md
 └── scripts                     # Utility scripts
-    ├── prepare-data-dir.sh     # Prepare host data directories
-    └── l2reth_entrypoint.sh    # L2Reth entrypoint
+    ├── prepare-data-dir.sh             # Prepare host data directories
+    ├── restore-l2reth-snapshot.sh      # One-command L2Reth snapshot restore
+    └── l2reth_entrypoint.sh            # L2Reth entrypoint
 ```
 
 ## Hardware Requirements
@@ -119,7 +120,26 @@ Do not set `DATA_ROOT` to a path inside this repository.
 
 If Docker cannot write to the prepared directories, fix ownership or permissions on the data disk before starting the stack. Prefer assigning the directory to the operator user/group or the container UID used by your runtime; avoid blanket `chmod 777` unless it is a deliberate emergency workaround.
 
-### 3. Start Services
+### 3. Restore the L2Reth Snapshot
+
+For a new testnet RPC node, restore the published L2Reth database instead of
+syncing from genesis:
+
+```bash
+./scripts/restore-l2reth-snapshot.sh .env.testnet
+```
+
+The script downloads the current snapshot from the built-in public HTTPS URL,
+verifies its built-in SHA-256, validates the archive layout, restores it to
+`${DATA_ROOT}/l2reth`, and starts `l2reth-node` with its dependencies. Downloads
+are resumable and cached under `${DATA_ROOT}/.snapshot-cache`.
+
+The snapshot contains chain data only. The current genesis, hardfork schedule,
+peer list, and runtime configuration continue to come from this repository.
+See [the testnet snapshot guide](snapshot_testnet.md#l2reth-snapshot-recommended)
+for replacement and recovery options.
+
+### 4. Start Services
 Start the services using Docker Compose:
 
 ```bash
@@ -132,7 +152,7 @@ docker compose --env-file .env.mainnet up -d
 
 If you want to speed up the synchronization process, you can restore data from a snapshot.
 
-- [Dogecoin Testnet Snapshot Guide](snapshot_testnet.md)
+- [Testnet Snapshot Guide: L2Reth, Dogecoin, and L1 Interface](snapshot_testnet.md)
 - [Dogecoin Mainnet Snapshot Guide](snapshot_mainnet.md)
 
 ### 5. Verify Services
