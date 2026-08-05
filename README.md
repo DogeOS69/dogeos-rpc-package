@@ -148,6 +148,17 @@ docker compose --env-file .env.testnet up -d
 docker compose --env-file .env.mainnet up -d
 ```
 
+L1 Interface can also be started independently without Compose starting the
+bundled Dogecoin node:
+
+```bash
+docker compose --env-file .env.testnet up -d l1-interface
+```
+
+The one-time L1 Interface SQLite initialization dependency still runs when
+needed. Ensure the Dogecoin RPC endpoint configured in
+`envs/{network}/l1-interface.env` or `l1-interface.local.env` is reachable.
+
 ### 4. Restore from Snapshot (Optional)
 
 If you want to speed up the synchronization process, you can restore data from a snapshot.

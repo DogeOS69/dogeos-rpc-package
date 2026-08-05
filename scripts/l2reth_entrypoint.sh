@@ -48,5 +48,4 @@ exec rollup-node node --chain /l2reth/genesis/genesis.json --datadir=/l2reth --m
   --l1.url "$L1_ENDPOINT" \
   --l1.liveness-threshold 2147483647 \
   --l1.liveness-check-interval 3600 \
-  --blob.s3_url "$BLOB_S3_URL" \
-  --network.valid_signer="$L2RETH_VALID_SIGNER"
+  --blob.s3_url "$BLOB_S3_URL"

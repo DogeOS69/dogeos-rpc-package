@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Update these two values together when publishing a newer testnet snapshot.
-DEFAULT_SNAPSHOT_URL="https://dogeos-rpc-snapshots.s3.us-west-2.amazonaws.com/testnet/l2reth/dogeos-l2reth-testnet-5350474-20260730.tar.gz"
+DEFAULT_SNAPSHOT_URL="https://dogeos-rpc-snapshots.s3.us-west-2.amazonaws.com/testnet/l2reth/dogeos-l2reth-testnet-20260802070317.tar.gz"
 DEFAULT_SNAPSHOT_SHA256="8dbdd977f8ee6a68dcf15db87453a170c6c0d0beaadc1d46f8391fdc167db115"
 
 usage() {

@@ -61,8 +61,6 @@ services:
       - "5052:5052"
       - "9090:9090"
     depends_on:
-      dogecoin-node:
-        condition: service_started
       l1-interface-init-fetch-sqlite:
         condition: service_completed_successfully
   l1-interface-init-fetch-sqlite:
@@ -70,8 +68,8 @@ services:
     image: curlimages/curl:8.20.0
     restart: "no"
     environment:
-      ARTIFACT_URL: https://dogeos-eth-da-archive-testnet.s3.us-west-2.amazonaws.com/rehearsal/history/l1-interface-historical-artifact-614be9703fa8be638f124e40a1e5c172524a9b567816d72735d42898501d6405.sqlite
-      REPLAY_DB_URL: https://dogeos-eth-da-archive-testnet.s3.us-west-2.amazonaws.com/rehearsal/history/replay-7ea484e61668b8ad2e1ef9fa805bdffb25ac2966b80ec4517654f8c8062de22e.sqlite
+      ARTIFACT_URL: https://dogeos-eth-da-archive-testnet.s3.us-west-2.amazonaws.com/rehearsal/history/l1-interface-historical-artifact-6f11cc87167c9f86d16fd1c0c0f0e6dbb45e426d304ae6297059a728e042c1c9.sqlite
+      REPLAY_DB_URL: https://dogeos-eth-da-archive-testnet.s3.us-west-2.amazonaws.com/rehearsal/history/replay-a87011e434fdb384a0a13479e879710e67ee00bfc1607d89b82b489f7d000beb.sqlite
       DOGEOS_L1_INTERFACE_EVENT_PLANE_ARTIFACT_PATH: /data/l1-interface-historical-artifact.sqlite
       DOGEOS_L1_INTERFACE_REPLAY_READ__SQLITE_PATH: /data/replay.sqlite
     user: "0:0"
