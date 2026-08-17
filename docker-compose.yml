@@ -7,19 +7,26 @@ services:
     memswap_limit: ${DOGECOIN_MEM_LIMIT:-20g}
     oom_score_adj: -100
     volumes:
-      - ./configs/${NETWORK}/dogecoin.conf:/home/dogecoin/.dogecoin/dogecoin.conf:ro
+      - ./configs/${NETWORK}/dogecoin.conf:/etc/dogeos/dogecoin.conf:ro
+      - ./scripts/dogecoin_entrypoint.sh:/entrypoint.sh:ro
       - dogecoin_data:/data
+    secrets:
+      - dogecoin_rpc_user
+      - dogecoin_rpc_password
     ports:
       - ${DOGECOIN_P2P_PORT}:${DOGECOIN_P2P_PORT}
       - ${DOGECOIN_RPC_PORT}:${DOGECOIN_RPC_PORT}
+    entrypoint:
+      - /bin/sh
+      - /entrypoint.sh
     command:
       - /dogecoin/bin/dogecoind
-      - "-conf=/home/dogecoin/.dogecoin/dogecoin.conf"
+      - "-conf=/run/dogeos/dogecoin.conf"
       - "-datadir=/data"
       - "-printtoconsole"
   l2reth-node:
-    image: dogeos69/rollup-node:tsuki-5bce327d-reth-39b31f82
-    restart: unless-stopped
+    image: dogeos69/rollup-node:0.3.0-beta.0
+    restart: on-failure
     mem_reservation: 1g
     mem_limit: ${L2RETH_MEM_LIMIT:-8g}
     memswap_limit: ${L2RETH_MEM_LIMIT:-8g}
@@ -42,7 +49,7 @@ services:
       - /bin/sh
       - /entrypoint.sh
   l1-interface:
-    image: dogeos69/l1-interface:d570eebf
+    image: dogeos69/l1-interface:0.3.0-beta.0
     restart: unless-stopped
     mem_reservation: 512m
     mem_limit: ${L1_INTERFACE_MEM_LIMIT:-2g}
@@ -52,10 +59,19 @@ services:
       - ./envs/${NETWORK}/l1-interface.env
       - path: ./envs/${NETWORK}/l1-interface.local.env
         required: false
+    environment:
+      DOGEOS_RPC_PACKAGE_DOGECOIN_RPC_URL: http://dogecoin-node:${DOGECOIN_RPC_PORT}
+    entrypoint:
+      - /bin/sh
+      - /entrypoint.sh
     volumes:
       - ./configs/${NETWORK}/l2reth-genesis.json:/app/genesis/genesis.json:ro
       - ./configs/${NETWORK}/protocol_context.json:/app/protocol_context.json:ro
+      - ./scripts/l1-interface_entrypoint.sh:/entrypoint.sh:ro
       - ${DATA_ROOT:?DATA_ROOT must be set}/l1-interface:/data
+    secrets:
+      - dogecoin_rpc_user
+      - dogecoin_rpc_password
     ports:
       - "8547:8545"
       - "5052:5052"
@@ -68,8 +84,8 @@ services:
     image: curlimages/curl:8.20.0
     restart: "no"
     environment:
-      ARTIFACT_URL: https://dogeos-eth-da-archive-testnet.s3.us-west-2.amazonaws.com/rehearsal/history/l1-interface-historical-artifact-6f11cc87167c9f86d16fd1c0c0f0e6dbb45e426d304ae6297059a728e042c1c9.sqlite
-      REPLAY_DB_URL: https://dogeos-eth-da-archive-testnet.s3.us-west-2.amazonaws.com/rehearsal/history/replay-a87011e434fdb384a0a13479e879710e67ee00bfc1607d89b82b489f7d000beb.sqlite
+      ARTIFACT_URL: https://dogeos-eth-da-archive-testnet.s3.us-west-2.amazonaws.com/rehearsal/history/l1-interface-historical-artifact-f4f2f71984dbce5baae9885481daf7bc0ae87c6025dedb5901097af3bd6d890f.sqlite
+      REPLAY_DB_URL: https://dogeos-eth-da-archive-testnet.s3.us-west-2.amazonaws.com/rehearsal/history/replay-83113eac9cb5e145c1d792b13a16c801c22d6e96d2dd45b56ac216147e38149e.sqlite
       DOGEOS_L1_INTERFACE_EVENT_PLANE_ARTIFACT_PATH: /data/l1-interface-historical-artifact.sqlite
       DOGEOS_L1_INTERFACE_REPLAY_READ__SQLITE_PATH: /data/replay.sqlite
     user: "0:0"
@@ -135,3 +151,8 @@ services:
 volumes:
   dogecoin_data:
     name: ${DOGECOIN_VOLUME_NAME:?DOGECOIN_VOLUME_NAME must be set}
+secrets:
+  dogecoin_rpc_user:
+    file: ./secrets/${NETWORK}/dogecoin_rpc_user
+  dogecoin_rpc_password:
+    file: ./secrets/${NETWORK}/dogecoin_rpc_password

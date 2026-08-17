@@ -1,91 +1,100 @@
-# Testnet Snapshot Restoration Guide
+# Testnet Snapshot and Recovery Guide
 
-This guide describes how to restore snapshots for **L2Reth**, the **Dogecoin
-Node**, and the **L1 Interface**.
+This guide covers the supported recovery paths for L2Reth, the bundled
+Dogecoin node, and L1 Interface in the testnet RPC package.
 
-## Prerequisites
+## Common Prerequisites
 
-- Ensure `dogeos-rpc-package` is set up.
-- Copy `.env.example.testnet` to `.env.testnet`, set `DATA_ROOT`, and run `./scripts/prepare-data-dir.sh .env.testnet`.
-- Ensure `wget` and `tar` (with `zstd` support) are installed.
-- Ensure you have the `latest.txt` URL:
-  ```
-  https://dogecoin-testnet-snapshots-usa-west-2.s3.us-west-2.amazonaws.com/testnet/latest.txt
-  ```
+Run commands from the repository root. First create the Compose env file,
+configure the required Ethereum RPC, and prepare `DATA_ROOT`:
 
----
+```bash
+cp .env.example.testnet .env.testnet
+cp envs/testnet/l1-interface.local.env.example \
+  envs/testnet/l1-interface.local.env
 
-# L2Reth Snapshot (Recommended)
+# Edit both files before continuing:
+# - set an absolute DATA_ROOT in .env.testnet
+# - set DOGEOS_L1_INTERFACE_ETHEREUM_DA__L1_RPC_URL in
+#   envs/testnet/l1-interface.local.env
+# - configure the optional Dogecoin section only when using an external RPC
+
+./scripts/prepare-data-dir.sh .env.testnet
+```
+
+The Ethereum endpoint must support Sepolia (`chainId` `11155111`) and execution
+RPC methods such as `eth_getBlockByHash`. Keep provider credentials in the
+gitignored `l1-interface.local.env`. For the bundled Dogecoin node,
+`prepare-data-dir.sh` creates Git-ignored Docker Secrets shared by Dogecoin and
+L1 Interface. Existing Secret files are preserved. Only for temporary/debug
+use, an external Dogecoin node can be configured in `l1-interface.local.env`.
+
+## L2Reth Snapshot (Recommended)
 
 The repository includes a one-command restore script with a versioned public
-snapshot URL and SHA-256 built in:
+snapshot URL and SHA-256 pinned together:
 
 ```bash
 ./scripts/restore-l2reth-snapshot.sh .env.testnet
 ```
 
-The script performs the complete workflow:
+The script requires `curl`, `docker`, `sha256sum`, and GNU `tar` with gzip
+support. It performs the following workflow:
 
-1. Reads and validates `NETWORK` and `DATA_ROOT` from `.env.testnet`.
-2. Downloads or resumes the published archive into
-   `${DATA_ROOT}/.snapshot-cache`.
-3. Verifies the archive against the SHA-256 pinned in the script.
-4. Rejects unsafe paths or an unexpected archive layout.
-5. Confirms that secrets and environment-specific configuration are absent.
-6. Extracts into a staging directory before changing the active datadir.
-7. Stops `l2reth-node`, activates `${DATA_ROOT}/l2reth`, and starts the node
-   with its dependencies.
+1. Validates `NETWORK=testnet` and an absolute, safe `DATA_ROOT`.
+2. Downloads or resumes the archive under `${DATA_ROOT}/.snapshot-cache`.
+3. Verifies the archive against the pinned SHA-256.
+4. Rejects unsafe archive paths, unexpected roots, and known key or
+   environment-specific configuration paths.
+5. Extracts into a staging directory before changing the active datadir.
+6. Stops `l2reth-node`, activates `${DATA_ROOT}/l2reth`, and starts the complete
+   testnet stack, including the user's Compose Dogecoin node.
 
-The archive has one root directory, `l2reth/`, so it matches the bind mount in
-`docker-compose.yml`. It contains the Reth databases and static files, but does
-not contain:
+The archive contains Reth databases and static files under one `l2reth/` root.
+It intentionally excludes:
 
-- `genesis.json` or `protocol_context.json`
+- `genesis.json` and `protocol_context.json`
 - `jwt.hex`
-- P2P node keys or signer keys
+- P2P node keys and keystores
 - the source environment's `reth.toml`
 
-The current genesis, hardfork times, peer list, P2P network ID, and runtime
-settings always come from the checked-out version of `dogeos-rpc-package`.
-This separation allows future fork fields to be added without republishing the
-database archive.
+Genesis, hardfork times, peer configuration, P2P network ID, and runtime flags
+always come from the checked-out repository. Resolve any placeholder peer
+hostnames in `envs/testnet/l2reth.env` before expecting those peers to connect.
 
-## Replacing Existing L2Reth Data
+### Replace Existing L2Reth Data
 
-By default, the script refuses to overwrite a non-empty L2Reth directory. To
-replace existing data:
+By default, the script refuses to replace a non-empty datadir. Use `--force` to
+move the old directory to a timestamped sibling and activate the snapshot:
 
 ```bash
 ./scripts/restore-l2reth-snapshot.sh --force .env.testnet
 ```
 
-`--force` does not delete the old data. After stopping `l2reth-node`, the script
-moves it to a timestamped sibling such as:
+The previous data remains recoverable at a path such as:
 
 ```text
-${DATA_ROOT}/l2reth.backup-20260730T120000Z
+${DATA_ROOT}/l2reth.backup-20260806T120000Z
 ```
 
-Remove that backup manually only after the restored node has been verified.
+Remove that backup manually only after verifying the restored node.
 
-## Restore Without Starting Containers
-
-To prepare the data but defer startup:
+### Restore Without Starting Containers
 
 ```bash
 ./scripts/restore-l2reth-snapshot.sh --no-start .env.testnet
 ```
 
-Then start it later:
+Start it later with:
 
 ```bash
-docker compose --env-file .env.testnet up -d l2reth-node
+docker compose --env-file .env.testnet up -d
 ```
 
-## URL and Cache Overrides
+### Use a Mirror or Alternate Cache
 
-Normal users should rely on the URL and checksum pinned by the script.
-Operators can override them for mirrors or pre-release snapshots:
+Normal operators should use the URL and checksum pinned by the script. For a
+trusted mirror or pre-release archive, override both values together:
 
 ```bash
 ./scripts/restore-l2reth-snapshot.sh \
@@ -95,99 +104,82 @@ Operators can override them for mirrors or pre-release snapshots:
   .env.testnet
 ```
 
-The download supports HTTP range resume. A cached archive with the correct
-checksum is reused; a cached archive with the wrong checksum is preserved with
-an `.invalid-<timestamp>` suffix before a fresh download.
+A cached archive with the expected checksum is reused. A cached archive with a
+different checksum is preserved with an `.invalid-<timestamp>` suffix before a
+fresh download. The published EBS-derived snapshot is crash-consistent, so the
+first Reth startup may perform normal database recovery.
 
-The EBS source snapshot was taken online and is crash-consistent. The first
-Reth startup may perform normal database recovery before continuing from the
-snapshot head.
+## Dogecoin Node Recovery
 
----
-
-# Dogecoin Node Snapshot
-
-## Step 1: Download Snapshot
-
-Get the latest Dogecoin snapshot URL and download it.
+No checksum-pinned Dogecoin testnet snapshot is published with this release.
+The legacy `latest.txt` URL used by earlier documentation is no longer a
+supported download interface. Preserve the named volume and let Dogecoin Core
+continue syncing from peers:
 
 ```bash
-# Get URL
-DOGE_URL=$(curl -s https://dogecoin-testnet-snapshots-usa-west-2.s3.us-west-2.amazonaws.com/testnet/latest.txt | grep "^dogecoin|" | cut -d'|' -f2)
+set -a
+. ./.env.testnet
+set +a
 
-# Download
-wget $DOGE_URL -O dogecoin-snapshot.tar.zst
-```
-
-## Step 2: Locate Data Directory
-Dogecoin data lives in the named Docker volume set by `DOGECOIN_VOLUME_NAME` in `.env.testnet`. Resolve its host path (create the volume first if it does not exist yet):
-
-```bash
-docker volume create dogeos-rpc-package_dogecoin_data
-DOGECOIN_DATA=$(docker volume inspect -f '{{ .Mountpoint }}' dogeos-rpc-package_dogecoin_data)
-```
-
-## Step 3: Restore
-**1. Stop services:**
-```bash
-docker compose --env-file .env.testnet down
-```
-
-**2. Clean and Extract:**
-```bash
-sudo mkdir -p "$DOGECOIN_DATA/testnet3"
-sudo rm -rf "$DOGECOIN_DATA/testnet3/blocks"
-sudo rm -rf "$DOGECOIN_DATA/testnet3/chainstate"
-
-# Extract
-sudo tar -I zstd -xvf dogecoin-snapshot.tar.zst -C "$DOGECOIN_DATA/testnet3"
-```
-
-**3. Restart:**
-```bash
+: "${DOGECOIN_VOLUME_NAME:?DOGECOIN_VOLUME_NAME must be set}"
+docker volume inspect "$DOGECOIN_VOLUME_NAME"
 docker compose --env-file .env.testnet up -d dogecoin-node
+docker compose --env-file .env.testnet logs --tail 100 dogecoin-node
 ```
 
+Do not delete or rename this volume during an upgrade. If a trusted operator
+provides a separate Dogecoin archive, require an independently supplied
+checksum and archive-layout instructions before restoring it. Do not adapt the
+L2Reth restore script or extract an unverified archive directly into the named
+volume.
 
----
+## L1 Interface Recovery
 
-# L1 Interface Snapshot
+Do not restore a pre-v0.3.0 L1 Interface database into the current release. The
+storage format changed in v0.3.0. The supported recovery path is to preserve the
+old directory and let the Compose init job download the pinned, verified
+historical artifact and replay bootstrap database again.
 
-## Step 1: Download Snapshot
-
-Get the latest L1 Interface snapshot URL and download it.
+Confirm that `DOGEOS_L1_INTERFACE_ETHEREUM_DA__L1_RPC_URL` is configured in
+`envs/testnet/l1-interface.local.env`, then run:
 
 ```bash
-# Get URL
-L1_URL=$(curl -s https://dogecoin-testnet-snapshots-usa-west-2.s3.us-west-2.amazonaws.com/testnet/latest.txt | grep "^l1-interface|" | cut -d'|' -f2)
+set -a
+. ./.env.testnet
+set +a
+: "${DATA_ROOT:?DATA_ROOT must be set}"
 
-# Download
-wget $L1_URL -O l1-interface-snapshot.tar.zst
+case "$DATA_ROOT" in
+  /*) ;;
+  *) echo "DATA_ROOT must be absolute" >&2; exit 1 ;;
+esac
+case "$DATA_ROOT" in
+  /|/tmp|/var/tmp) echo "Refusing unsafe DATA_ROOT: $DATA_ROOT" >&2; exit 1 ;;
+esac
+
+docker compose --env-file .env.testnet stop l2reth-node l1-interface
+
+L1_BACKUP="${DATA_ROOT}/l1-interface.backup-$(date -u +%Y%m%dT%H%M%SZ)"
+if [ -d "${DATA_ROOT}/l1-interface" ]; then
+  mv "${DATA_ROOT}/l1-interface" "$L1_BACKUP"
+  printf 'Previous L1 Interface data preserved at: %s\n' "$L1_BACKUP"
+fi
+
+./scripts/prepare-data-dir.sh .env.testnet
+
+# Force the one-shot downloader to run again for the new empty directory.
+docker compose --env-file .env.testnet rm -f l1-interface-init-fetch-sqlite
+docker compose --env-file .env.testnet up -d l1-interface
 ```
 
-## Step 2: Locate Data Directory
-Use the L1 Interface data directory under `DATA_ROOT`:
+The health endpoint may return HTTP 503 with
+`"historical_sync":"in_progress"` during catch-up. Wait for HTTP 200 and
+`"status":"ready"` before restarting L2Reth:
 
 ```bash
-# Example if DATA_ROOT=/mnt/wsl/data/dogeos-data/testnet
-L1_INTERFACE_DATA=/mnt/wsl/data/dogeos-data/testnet/l1-interface
+curl http://localhost:9090/health
+docker compose --env-file .env.testnet up -d l2reth-node
 ```
 
-## Step 3: Restore
-**1. Stop services:**
-```bash
-docker compose --env-file .env.testnet down
-```
-
-**2. Clean and Extract:**
-```bash
-sudo rm -rf "$L1_INTERFACE_DATA"/*
-
-# Extract
-sudo tar -I zstd -xvf l1-interface-snapshot.tar.zst -C "$L1_INTERFACE_DATA"
-```
-
-**3. Restart:**
-```bash
-docker compose --env-file .env.testnet up -d
-```
+Keep the timestamped backup until replay and indexing have caught up and the
+L2Reth node is following the expected canonical chain.

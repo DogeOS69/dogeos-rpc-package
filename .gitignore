@@ -5,3 +5,7 @@
 # Operator-specific overrides (contain infra endpoints / credentials).
 # Track the *.example templates instead.
 *.local.env
+
+# Runtime Dogecoin RPC credentials. The matching *.example files are tracked.
+secrets/*/dogecoin_rpc_user
+secrets/*/dogecoin_rpc_password

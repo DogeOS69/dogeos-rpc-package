@@ -36,16 +36,20 @@ done
 echo "L1 interface is ready"
 
 exec rollup-node node --chain /l2reth/genesis/genesis.json --datadir=/l2reth --metrics=0.0.0.0:6060 --network.scroll-wire=true --network.bridge=true  \
+  --network.legacy-geth-header-transform true \
   --network-id "$NETWORK_ID" \
   --http --http.addr=0.0.0.0 --http.port=8545 --http.corsdomain "*" --http.api eth,net,web3,debug,trace \
   --ws --ws.addr=0.0.0.0 --ws.port=8546 --ws.api eth,net,web3,debug,trace \
   --log.stdout.format log-fmt -vvv \
   --txpool.pending-max-count=1000 \
   --builder.gaslimit=30000000 \
+  --sequencer.max-l1-messages 51 \
   --rpc.max-connections=5000 \
   $PEER_FLAGS \
   --engine.sync-at-startup false \
+  --consensus.exit-on-signer-rotation \
   --l1.url "$L1_ENDPOINT" \
+  --l1.query-range 100 \
   --l1.liveness-threshold 2147483647 \
   --l1.liveness-check-interval 3600 \
   --blob.s3_url "$BLOB_S3_URL"

@@ -7,12 +7,12 @@
   },
   "genesis": {
     "genesis_sequencer_outpoint": {
-      "txid": "0x2d24e27273033edd5290a56048d9596c6fff96afb0da014399ec354d5241fa9a",
+      "txid": "0x6dc3d136103b97c5352e35c03009bb2e06ede7f0ae1f1e112e7220fda99fb2f9",
       "vout": 0
     },
-    "genesis_bridge_key_hash": "0xf6c5a77aa63564ffec6ac39182a5876967422562",
-    "initial_confirmed_block_number": 62253785,
-    "initial_confirmed_block_hash": "0xf0088b3fd5b2a2ee0eba49dbfb4159d3bf336c3e2baad12fefef006b7cd790c9",
+    "genesis_bridge_key_hash": "0xd2b616a07308a8ccd1367c11a7cf49275baaac6e",
+    "initial_confirmed_block_number": 62379165,
+    "initial_confirmed_block_hash": "0x51f000e10de15f2fbadc5611bbcccceb4c8aa99b23a92e48d696df9911a0442b",
     "initial_ethereum_block_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
     "initial_tx_index": 0,
     "genesis_batch_hash": "0x8c873ede475f2831e9d57b1f32641c4409a24311c4df6f1a3d7114eb9358b1de",
@@ -29,7 +29,7 @@
         "l1_scroll_messenger_address": "0xbdcface31b496ed536c93483e3a4e7b4a2c19a55",
         "l2_messenger_address": "0xe9c53ca91528246e4e29304058b9d78d7999c96a",
         "moat_address": "0xb46985d56f57d138bfaa7acbae0de38dc3cfc00f",
-        "message_queue_gas_limit": 1000000
+        "message_queue_gas_limit": 200000
       }
     }
   }

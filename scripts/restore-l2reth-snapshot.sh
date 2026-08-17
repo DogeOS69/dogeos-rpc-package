@@ -3,11 +3,11 @@ set -euo pipefail
 
 # Update these two values together when publishing a newer testnet snapshot.
 DEFAULT_SNAPSHOT_URL="https://dogeos-rpc-snapshots.s3.us-west-2.amazonaws.com/testnet/l2reth/dogeos-l2reth-testnet-20260802070317.tar.gz"
-DEFAULT_SNAPSHOT_SHA256="8dbdd977f8ee6a68dcf15db87453a170c6c0d0beaadc1d46f8391fdc167db115"
+DEFAULT_SNAPSHOT_SHA256="8cbfc208bf95bc7ad48cb33edfa59f81a9bf9bec6358c8b2ff143c8577d8e825"
 
 usage() {
   cat <<'USAGE'
-Restore the published L2Reth testnet snapshot into DATA_ROOT and start L2Reth.
+Restore the published L2Reth testnet snapshot into DATA_ROOT and start the stack.
 
 Usage:
   scripts/restore-l2reth-snapshot.sh [options] <env-file>
@@ -18,7 +18,7 @@ Example:
 Options:
   --force                 Replace a non-empty l2reth directory. The old
                           directory is moved to a timestamped backup.
-  --no-start              Restore the snapshot without starting l2reth-node.
+  --no-start              Restore the snapshot without starting services.
   --snapshot-url URL      Override the built-in snapshot URL.
   --sha256 SHA256         Override the built-in snapshot SHA-256.
   --cache-dir DIR         Download/cache directory. Defaults to
@@ -309,15 +309,15 @@ fi
 
 if [ "$START_AFTER_RESTORE" = true ]; then
   echo
-  echo "Starting l2reth-node and its dependencies..."
-  "${COMPOSE[@]}" up -d l2reth-node
+  echo "Starting the testnet stack..."
+  "${COMPOSE[@]}" up -d
   echo
-  echo "L2Reth container status:"
-  "${COMPOSE[@]}" ps l2reth-node
+  echo "Container status:"
+  "${COMPOSE[@]}" ps
 else
   echo
-  echo "Restore complete. Start it later with:"
-  printf '  docker compose --env-file %q up -d l2reth-node\n' "$ENV_FILE_ABS"
+  echo "Restore complete. Start the stack later with:"
+  printf '  docker compose --env-file %q up -d\n' "$ENV_FILE_ABS"
 fi
 
 echo

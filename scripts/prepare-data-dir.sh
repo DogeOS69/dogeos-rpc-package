@@ -15,6 +15,20 @@ fail() {
   exit 1
 }
 
+generate_rpc_password() {
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -hex 32
+    return
+  fi
+
+  if command -v od >/dev/null 2>&1 && command -v tr >/dev/null 2>&1; then
+    od -An -N32 -tx1 /dev/urandom | tr -d ' \n'
+    return
+  fi
+
+  fail "cannot generate Dogecoin RPC password: install openssl or od"
+}
+
 if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
   usage
   exit 0
@@ -36,6 +50,10 @@ set +a
 [ -n "${NETWORK:-}" ] || fail "NETWORK must be set in $ENV_FILE"
 [ -n "${DATA_ROOT:-}" ] || fail "DATA_ROOT must be set in $ENV_FILE"
 
+case "$NETWORK" in
+  *[!A-Za-z0-9_-]*|'') fail "NETWORK contains unsupported characters: $NETWORK" ;;
+esac
+
 case "$DATA_ROOT" in
   /*) ;;
   *) fail "DATA_ROOT must be an absolute path, got: $DATA_ROOT" ;;
@@ -43,6 +61,11 @@ esac
 
 DATA_ROOT_ABS="$(readlink -m "$DATA_ROOT")"
 REPO_ROOT_ABS="$(readlink -m "$REPO_ROOT")"
+DOGECOIN_SECRET_DIR="$REPO_ROOT_ABS/secrets/$NETWORK"
+DOGECOIN_RPC_USER_FILE="$DOGECOIN_SECRET_DIR/dogecoin_rpc_user"
+DOGECOIN_RPC_PASSWORD_FILE="$DOGECOIN_SECRET_DIR/dogecoin_rpc_password"
+
+[ ! -L "$DOGECOIN_SECRET_DIR" ] || fail "Dogecoin secret directory must not be a symlink: $DOGECOIN_SECRET_DIR"
 
 case "$DATA_ROOT_ABS" in
   "$REPO_ROOT_ABS"|"$REPO_ROOT_ABS"/*)
@@ -58,6 +81,32 @@ esac
 
 echo "Network: $NETWORK"
 echo "Data root: $DATA_ROOT_ABS"
+echo
+
+umask 077
+mkdir -p "$DOGECOIN_SECRET_DIR"
+chmod 700 "$DOGECOIN_SECRET_DIR"
+
+if [ ! -e "$DOGECOIN_RPC_USER_FILE" ]; then
+  printf '%s\n' doge > "$DOGECOIN_RPC_USER_FILE"
+fi
+
+if [ ! -e "$DOGECOIN_RPC_PASSWORD_FILE" ]; then
+  generate_rpc_password > "$DOGECOIN_RPC_PASSWORD_FILE"
+fi
+
+[ ! -L "$DOGECOIN_RPC_USER_FILE" ] || fail "Dogecoin RPC user secret must not be a symlink: $DOGECOIN_RPC_USER_FILE"
+[ ! -L "$DOGECOIN_RPC_PASSWORD_FILE" ] || fail "Dogecoin RPC password secret must not be a symlink: $DOGECOIN_RPC_PASSWORD_FILE"
+[ -f "$DOGECOIN_RPC_USER_FILE" ] || fail "Dogecoin RPC user secret is not a regular file: $DOGECOIN_RPC_USER_FILE"
+[ -f "$DOGECOIN_RPC_PASSWORD_FILE" ] || fail "Dogecoin RPC password secret is not a regular file: $DOGECOIN_RPC_PASSWORD_FILE"
+[ -s "$DOGECOIN_RPC_USER_FILE" ] || fail "Dogecoin RPC user secret is empty: $DOGECOIN_RPC_USER_FILE"
+[ -s "$DOGECOIN_RPC_PASSWORD_FILE" ] || fail "Dogecoin RPC password secret is empty: $DOGECOIN_RPC_PASSWORD_FILE"
+chmod 600 "$DOGECOIN_RPC_USER_FILE" "$DOGECOIN_RPC_PASSWORD_FILE"
+
+echo "Dogecoin RPC secrets:"
+echo "  $DOGECOIN_RPC_USER_FILE"
+echo "  $DOGECOIN_RPC_PASSWORD_FILE"
+echo "  Existing secret files are preserved. Values are not printed."
 echo
 
 mkdir -p \
@@ -86,4 +135,4 @@ echo "Filesystem:"
 df -hP "$DATA_ROOT_ABS"
 echo
 
-echo "OK: DATA_ROOT is ready for docker compose --env-file $ENV_FILE up -d"
+echo "OK: DATA_ROOT and Dogecoin RPC secrets are ready for docker compose --env-file $ENV_FILE up -d"
