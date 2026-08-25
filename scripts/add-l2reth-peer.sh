@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-DEFAULT_ENODE='enode://49a8ef3983f09b5b27290b05e64cef28118b0e8d4ffdfdd14e879eefb09d7c52cb7a2852d20d5efebbe3686dc17b556fbeece0e477410871ed9c0a8e88538202@dogeos-testnet-cluster-b-0-68dc9c36e8602723.elb.us-west-2.amazonaws.com:30303'
+DEFAULT_ENODE='enode://90b1d52f52cfd40d9431594601393da6dd083d3ea133d2cecb0e9788371c753f6893512033a8854cd0f11a15df014d6d63007d3381c442d124994becef5fdf04@dogeos-testnet-cluster-b-reth-0-5c7f5d78956842a9.elb.us-west-2.amazonaws.com:30303'
 
 usage() {
   cat <<'EOF'
@@ -15,7 +15,7 @@ and waits briefly for a P2P connection.
 Usage:
   sudo ./scripts/add-l2reth-peer.sh [ENODE]
 
-The current l2-bootnode-0 public enode is used when ENODE is omitted. You can
+The current l2-reth-bootnode-0 public enode is used when ENODE is omitted. You can
 also set NEW_ENODE instead of passing an argument.
 
 Optional environment variables:
