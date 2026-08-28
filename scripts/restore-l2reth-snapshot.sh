@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # Update these two values together when publishing a newer testnet snapshot.
-DEFAULT_SNAPSHOT_URL="https://dogeos-rpc-snapshots.s3.us-west-2.amazonaws.com/testnet/l2reth/dogeos-l2reth-testnet-20260802070317.tar.gz"
-DEFAULT_SNAPSHOT_SHA256="8cbfc208bf95bc7ad48cb33edfa59f81a9bf9bec6358c8b2ff143c8577d8e825"
+DEFAULT_SNAPSHOT_URL="https://dogeos-rpc-snapshots.s3.us-west-2.amazonaws.com/testnet/l2reth/dogeos-l2reth-testnet-20260828014612.tar.gz"
+DEFAULT_SNAPSHOT_SHA256="20bd404a9e1fdfd38a75e7a2d8cd8d5ebdf272fdea7ed45ede82c1c07548c48a"
 
 usage() {
   cat <<'USAGE'
