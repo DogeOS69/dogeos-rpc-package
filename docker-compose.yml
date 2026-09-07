@@ -84,8 +84,8 @@ services:
     image: curlimages/curl:8.20.0
     restart: "no"
     environment:
-      ARTIFACT_URL: https://dogeos-eth-da-archive-testnet.s3.us-west-2.amazonaws.com/rehearsal/history/l1-interface-historical-artifact-f4f2f71984dbce5baae9885481daf7bc0ae87c6025dedb5901097af3bd6d890f.sqlite
-      REPLAY_DB_URL: https://dogeos-eth-da-archive-testnet.s3.us-west-2.amazonaws.com/rehearsal/history/replay-83113eac9cb5e145c1d792b13a16c801c22d6e96d2dd45b56ac216147e38149e.sqlite
+      ARTIFACT_URL: https://dogeos-eth-da-archive-testnet.s3.us-west-2.amazonaws.com/history/l1-interface-historical-artifact-404b44250950c18748b8595c26f6ab8f109b4873002d5be5ce0ddb0d0c30cf5a.sqlite
+      REPLAY_DB_URL: https://dogeos-eth-da-archive-testnet.s3.us-west-2.amazonaws.com/history/replay-fb8c66a7ce147e0fa8ac2166dded42247cab1debb755df37ba31452e3c275494.sqlite
       DOGEOS_L1_INTERFACE_EVENT_PLANE_ARTIFACT_PATH: /data/l1-interface-historical-artifact.sqlite
       DOGEOS_L1_INTERFACE_REPLAY_READ__SQLITE_PATH: /data/replay.sqlite
     user: "0:0"

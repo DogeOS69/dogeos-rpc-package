@@ -21,9 +21,6 @@
     "euclidTime": 0,
     "euclidV2Time": 0,
     "feynmanTime": 0,
-    "galileoTime": 1786971600,
-    "galileoV2Time": 1786971600,
-    "tsukiTime": 1786971600,
     "clique": {
       "period": 3,
       "epoch": 30000,
@@ -49,7 +46,7 @@
         "l2SystemConfigAddress": "0x2669B071E88e272CBDA1e12182D8C754CB737400",
         "numL1MessagesPerBlock": 10,
         "systemContractAddress": "0x2000369731833cBf00e97146999442ADf10a4E59",
-        "startL1Block": 14023282
+        "startL1Block": 62379161
       },
       "genesisStateRoot": null,
       "missingHeaderFieldsSHA256": null,

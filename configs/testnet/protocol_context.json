@@ -7,12 +7,12 @@
   },
   "genesis": {
     "genesis_sequencer_outpoint": {
-      "txid": "0x6dc3d136103b97c5352e35c03009bb2e06ede7f0ae1f1e112e7220fda99fb2f9",
+      "txid": "0x80b3226eb9daac0c82c16a7e103f542cabc21e33acceccc43e44bd659ac1c312",
       "vout": 0
     },
-    "genesis_bridge_key_hash": "0xd2b616a07308a8ccd1367c11a7cf49275baaac6e",
-    "initial_confirmed_block_number": 62379165,
-    "initial_confirmed_block_hash": "0x51f000e10de15f2fbadc5611bbcccceb4c8aa99b23a92e48d696df9911a0442b",
+    "genesis_bridge_key_hash": "0xe7b96950f463f1ca54177d50f1f441917cd2a58e",
+    "initial_confirmed_block_number": 67874533,
+    "initial_confirmed_block_hash": "0x5353a4d4a0637d178aed16c6708d4adff914f097e27754c48deabb6a38320507",
     "initial_ethereum_block_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
     "initial_tx_index": 0,
     "genesis_batch_hash": "0x8c873ede475f2831e9d57b1f32641c4409a24311c4df6f1a3d7114eb9358b1de",
