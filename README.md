@@ -6,7 +6,7 @@ A Docker-based deployment of the DogeOS RPC stack for node and RPC operators. It
 
 v0.3.0 is a major upgrade from the v0.2.x line. Key changes for operators:
 
-- **Data Availability moved from Celestia to Ethereum.** The DA layer is now Ethereum-based. L2Reth reads blobs directly from the public S3 archive; L1 Interface uses an operator-supplied Ethereum execution RPC for replay. No Celestia node is run.
+- **Data Availability moved from Celestia to Ethereum.** The DA layer is now Ethereum-based. L2Reth reads blobs directly from the public S3 archive; L1 Interface uses the bundled public Ethereum Sepolia execution RPC for replay unless the operator overrides it. No Celestia node is run.
 - **L1 Interface storage format is not backward compatible with v0.2.x.** The pre-v0.3.0 history is supplied as S3 archive files, which an init step downloads automatically on first start, so the upgrade is seamless.
 - **No L2 history break.** From L2Reth's perspective the block history is continuous across the upgrade. A brand-new L2Reth node syncing from genesis will sync through and catch up to the chain head normally.
 
@@ -101,26 +101,33 @@ cp .env.example.testnet .env.testnet
 `DATA_ROOT` must be an absolute path on a dedicated data disk and must not be
 inside this repository.
 
-### 2. Configure the Required Operator RPCs
+### 2. Optionally Override the Ethereum RPC
 
-L1 Interface cannot replay Ethereum DA without an Ethereum Sepolia execution
-RPC. Copy the tracked operator template:
+The tracked testnet configuration uses this public Ethereum Sepolia execution
+RPC by default:
+
+```text
+https://ethereum-sepolia-rpc.publicnode.com
+```
+
+No `l1-interface.local.env` file is required to use that default. To use a
+private or dedicated provider instead, copy the tracked operator template:
 
 ```bash
 cp envs/testnet/l1-interface.local.env.example \
   envs/testnet/l1-interface.local.env
 ```
 
-Then replace the placeholder in the new, gitignored file:
+Then uncomment and replace the override in the new, gitignored file:
 
 ```bash
 DOGEOS_L1_INTERFACE_ETHEREUM_DA__L1_RPC_URL=https://your-sepolia-execution-rpc
 ```
 
-The endpoint must support Sepolia (`chainId` `11155111`) and standard execution
-methods including `eth_getBlockByHash`. Confirm that the provider plan permits
-Sepolia access. Keep API keys only in `l1-interface.local.env`; never put them
-in the tracked generated env file.
+An override endpoint must support Sepolia (`chainId` `11155111`) and standard
+execution methods including `eth_getBlockByHash`. Confirm that the provider
+plan permits Sepolia access. Keep API keys only in `l1-interface.local.env`;
+never put them in the tracked generated env file.
 
 The RPC package points L1 Interface at the user's own Compose `dogecoin-node`
 by default. Its RPC credentials come from shared Docker secrets and do not
@@ -170,9 +177,9 @@ verifies its built-in SHA-256, validates the archive layout, restores it to
 `${DATA_ROOT}/l2reth`, and starts the complete testnet stack. Downloads
 are resumable and cached under `${DATA_ROOT}/.snapshot-cache`.
 
-Before running it, configure the required Ethereum RPC in step 2 and create the
-shared Dogecoin Secrets in step 3. To restore the files without starting
-containers, pass `--no-start`.
+Before running it, create the shared Dogecoin Secrets in step 3. If the bundled
+public Ethereum RPC is not suitable for the deployment, configure an override
+in step 2. To restore the files without starting containers, pass `--no-start`.
 
 The snapshot contains chain data only. The current genesis, hardfork schedule,
 peer list, and runtime configuration continue to come from this repository.
@@ -290,8 +297,9 @@ containers consume the shared Secret files at startup.
 ### L1 Interface
 The L1 Interface provides the Ethereum-compatible L1 RPC consumed by L2Reth
 through `L2RETH_L1_ENDPOINT` and bridges the Dogecoin chain into L2. It uses the
-operator-supplied Ethereum execution RPC for Ethereum DA replay. Pre-v0.3.0
-history comes from the verified SQLite files downloaded by
+bundled public Ethereum Sepolia execution RPC for Ethereum DA replay unless an
+operator override is configured. Pre-v0.3.0 history comes from the verified
+SQLite files downloaded by
 `l1-interface-init-fetch-sqlite` on first start. L2Reth does not download blobs
 from L1 Interface; it reads the public S3 archive configured by
 `L2RETH_BLOB_S3_URL` directly.
@@ -329,21 +337,24 @@ L1 Interface configuration is layered:
 
 1. **Generated network settings** (`envs/{network}/l1-interface.env`) - Deterministic chain addresses, heights, IDs, and feature settings produced by the CLI. This file is overwritten when configuration is regenerated; do not edit it.
 2. **Shared bundled-node secrets** (`secrets/{network}/dogecoin_rpc_*`) - One Git-ignored credential source mounted into both Dogecoin and L1 Interface.
-3. **Operator-owned settings** (`envs/{network}/l1-interface.local.env`) - The required Ethereum RPC and optional temporary/debug Dogecoin RPC override. It is loaded last, so it wins, and the CLI never overwrites it.
+3. **Operator-owned settings** (`envs/{network}/l1-interface.local.env`) - Optional Ethereum RPC and temporary/debug Dogecoin RPC overrides. It is loaded last, so it wins, and the CLI never overwrites it.
 
-For the tracked testnet package, create the local file from the template. The
-real file is gitignored so credentials stay out of version control:
+The tracked testnet package works without a local override file by using
+`https://ethereum-sepolia-rpc.publicnode.com`. To override it, create the local
+file from the template. The real file is gitignored so credentials stay out of
+version control:
 
 ```bash
 cp envs/testnet/l1-interface.local.env.example envs/testnet/l1-interface.local.env
-# Required: configure the Ethereum RPC section
+# Optional: configure the Ethereum RPC override
 # Optional: configure the Dogecoin section only for temporary/debug use
 ```
 
 The generated env contains chain/runtime settings but no deployment-specific
 Dogecoin URL or credentials. Compose owns the default internal URL, and
-`prepare-data-dir.sh` creates the shared local Docker Secrets. The Ethereum
-endpoint and any temporary/debug Dogecoin override remain operator-owned.
+`prepare-data-dir.sh` creates the shared local Docker Secrets. The generated
+testnet env also contains the public Ethereum RPC default; private Ethereum
+endpoints and temporary/debug Dogecoin overrides remain operator-owned.
 
 ### Generating Configuration Files (Internal DogeOS Developers Only)
 
@@ -367,17 +378,18 @@ This command will:
 - Extract `genesis.json` and `protocol_context.json` from your deployment
 - Never overwrite operator values in `*.local.env`
 
-The generated package still requires the operator to set
-`DOGEOS_L1_INTERFACE_ETHEREUM_DA__L1_RPC_URL` before startup. Generation may
-also leave unresolved peer host placeholders when public LoadBalancer domains
-are unavailable; resolve them before distributing the package.
+The generated testnet package includes the public Ethereum Sepolia RPC default.
+Operators may override `DOGEOS_L1_INTERFACE_ETHEREUM_DA__L1_RPC_URL` in
+`l1-interface.local.env`. Generation may also leave unresolved peer host
+placeholders when public LoadBalancer domains are unavailable; resolve them
+before distributing the package.
 
 ### Manual Configuration
 
 1. Create network-specific generated settings in `envs/{network}/`.
 2. Create network-specific genesis and protocol files in `configs/{network}/`.
 3. Define the user's Compose Dogecoin URL in the RPC package topology, outside generated `l1-interface.env`.
-4. Create `envs/{network}/l1-interface.local.env`, set the required Ethereum RPC, and add a Dogecoin override only for temporary/debug use.
+4. Optionally create `envs/{network}/l1-interface.local.env` to override the default Ethereum RPC or add a Dogecoin override for temporary/debug use.
 5. Resolve every external P2P peer hostname in `l2reth.env`.
 6. Copy the appropriate `.env.example.*` to `.env.<network>` and set a dedicated `DATA_ROOT`.
 7. Prepare the host data directory and shared secrets, then start services.
@@ -395,7 +407,7 @@ mainnet deployment by changing only `NETWORK`.
 ### Customizing Configuration
 
 Edit the appropriate environment files in `envs/` directory:
-- `envs/{network}/l1-interface.local.env` - for the required Ethereum RPC and an optional temporary/debug Dogecoin RPC override
+- `envs/{network}/l1-interface.local.env` - optional Ethereum RPC and temporary/debug Dogecoin RPC overrides
 - `envs/{network}/*.env` - generated per-network config (regenerated by the CLI)
 
 Bundled Dogecoin credentials live in the Git-ignored

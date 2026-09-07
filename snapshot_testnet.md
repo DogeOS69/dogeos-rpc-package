@@ -5,29 +5,28 @@ Dogecoin node, and L1 Interface in the testnet RPC package.
 
 ## Common Prerequisites
 
-Run commands from the repository root. First create the Compose env file,
-configure the required Ethereum RPC, and prepare `DATA_ROOT`:
+Run commands from the repository root. First create the Compose env file and
+prepare `DATA_ROOT`:
 
 ```bash
 cp .env.example.testnet .env.testnet
-cp envs/testnet/l1-interface.local.env.example \
-  envs/testnet/l1-interface.local.env
 
-# Edit both files before continuing:
+# Edit the Compose env before continuing:
 # - set an absolute DATA_ROOT in .env.testnet
-# - set DOGEOS_L1_INTERFACE_ETHEREUM_DA__L1_RPC_URL in
-#   envs/testnet/l1-interface.local.env
-# - configure the optional Dogecoin section only when using an external RPC
 
 ./scripts/prepare-data-dir.sh .env.testnet
 ```
 
-The Ethereum endpoint must support Sepolia (`chainId` `11155111`) and execution
-RPC methods such as `eth_getBlockByHash`. Keep provider credentials in the
-gitignored `l1-interface.local.env`. For the bundled Dogecoin node,
-`prepare-data-dir.sh` creates Git-ignored Docker Secrets shared by Dogecoin and
-L1 Interface. Existing Secret files are preserved. Only for temporary/debug
-use, an external Dogecoin node can be configured in `l1-interface.local.env`.
+The tracked testnet configuration defaults to the public Ethereum endpoint
+`https://ethereum-sepolia-rpc.publicnode.com`. To use another provider, copy
+`envs/testnet/l1-interface.local.env.example` to `l1-interface.local.env` and
+uncomment its RPC override. The endpoint must support Sepolia (`chainId`
+`11155111`) and execution RPC methods such as `eth_getBlockByHash`. Keep
+provider credentials in the gitignored local file. For the bundled Dogecoin
+node, `prepare-data-dir.sh` creates Git-ignored Docker Secrets shared by
+Dogecoin and L1 Interface. Existing Secret files are preserved. Only for
+temporary/debug use, an external Dogecoin node can be configured in
+`l1-interface.local.env`.
 
 ## L2Reth Snapshot (Recommended)
 
@@ -140,7 +139,9 @@ storage format changed in v0.3.0. The supported recovery path is to preserve the
 old directory and let the Compose init job download the pinned, verified
 historical artifact and replay bootstrap database again.
 
-Confirm that `DOGEOS_L1_INTERFACE_ETHEREUM_DA__L1_RPC_URL` is configured in
+The generated testnet configuration supplies the public Ethereum RPC default.
+If the deployment needs another provider, configure
+`DOGEOS_L1_INTERFACE_ETHEREUM_DA__L1_RPC_URL` in
 `envs/testnet/l1-interface.local.env`, then run:
 
 ```bash
