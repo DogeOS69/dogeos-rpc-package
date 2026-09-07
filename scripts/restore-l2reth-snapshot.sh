@@ -132,6 +132,14 @@ case "$DATA_ROOT_ABS" in
     ;;
 esac
 
+case "$DATA_ROOT_ABS" in
+  /mnt/wsl/*)
+    if ! grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null; then
+      fail "DATA_ROOT uses a WSL-only path on a non-WSL host: $DATA_ROOT_ABS"
+    fi
+    ;;
+esac
+
 case "$SNAPSHOT_URL" in
   https://*) ;;
   *) fail "snapshot URL must use HTTPS: $SNAPSHOT_URL" ;;

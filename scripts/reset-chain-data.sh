@@ -112,6 +112,14 @@ case "$DATA_ROOT_ABS" in
     ;;
 esac
 
+case "$DATA_ROOT_ABS" in
+  /mnt/wsl/*)
+    if ! grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null; then
+      fail "DATA_ROOT uses a WSL-only path on a non-WSL host: $DATA_ROOT_ABS"
+    fi
+    ;;
+esac
+
 L1_DIR="$DATA_ROOT_ABS/l1-interface"
 L2_DIR="$DATA_ROOT_ABS/l2reth"
 

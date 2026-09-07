@@ -88,6 +88,12 @@ The commands below are for testnet. Do not substitute `.env.mainnet`: the
 current release does not ship a complete full-stack mainnet configuration.
 See [Mainnet status](#mainnet-status) before using the mainnet templates.
 
+> [!IMPORTANT]
+> Older revisions accidentally tracked a host-specific `.env.testnet`. Before
+> upgrading an existing checkout across the fix that removed it from Git, copy
+> that file outside the repository. Restore it as the local `.env.testnet`
+> after updating, review `DATA_ROOT`, and never reuse another host's data path.
+
 ### 1. Configure the Compose Environment
 
 Copy the testnet template and review `DATA_ROOT`, ports, memory limits, and the
@@ -99,7 +105,9 @@ cp .env.example.testnet .env.testnet
 ```
 
 `DATA_ROOT` must be an absolute path on a dedicated data disk and must not be
-inside this repository.
+inside this repository. The example assumes that disk is mounted at `/data`;
+verify the mount on the target host instead of reusing a path from another
+machine.
 
 ### 2. Optionally Override the Ethereum RPC
 
@@ -136,7 +144,10 @@ Dogecoin override and supply the external node's URL and authentication.
 
 ### 3. Prepare the Data Directory
 
-L2Reth and L1 Interface follow the same operational model as Arbitrum Nitro: chain databases live in an explicit host directory, not in anonymous Docker volumes. For the tracked testnet package, `DATA_ROOT` should point to a dedicated data disk such as `/mnt/wsl/data/dogeos-data/testnet`.
+L2Reth and L1 Interface follow the same operational model as Arbitrum Nitro:
+chain databases live in an explicit host directory, not in anonymous Docker
+volumes. `DATA_ROOT` must be set in the local `.env.testnet`; a typical Linux
+host with a dedicated `/data` mount can use `/data/dogeos-data/testnet`.
 
 Dogecoin is the exception: its data stays in the named Docker volume used by earlier releases (`DOGECOIN_VOLUME_NAME` in the env file), so nodes upgrading from pre-v0.3.0 keep their synced chain without migration. If you changed `COMPOSE_PROJECT_NAME` in an earlier release, set `DOGECOIN_VOLUME_NAME=<your-old-project-name>_dogecoin_data` (check with `docker volume ls | grep dogecoin_data`).
 
@@ -540,8 +551,8 @@ and then pass that explicit name to `docker volume rm`.
 ## Data Isolation
 
 - **Data root**: `DATA_ROOT` controls where L2Reth and L1 Interface data is stored. Use a dedicated data disk path, not a path inside this repository.
-  - Testnet example: `/mnt/wsl/data/dogeos-data/testnet`
-  - Mainnet example: `/mnt/wsl/data/dogeos-data/mainnet`
+  - Testnet example: `/data/dogeos-data/testnet`
+  - Mainnet example: `/data/dogeos-data/mainnet`
 - **Directory layout**: Docker bind-mounts `${DATA_ROOT}/l2reth` and `${DATA_ROOT}/l1-interface` into the corresponding containers. Dogecoin uses the named Docker volume `DOGECOIN_VOLUME_NAME`; use different volume names for mainnet and testnet (the defaults already differ).
 - **Project naming**: `COMPOSE_PROJECT_NAME` controls Compose container and network names. Use different values for mainnet and testnet.
 - **Ports**: Use different `L2_HTTP_PORT`, `L2_WS_PORT`, and `L2_P2P_PORT` values when running multiple environments. L1 Interface ports `8547`, `5052`, and `9090` are currently fixed in Compose, and the init container has a fixed `container_name`; those must also be parameterized before two full stacks can run on one host.

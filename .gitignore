@@ -1,6 +1,8 @@
 .DS_Store
 *.zip
 .env
+.env.*
+!.env.example.*
 
 # Operator-specific overrides (contain infra endpoints / credentials).
 # Track the *.example templates instead.
