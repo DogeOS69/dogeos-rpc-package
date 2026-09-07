@@ -153,6 +153,6 @@ volumes:
     name: ${DOGECOIN_VOLUME_NAME:?DOGECOIN_VOLUME_NAME must be set}
 secrets:
   dogecoin_rpc_user:
-    file: ./secrets/${NETWORK}/dogecoin_rpc_user
+    environment: DOGECOIN_RPC_USER
   dogecoin_rpc_password:
-    file: ./secrets/${NETWORK}/dogecoin_rpc_password
+    environment: DOGECOIN_RPC_PASSWORD

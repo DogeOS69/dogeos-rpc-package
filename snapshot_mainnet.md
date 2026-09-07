@@ -26,7 +26,7 @@ enablement requires all of the following deployment-specific inputs:
 - `configs/mainnet/l2reth-genesis.json`
 - `configs/mainnet/protocol_context.json`
 - a generated mainnet L1 Interface env, an operator-local Ethereum RPC, and
-  package-owned Dogecoin topology/shared secrets
+  stable Dogecoin RPC credentials in `.env.mainnet`
 - mainnet-specific, checksum-pinned L1 Interface bootstrap artifacts
 - a separately published and verified mainnet L2Reth snapshot, if snapshot
   restoration is desired

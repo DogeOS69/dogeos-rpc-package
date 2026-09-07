@@ -10,9 +10,11 @@ prepare `DATA_ROOT`:
 
 ```bash
 cp .env.example.testnet .env.testnet
+chmod 600 .env.testnet
 
 # Edit the Compose env before continuing:
 # - set an absolute DATA_ROOT in .env.testnet
+# - review the stable DOGECOIN_RPC_USER and DOGECOIN_RPC_PASSWORD values
 
 ./scripts/prepare-data-dir.sh .env.testnet
 ```
@@ -23,10 +25,11 @@ The tracked testnet configuration defaults to the public Ethereum endpoint
 uncomment its RPC override. The endpoint must support Sepolia (`chainId`
 `11155111`) and execution RPC methods such as `eth_getBlockByHash`. Keep
 provider credentials in the gitignored local file. For the bundled Dogecoin
-node, `prepare-data-dir.sh` creates Git-ignored Docker Secrets shared by
-Dogecoin and L1 Interface. Existing Secret files are preserved. Only for
-temporary/debug use, an external Dogecoin node can be configured in
-`l1-interface.local.env`.
+node, Compose mounts the configured `DOGECOIN_RPC_USER` and
+`DOGECOIN_RPC_PASSWORD` from `.env.testnet` into both Dogecoin and L1 Interface
+as secrets. `prepare-data-dir.sh` validates the credentials but never generates
+or changes them. Only for temporary/debug use, an external Dogecoin node can be
+configured in `l1-interface.local.env`.
 
 ## L2Reth Snapshot (Recommended)
 

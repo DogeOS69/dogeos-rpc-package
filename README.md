@@ -39,14 +39,11 @@ The project follows a modular configuration approach with support for multiple n
 │       ├── l1-interface.env
 │       ├── l1-interface.local.env.example  # Template for operator overrides
 │       └── l2reth.env
-├── secrets                     # Docker Secret templates; runtime values are gitignored
-│   ├── mainnet
-│   └── testnet
 ├── README.md
 └── scripts                     # Utility scripts
     ├── dogecoin_entrypoint.sh          # Build Dogecoin config from Docker secrets
     ├── l1-interface_entrypoint.sh      # Inject bundled-node secrets into L1 Interface
-    ├── prepare-data-dir.sh             # Prepare data directories and local secrets
+    ├── prepare-data-dir.sh             # Validate local settings and prepare data directories
     ├── restore-l2reth-snapshot.sh      # One-command L2Reth snapshot restore
     └── l2reth_entrypoint.sh            # L2Reth entrypoint
 ```
@@ -93,21 +90,37 @@ See [Mainnet status](#mainnet-status) before using the mainnet templates.
 > upgrading an existing checkout across the fix that removed it from Git, copy
 > that file outside the repository. Restore it as the local `.env.testnet`
 > after updating, review `DATA_ROOT`, and never reuse another host's data path.
+>
+> Older v0.3.0 revisions stored bundled Dogecoin credentials in
+> `secrets/testnet/dogecoin_rpc_user` and `dogecoin_rpc_password`. Before
+> recreating containers after an upgrade, copy those existing values into
+> `DOGECOIN_RPC_USER` and `DOGECOIN_RPC_PASSWORD` in the local `.env.testnet`.
+> Keeping the values unchanged avoids an unplanned credential rotation for the
+> Dogecoin node, L1 Interface, and any external RPC consumers.
 
 ### 1. Configure the Compose Environment
 
-Copy the testnet template and review `DATA_ROOT`, ports, memory limits, and the
-Dogecoin volume name:
+Copy the testnet template and review the stable Dogecoin RPC credentials,
+`DATA_ROOT`, ports, memory limits, and the Dogecoin volume name:
 
 ```bash
 cp .env.example.testnet .env.testnet
-# edit DATA_ROOT and any port/memory overrides before starting
+# review DATA_ROOT, DOGECOIN_RPC_PASSWORD, and any port/memory overrides
+chmod 600 .env.testnet
 ```
 
 `DATA_ROOT` must be an absolute path on a dedicated data disk and must not be
 inside this repository. The example assumes that disk is mounted at `/data`;
 verify the mount on the target host instead of reusing a path from another
 machine.
+
+For compatibility with the earlier testnet package, `DOGECOIN_RPC_USER`
+defaults to `doge` and `DOGECOIN_RPC_PASSWORD` defaults to `password`. Change
+them once in the local `.env.testnet` if desired and keep them stable. Compose
+supplies the same values to both `dogecoin-node` and L1 Interface as secrets,
+so the credentials are configured only once. Supported characters are letters,
+digits, and `._~:@%+=,-`. The defaults are public knowledge: never expose the
+Dogecoin RPC port to an untrusted network while using them.
 
 ### 2. Optionally Override the Ethereum RPC
 
@@ -155,20 +168,19 @@ Dogecoin is the exception: its data stays in the named Docker volume used by ear
 ./scripts/prepare-data-dir.sh .env.testnet
 ```
 
-The script creates the data directories and, on first run, generates a random
-Dogecoin RPC password in Git-ignored Docker Secret files:
+The script validates the configured Dogecoin RPC credentials without printing
+or changing them, then creates the data directories:
 
 ```text
 ${DATA_ROOT}/l2reth
 ${DATA_ROOT}/l1-interface
-secrets/testnet/dogecoin_rpc_user
-secrets/testnet/dogecoin_rpc_password
 ```
 
-Existing Secret files are never overwritten and their values are not printed.
-Both `dogecoin-node` and L1 Interface consume the same Secret files, so bundled
-RPC credentials have one source of truth. Keep these files private and include
-them in the operator's encrypted backup or secret-management workflow.
+The Git-ignored `.env.testnet` is the single source of truth. Compose mounts its
+`DOGECOIN_RPC_USER` and `DOGECOIN_RPC_PASSWORD` values into both
+`dogecoin-node` and L1 Interface as secrets. Keep this local env file private
+and include it in the operator's encrypted backup or secret-management
+workflow.
 
 Do not set `DATA_ROOT` to a path inside this repository.
 
@@ -188,9 +200,10 @@ verifies its built-in SHA-256, validates the archive layout, restores it to
 `${DATA_ROOT}/l2reth`, and starts the complete testnet stack. Downloads
 are resumable and cached under `${DATA_ROOT}/.snapshot-cache`.
 
-Before running it, create the shared Dogecoin Secrets in step 3. If the bundled
-public Ethereum RPC is not suitable for the deployment, configure an override
-in step 2. To restore the files without starting containers, pass `--no-start`.
+Before running it, validate the local settings and prepare the data directories
+in step 3. If the bundled public Ethereum RPC is not suitable for the
+deployment, configure an override in step 2. To restore the files without
+starting containers, pass `--no-start`.
 
 The snapshot contains chain data only. The current genesis, hardfork schedule,
 peer list, and runtime configuration continue to come from this repository.
@@ -288,8 +301,8 @@ mainnet bootstrap URLs; do not reuse testnet files or snapshots.
 Compose currently publishes service ports on all host interfaces. Do not expose
 Dogecoin RPC, L1 Interface RPC/health, or L2Reth HTTP/WebSocket directly to the
 public internet. L2Reth exposes powerful `debug` and `trace` methods, and the
-Dogecoin credentials are generated locally under `secrets/{network}/`, but RPC
-authentication is not a substitute for network isolation.
+Dogecoin credentials are stored only in the Git-ignored local Compose env, but
+RPC authentication is not a substitute for network isolation.
 
 Use host/cloud firewalls, a private network or VPN, and an authenticated reverse
 proxy where remote RPC access is required. Normally only the intended P2P ports
@@ -298,10 +311,12 @@ should be internet-reachable:
 - Dogecoin P2P: `${DOGECOIN_P2P_PORT}` (`44556` on testnet)
 - L2Reth P2P: `${L2_P2P_PORT}` TCP and UDP (`30303` by default)
 
-To rotate the bundled Dogecoin RPC credentials, replace both Git-ignored files
-under `secrets/{network}/`, keep each value on exactly one line, and recreate
-both `dogecoin-node` and `l1-interface`. Do not edit `dogecoin.conf`: the
-containers consume the shared Secret files at startup.
+To change the bundled Dogecoin RPC credentials, edit
+`DOGECOIN_RPC_USER`/`DOGECOIN_RPC_PASSWORD` once in the local Compose env and
+recreate both `dogecoin-node` and `l1-interface`. Do not edit `dogecoin.conf`:
+both containers consume the same Compose Secrets at startup. Changing these
+values restarts Dogecoin and also requires every external consumer to update,
+so keep them stable unless a coordinated rotation is intended.
 
 ## Services Overview
 
@@ -338,6 +353,7 @@ The env file contains:
 - `COMPOSE_PROJECT_NAME` - Docker Compose project name (for container and network isolation)
 - `DATA_ROOT` - Host path for persistent L2Reth and L1 Interface data
 - `DOGECOIN_VOLUME_NAME` - Named Docker volume holding Dogecoin chain data (kept compatible with pre-v0.3.0 releases)
+- `DOGECOIN_RPC_USER` / `DOGECOIN_RPC_PASSWORD` - Stable credentials shared by the bundled Dogecoin node and L1 Interface
 - Port configurations
 
 Recommended filenames are `.env.testnet` and `.env.mainnet`, and both are gitignored to prevent accidental commits of local configurations.
@@ -347,7 +363,7 @@ Recommended filenames are `.env.testnet` and `.env.mainnet`, and both are gitign
 L1 Interface configuration is layered:
 
 1. **Generated network settings** (`envs/{network}/l1-interface.env`) - Deterministic chain addresses, heights, IDs, and feature settings produced by the CLI. This file is overwritten when configuration is regenerated; do not edit it.
-2. **Shared bundled-node secrets** (`secrets/{network}/dogecoin_rpc_*`) - One Git-ignored credential source mounted into both Dogecoin and L1 Interface.
+2. **Shared bundled-node credentials** (`DOGECOIN_RPC_USER` and `DOGECOIN_RPC_PASSWORD` in the Git-ignored local Compose env) - One credential source mounted into both Dogecoin and L1 Interface as Compose Secrets.
 3. **Operator-owned settings** (`envs/{network}/l1-interface.local.env`) - Optional Ethereum RPC and temporary/debug Dogecoin RPC overrides. It is loaded last, so it wins, and the CLI never overwrites it.
 
 The tracked testnet package works without a local override file by using
@@ -362,8 +378,8 @@ cp envs/testnet/l1-interface.local.env.example envs/testnet/l1-interface.local.e
 ```
 
 The generated env contains chain/runtime settings but no deployment-specific
-Dogecoin URL or credentials. Compose owns the default internal URL, and
-`prepare-data-dir.sh` creates the shared local Docker Secrets. The generated
+Dogecoin URL or credentials. Compose owns the default internal URL and creates
+shared Secrets from the values in `.env.testnet`. The generated
 testnet env also contains the public Ethereum RPC default; private Ethereum
 endpoints and temporary/debug Dogecoin overrides remain operator-owned.
 
@@ -403,7 +419,7 @@ before distributing the package.
 4. Optionally create `envs/{network}/l1-interface.local.env` to override the default Ethereum RPC or add a Dogecoin override for temporary/debug use.
 5. Resolve every external P2P peer hostname in `l2reth.env`.
 6. Copy the appropriate `.env.example.*` to `.env.<network>` and set a dedicated `DATA_ROOT`.
-7. Prepare the host data directory and shared secrets, then start services.
+7. Validate the local credentials, prepare the host data directory, and start services.
 
 ```bash
 ./scripts/prepare-data-dir.sh .env.testnet
@@ -421,9 +437,9 @@ Edit the appropriate environment files in `envs/` directory:
 - `envs/{network}/l1-interface.local.env` - optional Ethereum RPC and temporary/debug Dogecoin RPC overrides
 - `envs/{network}/*.env` - generated per-network config (regenerated by the CLI)
 
-Bundled Dogecoin credentials live in the Git-ignored
-`secrets/{network}/dogecoin_rpc_user` and `dogecoin_rpc_password` files, not in
-the environment files or tracked `dogecoin.conf`.
+Bundled Dogecoin credentials live only in the Git-ignored local Compose env as
+`DOGECOIN_RPC_USER` and `DOGECOIN_RPC_PASSWORD`, not in tracked generated env
+files or `dogecoin.conf`.
 
 If you need to decide which APIs to enable, you can modify them in `scripts/l2reth_entrypoint.sh`.
 
@@ -437,7 +453,7 @@ If you need to decide which APIs to enable, you can modify them in `scripts/l2re
 
 ### Environment Management
 
-- Keep provider secrets in Git-ignored `*.local.env` files or an external secret store; bundled Dogecoin credentials belong in the Git-ignored `secrets/{network}/dogecoin_rpc_*` files
+- Keep provider secrets in Git-ignored `*.local.env` files or an external secret store; bundled Dogecoin credentials belong in the Git-ignored local Compose env
 - Treat `envs/{network}/*.env` as generated network configuration unless the file is explicitly named `*.local.env`
 - Environment variables are loaded through Compose `env_file`; bundled Dogecoin credentials are mounted through Compose `secrets`
 

@@ -8,6 +8,6 @@
 # Track the *.example templates instead.
 *.local.env
 
-# Runtime Dogecoin RPC credentials. The matching *.example files are tracked.
+# Legacy file-based Dogecoin RPC credentials from older releases.
 secrets/*/dogecoin_rpc_user
 secrets/*/dogecoin_rpc_password
