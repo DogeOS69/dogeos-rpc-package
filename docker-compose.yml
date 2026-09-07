@@ -36,7 +36,11 @@ services:
     volumes:
       - ./configs/${NETWORK}/l2reth-genesis.json:/l2reth/genesis/genesis.json:ro
       - ./scripts/l2reth_entrypoint.sh:/entrypoint.sh:ro
-      - ${DATA_ROOT:?DATA_ROOT must be set}/l2reth:/l2reth
+      - type: bind
+        source: ${DATA_ROOT:?DATA_ROOT must be set}/l2reth
+        target: /l2reth
+        bind:
+          create_host_path: true
     ports:
       - ${L2_HTTP_PORT:-8545}:8545
       - ${L2_WS_PORT:-8546}:8546
@@ -49,7 +53,7 @@ services:
       - /bin/sh
       - /entrypoint.sh
   l1-interface:
-    image: dogeos69/l1-interface:0.3.0-beta.0
+    image: dogeos69/l1-interface:v0.3.0-beta.3d
     restart: unless-stopped
     mem_reservation: 512m
     mem_limit: ${L1_INTERFACE_MEM_LIMIT:-2g}
@@ -68,7 +72,11 @@ services:
       - ./configs/${NETWORK}/l2reth-genesis.json:/app/genesis/genesis.json:ro
       - ./configs/${NETWORK}/protocol_context.json:/app/protocol_context.json:ro
       - ./scripts/l1-interface_entrypoint.sh:/entrypoint.sh:ro
-      - ${DATA_ROOT:?DATA_ROOT must be set}/l1-interface:/data
+      - type: bind
+        source: ${DATA_ROOT:?DATA_ROOT must be set}/l1-interface
+        target: /data
+        bind:
+          create_host_path: true
     secrets:
       - dogecoin_rpc_user
       - dogecoin_rpc_password
@@ -90,7 +98,11 @@ services:
       DOGEOS_L1_INTERFACE_REPLAY_READ__SQLITE_PATH: /data/replay.sqlite
     user: "0:0"
     volumes:
-      - ${DATA_ROOT:?DATA_ROOT must be set}/l1-interface:/data
+      - type: bind
+        source: ${DATA_ROOT:?DATA_ROOT must be set}/l1-interface
+        target: /data
+        bind:
+          create_host_path: true
     entrypoint:
       - /bin/sh
       - "-c"

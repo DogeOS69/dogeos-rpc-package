@@ -5,6 +5,7 @@ BASE_CONFIG=/etc/dogeos/dogecoin.conf
 RUNTIME_CONFIG=/run/dogeos/dogecoin.conf
 RPC_USER_FILE=/run/secrets/dogecoin_rpc_user
 RPC_PASSWORD_FILE=/run/secrets/dogecoin_rpc_password
+DATA_DIR=/data
 
 fail() {
   echo "ERROR: $*" >&2
@@ -33,6 +34,9 @@ read_secret() {
 
   printf '%s' "$secret_value"
 }
+
+mkdir -p "$DATA_DIR"
+[ -w "$DATA_DIR" ] || fail "Dogecoin data directory is not writable: $DATA_DIR (check the Docker volume)"
 
 [ -r "$BASE_CONFIG" ] || fail "Dogecoin base configuration is missing: $BASE_CONFIG"
 

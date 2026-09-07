@@ -43,7 +43,6 @@ The project follows a modular configuration approach with support for multiple n
 └── scripts                     # Utility scripts
     ├── dogecoin_entrypoint.sh          # Build Dogecoin config from Docker secrets
     ├── l1-interface_entrypoint.sh      # Inject bundled-node secrets into L1 Interface
-    ├── prepare-data-dir.sh             # Validate local settings and prepare data directories
     ├── restore-l2reth-snapshot.sh      # One-command L2Reth snapshot restore
     └── l2reth_entrypoint.sh            # L2Reth entrypoint
 ```
@@ -112,7 +111,16 @@ chmod 600 .env.testnet
 `DATA_ROOT` must be an absolute path on a dedicated data disk and must not be
 inside this repository. The example assumes that disk is mounted at `/data`;
 verify the mount on the target host instead of reusing a path from another
-machine.
+machine. No separate directory-preparation command is required. When the stack
+starts, Compose creates `${DATA_ROOT}/l2reth` and
+`${DATA_ROOT}/l1-interface` if they do not exist, and each service verifies
+that its mounted data directory is writable before starting its node process.
+The snapshot restore script creates and validates its own target and staging
+directories. Compose cannot tell whether `/data` is a dedicated disk or an
+ordinary directory on the root filesystem, so verify the mount before starting
+(for example, with `findmnt -T /data`). If the data disk is not mounted, Docker
+will create the configured path on the root filesystem and chain data can fill
+the root disk.
 
 For compatibility with the earlier testnet package, `DOGECOIN_RPC_USER`
 defaults to `doge` and `DOGECOIN_RPC_PASSWORD` defaults to `password`. Change
@@ -155,38 +163,17 @@ by default. Its RPC credentials come from shared Docker secrets and do not
 belong in this local env file. Only for temporary/debug use, uncomment the
 Dogecoin override and supply the external node's URL and authentication.
 
-### 3. Prepare the Data Directory
-
-L2Reth and L1 Interface follow the same operational model as Arbitrum Nitro:
-chain databases live in an explicit host directory, not in anonymous Docker
-volumes. `DATA_ROOT` must be set in the local `.env.testnet`; a typical Linux
-host with a dedicated `/data` mount can use `/data/dogeos-data/testnet`.
-
-Dogecoin is the exception: its data stays in the named Docker volume used by earlier releases (`DOGECOIN_VOLUME_NAME` in the env file), so nodes upgrading from pre-v0.3.0 keep their synced chain without migration. If you changed `COMPOSE_PROJECT_NAME` in an earlier release, set `DOGECOIN_VOLUME_NAME=<your-old-project-name>_dogecoin_data` (check with `docker volume ls | grep dogecoin_data`).
-
-```bash
-./scripts/prepare-data-dir.sh .env.testnet
-```
-
-The script validates the configured Dogecoin RPC credentials without printing
-or changing them, then creates the data directories:
-
-```text
-${DATA_ROOT}/l2reth
-${DATA_ROOT}/l1-interface
-```
-
 The Git-ignored `.env.testnet` is the single source of truth. Compose mounts its
 `DOGECOIN_RPC_USER` and `DOGECOIN_RPC_PASSWORD` values into both
 `dogecoin-node` and L1 Interface as secrets. Keep this local env file private
 and include it in the operator's encrypted backup or secret-management
-workflow.
+workflow. Dogecoin data remains in the named Docker volume identified by
+`DOGECOIN_VOLUME_NAME`; Docker creates that volume automatically. If you
+changed `COMPOSE_PROJECT_NAME` in an earlier release, point
+`DOGECOIN_VOLUME_NAME` at the old `<project>_dogecoin_data` volume so the node
+does not resync.
 
-Do not set `DATA_ROOT` to a path inside this repository.
-
-If Docker cannot write to the prepared directories, fix ownership or permissions on the data disk before starting the stack. Prefer assigning the directory to the operator user/group or the container UID used by your runtime; avoid blanket `chmod 777` unless it is a deliberate emergency workaround.
-
-### 4. Restore the L2Reth Snapshot (Recommended for New Nodes)
+### 3. Restore the L2Reth Snapshot (Recommended for New Nodes)
 
 For a new testnet RPC node, restore the published L2Reth database instead of
 syncing from genesis:
@@ -200,17 +187,16 @@ verifies its built-in SHA-256, validates the archive layout, restores it to
 `${DATA_ROOT}/l2reth`, and starts the complete testnet stack. Downloads
 are resumable and cached under `${DATA_ROOT}/.snapshot-cache`.
 
-Before running it, validate the local settings and prepare the data directories
-in step 3. If the bundled public Ethereum RPC is not suitable for the
-deployment, configure an override in step 2. To restore the files without
-starting containers, pass `--no-start`.
+If the bundled public Ethereum RPC is not suitable for the deployment,
+configure an override in step 2. To restore the files without starting
+containers, pass `--no-start`.
 
 The snapshot contains chain data only. The current genesis, hardfork schedule,
 peer list, and runtime configuration continue to come from this repository.
 See [the testnet snapshot guide](snapshot_testnet.md#l2reth-snapshot-recommended)
 for replacement and recovery options.
 
-### 5. Start Services
+### 4. Start Services
 
 Start the complete testnet stack, including the bundled Dogecoin node:
 
@@ -252,7 +238,7 @@ docker compose --env-file .env.testnet up -d --force-recreate l1-interface
 L1 Interface can temporarily report `503 not_ready` while historical sync and
 replay catch-up run. This is expected during startup.
 
-### 6. Verify Services
+### 5. Verify Services
 
 Check container state and L1 Interface readiness:
 
@@ -419,10 +405,10 @@ before distributing the package.
 4. Optionally create `envs/{network}/l1-interface.local.env` to override the default Ethereum RPC or add a Dogecoin override for temporary/debug use.
 5. Resolve every external P2P peer hostname in `l2reth.env`.
 6. Copy the appropriate `.env.example.*` to `.env.<network>` and set a dedicated `DATA_ROOT`.
-7. Validate the local credentials, prepare the host data directory, and start services.
+7. Start services; Compose creates the configured host data subdirectories and
+   each service validates its own data mount and credentials.
 
 ```bash
-./scripts/prepare-data-dir.sh .env.testnet
 docker compose --env-file .env.testnet up -d
 ```
 

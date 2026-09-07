@@ -160,10 +160,10 @@ else
   fi
 fi
 
-"$REPO_ROOT_ABS/scripts/prepare-data-dir.sh" "$ENV_FILE_ABS"
+mkdir -p "$L1_DIR" "$L2_DIR"
 
 echo
-echo "Reset complete. The services remain stopped."
+echo "Reset complete. Empty data directories were created; the services remain stopped."
 echo "To restore the testnet L2Reth snapshot without starting services:"
 printf '  %q --no-start %q\n' \
   "$REPO_ROOT_ABS/scripts/restore-l2reth-snapshot.sh" \

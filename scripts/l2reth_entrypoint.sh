@@ -1,5 +1,14 @@
 #!/bin/bash
-set -e
+set -euo pipefail
+
+DATA_DIR=/l2reth
+
+mkdir -p "$DATA_DIR"
+if [ ! -w "$DATA_DIR" ]; then
+  echo "ERROR: L2Reth data directory is not writable: $DATA_DIR" >&2
+  echo "Check DATA_ROOT and the ownership of its l2reth directory on the host." >&2
+  exit 1
+fi
 
 export RUST_LOG=sqlx=off,info
 

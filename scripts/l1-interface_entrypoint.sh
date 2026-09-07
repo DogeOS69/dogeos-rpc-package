@@ -3,6 +3,7 @@ set -eu
 
 RPC_USER_FILE=/run/secrets/dogecoin_rpc_user
 RPC_PASSWORD_FILE=/run/secrets/dogecoin_rpc_password
+DATA_DIR=/data
 
 fail() {
   echo "ERROR: $*" >&2
@@ -31,6 +32,9 @@ read_secret() {
 
   printf '%s' "$secret_value"
 }
+
+mkdir -p "$DATA_DIR"
+[ -w "$DATA_DIR" ] || fail "L1 Interface data directory is not writable: $DATA_DIR (check DATA_ROOT and host ownership)"
 
 dogecoin_rpc_url=${DOGEOS_L1_INTERFACE_DOGECOIN_RPC__URL:-}
 if [ -z "$dogecoin_rpc_url" ]; then
