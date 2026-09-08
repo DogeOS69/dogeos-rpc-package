@@ -123,10 +123,15 @@ first Reth startup may perform normal database recovery.
 
 ## Dogecoin Node Recovery
 
-No checksum-pinned Dogecoin testnet snapshot is published with this release.
-The legacy `latest.txt` URL used by earlier documentation is no longer a
-supported download interface. Preserve the named volume and let Dogecoin Core
-continue syncing from peers:
+For a new node or recovery into a new volume, use the
+[checksum-pinned Dogecoin testnet snapshot](snapshot_dogecoin_testnet.md).
+It includes block data, the transaction index, and chainstate, with no wallet
+or deployment credentials. It is stored in the same S3 bucket as L2Reth under
+the separate `testnet/dogecoin/` prefix. Use the versioned URL and checksum in
+that guide, not the legacy `latest.txt` interface.
+
+For a healthy existing node, preserve its named volume and let Dogecoin Core
+continue syncing from peers; an upgrade does not require snapshot restoration:
 
 ```bash
 set -a
@@ -139,11 +144,11 @@ docker compose --env-file .env.testnet up -d dogecoin-node
 docker compose --env-file .env.testnet logs --tail 100 dogecoin-node
 ```
 
-Do not delete or rename this volume during an upgrade. If a trusted operator
-provides a separate Dogecoin archive, require an independently supplied
-checksum and archive-layout instructions before restoring it. Do not adapt the
-L2Reth restore script or extract an unverified archive directly into the named
-volume.
+Do not delete or rename this volume during an upgrade. If recovery is needed,
+the Dogecoin snapshot guide restores into a new volume and refuses an existing
+destination. Keep the previous volume until recovery is accepted. Do not use
+the L2Reth restore script for Dogecoin; their archive layouts and storage
+destinations differ.
 
 ## L1 Interface Recovery
 

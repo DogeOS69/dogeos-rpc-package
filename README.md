@@ -40,7 +40,8 @@ The project follows a modular configuration approach with support for multiple n
 ├── docker-compose.yml          # Main Docker Compose configuration
 ├── snapshot_mainnet.md         # Mainnet snapshot support status
 ├── snapshot_testnet.md         # Testnet snapshot and recovery guide
-├── upgrade_v0.3.0.md           # Existing testnet node upgrade procedure
+├── snapshot_dogecoin_testnet.md # Dogecoin snapshot and new-volume restore
+├── upgrade_v0.3.0.md            # Existing testnet node upgrade procedure
 ├── configs                     # Network-specific configuration files
 │   ├── mainnet
 │   │   └── dogecoin.conf        # Full mainnet stack is not shipped in this release
@@ -192,6 +193,12 @@ changed `COMPOSE_PROJECT_NAME` in an earlier release, point
 does not resync.
 
 ### 3. Restore the L2Reth Snapshot (Recommended for New Nodes)
+
+If the bundled Dogecoin node has no existing chain data, first follow the
+[Dogecoin testnet snapshot guide](snapshot_dogecoin_testnet.md) to restore its
+chain data into a new named volume. Do this before the L2Reth helper below,
+which starts the full stack. Existing Dogecoin nodes should keep their current
+volume and continue syncing; they do not need snapshot replacement.
 
 For a new testnet RPC node, restore the published L2Reth database instead of
 syncing from genesis:
