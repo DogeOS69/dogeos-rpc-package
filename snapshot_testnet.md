@@ -3,9 +3,15 @@
 This guide covers the supported recovery paths for L2Reth, the bundled
 Dogecoin node, and L1 Interface in the testnet RPC package.
 
+**Upgrading from the old `main` / v0.2.x package?** Start with the
+[v0.3.0 upgrade guide](upgrade_v0.3.0.md). This snapshot script does not migrate
+old Docker volumes or stop an old Compose project with a different name.
+
 ## Common Prerequisites
 
-Run commands from the repository root. First create the Compose env file:
+Run commands from the repository root. For a new installation, create the
+Compose env file below. For recovery of an existing v0.3.0 installation, keep
+its `.env.testnet` and review the settings; do not overwrite it with a template.
 
 ```bash
 cp .env.example.testnet .env.testnet
