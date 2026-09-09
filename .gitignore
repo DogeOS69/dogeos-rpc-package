@@ -1,3 +1,13 @@
 .DS_Store
 *.zip
 .env
+.env.*
+!.env.example.*
+
+# Operator-specific overrides (contain infra endpoints / credentials).
+# Track the *.example templates instead.
+*.local.env
+
+# Legacy file-based Dogecoin RPC credentials from older releases.
+secrets/*/dogecoin_rpc_user
+secrets/*/dogecoin_rpc_password
