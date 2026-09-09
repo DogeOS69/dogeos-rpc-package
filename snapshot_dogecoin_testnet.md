@@ -48,9 +48,6 @@ volume if needed. Do not delete or clear the original volume.
 
 ### 1. Check the Destination and Download
 
-This download happens on the operator's node during restoration. Snapshot
-production itself runs entirely in AWS and streams directly to S3.
-
 ```bash
 set -euo pipefail
 set -a
@@ -61,6 +58,7 @@ test "$NETWORK" = testnet
 : "${DOGECOIN_VOLUME_NAME:?Set a new Dogecoin volume name}"
 : "${DATA_ROOT:?Set DATA_ROOT on the mounted data disk}"
 case "$DATA_ROOT" in
+  /path/to|/path/to/*) echo 'Replace the DATA_ROOT placeholder first' >&2; exit 1 ;;
   /*) ;;
   *) echo 'DATA_ROOT must be absolute' >&2; exit 1 ;;
 esac
@@ -168,31 +166,3 @@ wallet keys.
 After Dogecoin is ready, continue with [L2Reth restoration](snapshot_testnet.md#l2reth-snapshot-recommended)
 or start the complete stack. Keep any previous Dogecoin volume until recovery
 is accepted.
-
-## How This Snapshot Was Produced
-
-The source is the testnet Kubernetes Dogecoin PVC. Kubernetes `VolumeSnapshot`
-and the EBS CSI driver created an encrypted EBS snapshot while the source node
-continued running. A temporary AWS worker mounted a volume restored from that
-snapshot; no file-level copy of the production data directory was made.
-
-On the temporary volume, Dogecoin Core 1.14.9 ran with wallet access disabled
-and networking disabled. Validation included loading the database with
-`txindex=1`, `verifychain 3 288`, and retrieving an old transaction through the
-transaction index. The node then shut down cleanly and the temporary volume
-was remounted read-only. Only the allowed block/index and chainstate files
-were streamed through `tar` and parallel gzip into S3 multipart upload.
-
-The published S3 object was read back on the AWS worker to verify its complete
-SHA-256, gzip integrity, and exact archive file list. Production did not use
-the operator's local machine to store or relay the archive. The manifest records
-validation results and the block checkpoint; the archive is a database snapshot, not a
-substitute for independent full historical chain validation.
-
-The published archive was also downloaded for a local restore test. Its pinned
-checksum and the extraction commands above passed. The bundled Compose service
-started with its default 20 GiB memory limit, using an isolated network and a new
-volume, and returned the exact checkpoint above. `verifychain 3 288`, a transaction
-lookup from block 1,000,000, and clean shutdown all passed without OOM. Separate
-tests confirmed that an existing destination volume and a non-empty extraction
-directory are refused without changing the existing data.

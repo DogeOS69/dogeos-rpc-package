@@ -124,6 +124,9 @@ DATA_ROOT_ABS="$(readlink -m "$DATA_ROOT")"
 REPO_ROOT_ABS="$(readlink -m "$REPO_ROOT")"
 
 case "$DATA_ROOT_ABS" in
+  /path/to|/path/to/*)
+    fail "replace the DATA_ROOT placeholder with your mounted data disk path: $DATA_ROOT_ABS"
+    ;;
   /|/tmp|/var/tmp)
     fail "DATA_ROOT is too broad or temporary: $DATA_ROOT_ABS"
     ;;
