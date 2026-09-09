@@ -11,46 +11,26 @@ new version removes Geth and Celestia services; follow the order below.
 Dogecoin keeps its existing chain data. Only L2Reth and L1 Interface use new
 data directories. Do not run `down -v`, volume prune, or a data-reset script.
 
-Run the four steps below in Bash, from the repository root, in the **same
-shell**. Stop if a command fails. For custom deployments, see the notes below.
+Run the commands from the repository root, stopping if any command fails.
+The examples assume the old default installation: `.env` and project
+`dogeos-rpc-package`.
+
+**Custom deployments:** before updating, save your existing env file and any
+modified configuration outside the repository, especially the Dogecoin RPC
+credentials in `configs/testnet/dogecoin.conf`. Keep your actual project and
+Dogecoin volume names. Use your existing env file and any `-p` / `-f` options
+when stopping the old services below.
 
 ## 1. Stop the Old Services
 
-First record the old names and back up configuration before removing the
-containers. The old defaults are `.env` and the container `dogecoin-node`;
-replace these two values if your deployment used others.
+Run this **before updating Git**, while the old Compose file is still present:
 
 ```bash
-set -eo pipefail
-OLD_ENV_FILE=.env
-OLD_DOGECOIN_CONTAINER=dogecoin-node
-OLD_PROJECT=$(docker inspect "$OLD_DOGECOIN_CONTAINER" --format '{{index .Config.Labels "com.docker.compose.project"}}')
-OLD_DOGECOIN_VOLUME=$(docker inspect "$OLD_DOGECOIN_CONTAINER" --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{if eq .Type "volume"}}{{.Name}}{{end}}{{end}}{{end}}')
-test -n "$OLD_PROJECT"
-test -n "$OLD_DOGECOIN_VOLUME"
-
-umask 077
-UPGRADE_BACKUP=$(mktemp -d "$(dirname "$PWD")/dogeos-upgrade-XXXXXXXX")
-cp -a "$OLD_ENV_FILE" docker-compose.yml configs envs scripts "$UPGRADE_BACKUP/"
-if [ -f .env.testnet ]; then cp -a .env.testnet "$UPGRADE_BACKUP/"; fi
-if [ -d secrets ]; then cp -a secrets "$UPGRADE_BACKUP/"; fi
-git rev-parse HEAD > "$UPGRADE_BACKUP/old-commit.txt"
-git diff HEAD --binary > "$UPGRADE_BACKUP/local-changes.patch"
-printf 'Project: %s\nDogecoin volume: %s\n' "$OLD_PROJECT" "$OLD_DOGECOIN_VOLUME" |
-  tee "$UPGRADE_BACKUP/old-names.txt"
-printf 'Configuration backup: %s\n' "$UPGRADE_BACKUP"
+docker compose --env-file .env --profile '*' down --remove-orphans
 ```
 
-Keep the backup private; it contains credentials. It backs up configuration,
-not chain databases. The original data volumes will stay in place.
-
-Stop the services with the old configuration:
-
-```bash
-docker compose --env-file "$OLD_ENV_FILE" -p "$OLD_PROJECT" --profile '*' down --remove-orphans
-test -z "$(docker ps -q --filter "label=com.docker.compose.project=$OLD_PROJECT")"
-docker volume inspect "$OLD_DOGECOIN_VOLUME" >/dev/null
-```
+Wait for the command to finish successfully. Do not add `-v`; the data volumes
+must stay in place.
 
 ## 2. Update the Code and Prepare the Env File
 
@@ -59,11 +39,10 @@ Pull the merged release:
 ```bash
 git switch main
 git pull --ff-only origin main
-test -f upgrade_v0.3.0.md
 ```
 
-If Git reports local changes or conflicts, reconcile them against your backup
-before continuing. Do not force-reset the checkout or overwrite the new
+If Git reports local changes or conflicts, preserve and reconcile your custom
+settings before continuing. Do not force-reset the checkout or overwrite the new
 runtime files with old versions.
 
 Create the new env file only if it is absent:
@@ -78,34 +57,26 @@ placeholder in `DATA_ROOT` with your own data disk path before continuing.**
 
 | Setting | Value for this upgrade |
 |---------|------------------------|
-| `COMPOSE_PROJECT_NAME` | The `Project` recorded in step 1. The template keeps the old default: `dogeos-rpc-package`. |
-| `DOGECOIN_VOLUME_NAME` | The exact `Dogecoin volume` recorded in step 1. Default: `dogeos-rpc-package_dogecoin_data`. |
+| `COMPOSE_PROJECT_NAME` | Keep the old name. The default remains `dogeos-rpc-package`. |
+| `DOGECOIN_VOLUME_NAME` | Keep the existing volume. The default remains `dogeos-rpc-package_dogecoin_data`. |
 | `DATA_ROOT` | A fresh path on your mounted data disk, e.g. `/data/dogeos-data/testnet-v0.3.0`. Its `l2reth` and `l1-interface` subdirectories must not exist yet. |
-| `DOGECOIN_RPC_USER` | Your existing Dogecoin RPC user; check the backed-up Dogecoin configuration. |
-| `DOGECOIN_RPC_PASSWORD` | Your existing Dogecoin RPC password; do not replace a custom password with the template default. |
+| `DOGECOIN_RPC_USER` | Keep your existing Dogecoin RPC user. The old default is `doge`. |
+| `DOGECOIN_RPC_PASSWORD` | Keep your existing Dogecoin RPC password. The old default is `password`; preserve any custom value. |
 
 Keep `NETWORK=testnet`. Remove the old `COMPOSE_PROFILES` setting and retain
-any custom ports or memory limits. Confirm the data disk is mounted and has
-space for the snapshot, extracted data, and continued growth. `DATA_ROOT`
-does not change where Docker stores the existing Dogecoin volume.
+any custom L2 ports or memory limits. If you changed Dogecoin ports, preserve
+the matching listen ports in `configs/testnet/dogecoin.conf` as well.
+Confirm the data disk is mounted and has space for the snapshot, extracted
+data, and continued growth. `DATA_ROOT` does not change where Docker stores
+the existing Dogecoin volume.
 
-Check the configuration before starting anything:
+Check the configuration and confirm that the Dogecoin volume already exists.
+If you used a custom volume name, substitute that exact name below. Do not
+start if the volume is missing; correct the name instead of creating a new one.
 
 ```bash
 docker compose --env-file .env.testnet config --quiet
-(
-  . ./.env.testnet
-  test "$NETWORK" = testnet
-  test "$COMPOSE_PROJECT_NAME" = "$OLD_PROJECT"
-  test "$DOGECOIN_VOLUME_NAME" = "$OLD_DOGECOIN_VOLUME"
-  docker volume inspect "$DOGECOIN_VOLUME_NAME" >/dev/null
-  : "${DATA_ROOT:?Set a fresh absolute DATA_ROOT on the data disk}"
-  case "$DATA_ROOT" in
-    /path/to|/path/to/*) echo 'Replace the DATA_ROOT placeholder first' >&2; exit 1 ;;
-  esac
-  test ! -e "$DATA_ROOT/l2reth"
-  test ! -e "$DATA_ROOT/l1-interface"
-)
+docker volume inspect dogeos-rpc-package_dogecoin_data
 ```
 
 ## 3. Download and Restore the L2Reth Snapshot
