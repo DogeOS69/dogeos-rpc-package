@@ -60,7 +60,7 @@ Each service has a default memory limit configured in `docker-compose.yml`. The 
 
 | Service | Default Limit | Notes |
 |---------|--------------|-------|
-| dogecoin-node | 20 GB | Largest consumer; RSS grows over time |
+| dogecoin-node | 24 GB | Largest consumer; RSS grows over time |
 | l2reth-node | 8 GB | RSS grows with RPC traffic |
 | l1-interface | 2 GB | Lightweight; higher usage during startup |
 

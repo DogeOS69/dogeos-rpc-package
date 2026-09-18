@@ -3,8 +3,8 @@ services:
     image: dogeos69/dogecoin:1.14.9
     restart: unless-stopped
     mem_reservation: ${DOGECOIN_MEM_RESERVATION:-14g}
-    mem_limit: ${DOGECOIN_MEM_LIMIT:-20g}
-    memswap_limit: ${DOGECOIN_MEM_LIMIT:-20g}
+    mem_limit: ${DOGECOIN_MEM_LIMIT:-24g}
+    memswap_limit: ${DOGECOIN_MEM_LIMIT:-24g}
     oom_score_adj: -100
     volumes:
       - ./configs/${NETWORK}/dogecoin.conf:/etc/dogeos/dogecoin.conf:ro
