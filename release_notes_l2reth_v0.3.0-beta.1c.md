@@ -1,4 +1,4 @@
-# L2Reth v0.3.0-beta.1c Update
+# Galileo, Galileo V2, and Tsuki Hardfork Activation Times
 
 This update is for existing **v0.3.0 testnet RPC deployments**.
 

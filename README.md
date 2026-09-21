@@ -21,7 +21,7 @@ v0.3.0 is a major upgrade from the v0.2.x line. Key changes for operators:
 ## Upgrading an Existing Node
 
 For an existing **v0.3.0 testnet deployment**, follow the release notes for
-the target update. The [L2Reth v0.3.0-beta.1c release notes](release_notes_l2reth_v0.3.0-beta.1c.md)
+the target update. The [Galileo, Galileo V2, and Tsuki hardfork activation notes](release_notes_l2reth_v0.3.0-beta.1c.md)
 cover the latest image and chain configuration update: pull the new image and
 recreate only `l2reth-node`, retaining its existing data. Dogecoin and
 L1 Interface do not need to be restarted.
