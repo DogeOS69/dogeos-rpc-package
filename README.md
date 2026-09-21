@@ -7,7 +7,7 @@ A Docker-based deployment of the DogeOS RPC stack for node and RPC operators. It
 v0.3.0 is a major upgrade from the v0.2.x line. Key changes for operators:
 
 - **Data Availability moved from Celestia to Ethereum.** The DA layer is now Ethereum-based. L2Reth reads blobs directly from the public S3 archive; L1 Interface uses the bundled public Ethereum Sepolia execution RPC for replay unless the operator overrides it. No Celestia node is run.
-- **L1 Interface storage format is not backward compatible with v0.2.x.** Start it with fresh data; an init step downloads the pre-v0.3.0 history from S3 automatically. Existing deployments still require the configuration, container, and data steps in the [upgrade guide](upgrade_v0.3.0.md).
+- **L1 Interface storage format is not backward compatible with v0.2.x.** When migrating from v0.2.x, start it with fresh data; an init step downloads the pre-v0.3.0 history from S3 automatically. The configuration, container, and data steps in the [upgrade guide](upgrade_v0.3.0.md) apply to that migration.
 - **L2Reth is now the only supported L2 client.** The old package defaulted to L2Geth. Existing L2Geth operators must switch to L2Reth using its snapshot or a fresh sync; L2Geth databases cannot be reused as Reth databases.
 - **No L2 history break.** From L2Reth's perspective the block history is continuous across the upgrade. A brand-new L2Reth node syncing from genesis will sync through and catch up to the chain head normally.
 
@@ -15,22 +15,23 @@ v0.3.0 is a major upgrade from the v0.2.x line. Key changes for operators:
 > L2 chain history remains continuous, but that does not establish database
 > compatibility between client versions. L2Reth storage also moved from a
 > named Docker volume to `${DATA_ROOT}/l2reth`; old volumes are not migrated
-> automatically. Follow the [v0.3.0 upgrade guide](upgrade_v0.3.0.md) for an
-> existing node.
+> automatically. These migration steps apply to nodes upgrading from v0.2.x;
+> see the [v0.3.0 upgrade guide](upgrade_v0.3.0.md).
 
 ## Upgrading an Existing Node
 
-For a deployment running the old `main` / v0.2.x package, follow
-[Upgrading from v0.2.x to v0.3.0](upgrade_v0.3.0.md) **before pulling the new
-code or copying a new env template**. It covers stopping the old Compose
-project, retaining Dogecoin data and credentials, switching from L2Geth or
-older L2Reth, initializing fresh L1 Interface data, and verifying the upgrade.
+For an existing **v0.3.0 testnet deployment**, follow the release notes for
+the target update. The [Galileo, Galileo V2, and Tsuki hardfork activation notes](release_notes_l2reth_v0.3.0-beta.1c.md)
+cover the latest image and chain configuration update: pull the new image and
+recreate only `l2reth-node`, retaining its existing data. Dogecoin and
+L1 Interface do not need to be restarted.
 
-The procedure supports **testnet only**. It requires a maintenance window;
-neither `git pull` followed by `up` nor the snapshot script alone migrates the
-old deployment. Stop the old stack with its old Compose file **before
-`git pull`**, because the new version removes old services. The Quick Start
-below is for a new installation.
+For historical v0.2.x deployments, follow
+[Upgrading from v0.2.x to v0.3.0](upgrade_v0.3.0.md) **before pulling new code**.
+That migration requires stopping the old stack with its old Compose file and
+completing the documented data and configuration steps.
+
+The Quick Start below is for a new installation.
 
 ## Services
 
