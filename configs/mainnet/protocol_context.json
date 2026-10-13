@@ -1,0 +1,36 @@
+{
+  "protocol": {
+    "protocol_version": 2,
+    "dogecoin_chain_id": "TODO(mainnet)",
+    "l2_chain_id": 1122005,
+    "eth_chain_id": 1
+  },
+  "genesis": {
+    "genesis_sequencer_outpoint": {
+      "txid": "TODO(mainnet)",
+      "vout": 0
+    },
+    "genesis_bridge_key_hash": "TODO(mainnet)",
+    "initial_confirmed_block_number": "TODO(mainnet)",
+    "initial_confirmed_block_hash": "TODO(mainnet)",
+    "initial_ethereum_block_hash": "TODO(mainnet)",
+    "initial_tx_index": 0,
+    "genesis_batch_hash": "TODO(mainnet)",
+    "genesis_state_root": "TODO(mainnet)",
+    "initial_system_signer": "TODO(mainnet)"
+  },
+  "protocol_config_seed": {
+    "protocol_config": {
+      "l2_chain_id": 1122005,
+      "eth_chain_id": 1,
+      "key_rotation_min_grace_wf_txs": "TODO(mainnet)",
+      "min_deposit_sats": "TODO(mainnet)",
+      "deposit_queue_transform": {
+        "l1_scroll_messenger_address": "TODO(mainnet)",
+        "l2_messenger_address": "TODO(mainnet)",
+        "moat_address": "TODO(mainnet)",
+        "message_queue_gas_limit": 200000
+      }
+    }
+  }
+}
