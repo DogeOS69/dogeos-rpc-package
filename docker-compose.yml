@@ -25,7 +25,7 @@ services:
       - "-datadir=/data"
       - "-printtoconsole"
   l2reth-node:
-    image: dogeos69/rollup-node:v0.3.0-beta.1c
+    image: dogeos69/rollup-node:${L2RETH_IMAGE_TAG:-v0.3.0-beta.1c}
     restart: unless-stopped
     # Reth's own shutdown can take about 10 seconds, Docker's default, so a busy
     # node could be killed (exit 137) on stop or reboot.
@@ -56,7 +56,7 @@ services:
       - /bin/sh
       - /entrypoint.sh
   l1-interface:
-    image: dogeos69/l1-interface:v0.3.0-beta.3d
+    image: dogeos69/l1-interface:${L1_INTERFACE_IMAGE_TAG:-v0.3.0-beta.3d}
     restart: unless-stopped
     mem_reservation: 512m
     mem_limit: ${L1_INTERFACE_MEM_LIMIT:-2g}
@@ -95,8 +95,8 @@ services:
     image: curlimages/curl:8.20.0
     restart: "no"
     environment:
-      ARTIFACT_URL: https://dogeos-eth-da-archive-testnet.s3.us-west-2.amazonaws.com/history/l1-interface-historical-artifact-404b44250950c18748b8595c26f6ab8f109b4873002d5be5ce0ddb0d0c30cf5a.sqlite
-      REPLAY_DB_URL: https://dogeos-eth-da-archive-testnet.s3.us-west-2.amazonaws.com/history/replay-fb8c66a7ce147e0fa8ac2166dded42247cab1debb755df37ba31452e3c275494.sqlite
+      ARTIFACT_URL: ${L1_INTERFACE_ARTIFACT_URL:-https://dogeos-eth-da-archive-testnet.s3.us-west-2.amazonaws.com/history/l1-interface-historical-artifact-404b44250950c18748b8595c26f6ab8f109b4873002d5be5ce0ddb0d0c30cf5a.sqlite}
+      REPLAY_DB_URL: ${L1_INTERFACE_REPLAY_DB_URL:-https://dogeos-eth-da-archive-testnet.s3.us-west-2.amazonaws.com/history/replay-fb8c66a7ce147e0fa8ac2166dded42247cab1debb755df37ba31452e3c275494.sqlite}
       DOGEOS_L1_INTERFACE_EVENT_PLANE_ARTIFACT_PATH: /data/l1-interface-historical-artifact.sqlite
       DOGEOS_L1_INTERFACE_REPLAY_READ__SQLITE_PATH: /data/replay.sqlite
     user: "0:0"
