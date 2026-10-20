@@ -167,7 +167,7 @@ mkdir -p "$L1_DIR" "$L2_DIR"
 
 echo
 echo "Reset complete. Empty data directories were created; the services remain stopped."
-echo "To restore the testnet L2Reth snapshot without starting services:"
+echo "To restore the published L2Reth snapshot without starting services:"
 printf '  %q --no-start l2reth %q\n' \
   "$REPO_ROOT_ABS/scripts/restore-snapshot.sh" \
   "$ENV_FILE_ABS"

@@ -161,7 +161,6 @@ services:
         REPLAY_DB_URL=$${REPLAY_DB_URL:-}
         if [ -z "$$ARTIFACT_URL" ] && [ -z "$$REPLAY_DB_URL" ]; then
           echo "No L1 Interface bootstrap data is configured for this network; skipping download."
-          chmod 777 /data || echo "WARN: could not chmod /data; continuing"
           exit 0
         fi
         if [ -z "$$ARTIFACT_URL" ] || [ -z "$$REPLAY_DB_URL" ]; then
@@ -202,8 +201,6 @@ services:
           mv "$$REPLAY_PATH.tmp.bootstrap-source.json" "$$REPLAY_PATH.bootstrap-source.json"
         fi
 
-        chmod 666 "$$REPLAY_PATH"
-        chmod 777 "$$REPLAY_DIR" || echo "WARN: could not chmod $$REPLAY_DIR; continuing because mounted PVC permissions are managed by Kubernetes/storage driver"
 volumes:
   dogecoin_data:
     # Falls back to the name Compose generated before v0.3.0. Unused, and not

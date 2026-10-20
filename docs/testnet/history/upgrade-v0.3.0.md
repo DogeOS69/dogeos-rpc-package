@@ -1,5 +1,13 @@
 # Upgrade an Existing Testnet Node to v0.3.0
 
+> [!NOTE]
+> Archived guide for nodes still on the v0.2.x package. Paths below are those
+> of the v0.3.0 release: `.env.example.testnet` is now
+> `networks/testnet/env.example`, `configs/testnet/` and `envs/testnet/` are now
+> `networks/testnet/`, and `restore-l2reth-snapshot.sh` is now
+> `restore-snapshot.sh l2reth`. Nodes already on v0.3.0 follow the
+> [changelog](../../../CHANGELOG.md) instead.
+
 Use this guide **after v0.3.0 is merged into `main`**. It upgrades the old
 v0.2.x package, whether it used L2Geth or older L2Reth. Allow a maintenance
 window; the complete mainnet stack is not supported by this release.
@@ -182,7 +190,7 @@ uses fresh L1/L2 directories and does not run Celestia or Geth.
 
 To sync L2Reth from genesis instead, skip the restore command in step 3 and
 start with the same fresh directories. For snapshot requirements and recovery,
-see the [testnet snapshot guide](snapshot_testnet.md).
+see the [snapshot guide](../../snapshots.md).
 
 If the upgrade fails, stop the new stack with
 `docker compose --env-file .env.testnet down`, inspect logs, and retain your

@@ -24,9 +24,8 @@ NETWORK_ARGS="${L2RETH_NETWORK_ARGS:?L2RETH_NETWORK_ARGS must be set by networks
 # Operator flags, split on whitespace (no quoting). Do not repeat a flag set
 # here or in L2RETH_NETWORK_ARGS; rollup-node rejects duplicates.
 EXTRA_ARGS="${L2RETH_EXTRA_ARGS:-}"
-# Parse the trusted peer list. Prefer L2RETH_PEER_LIST (manual override);
-# fall back to L2GETH_PEER_LIST, the historical name gen-rpc-package writes
-# with auto-resolved LoadBalancer domains.
+# Parse the trusted peer list from networks/<network>/l2reth.env.
+# L2GETH_PEER_LIST is the name used by earlier releases and is still accepted.
 PEER_LIST="${L2RETH_PEER_LIST:-${L2GETH_PEER_LIST:-}}"
 PEER_FLAGS=""
 if [ -n "$PEER_LIST" ]; then
