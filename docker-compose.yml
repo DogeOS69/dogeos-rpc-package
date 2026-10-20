@@ -91,9 +91,11 @@ services:
     container_name: l1-interface-init-fetch-sqlite
     image: curlimages/curl:8.20.0
     restart: "no"
+    # ARTIFACT_URL and REPLAY_DB_URL are per network. Leave both empty for a
+    # network without bootstrap data; this service then exits without downloading.
+    env_file:
+      - ./envs/${NETWORK}/l1-interface-bootstrap.env
     environment:
-      ARTIFACT_URL: https://dogeos-eth-da-archive-testnet.s3.us-west-2.amazonaws.com/history/l1-interface-historical-artifact-404b44250950c18748b8595c26f6ab8f109b4873002d5be5ce0ddb0d0c30cf5a.sqlite
-      REPLAY_DB_URL: https://dogeos-eth-da-archive-testnet.s3.us-west-2.amazonaws.com/history/replay-fb8c66a7ce147e0fa8ac2166dded42247cab1debb755df37ba31452e3c275494.sqlite
       DOGEOS_L1_INTERFACE_EVENT_PLANE_ARTIFACT_PATH: /data/l1-interface-historical-artifact.sqlite
       DOGEOS_L1_INTERFACE_REPLAY_READ__SQLITE_PATH: /data/replay.sqlite
     user: "0:0"
@@ -124,6 +126,18 @@ services:
 
           printf '%s' "$$checksum"
         }
+
+        ARTIFACT_URL=$${ARTIFACT_URL:-}
+        REPLAY_DB_URL=$${REPLAY_DB_URL:-}
+        if [ -z "$$ARTIFACT_URL" ] && [ -z "$$REPLAY_DB_URL" ]; then
+          echo "No L1 Interface bootstrap data is configured for this network; skipping download."
+          chmod 777 /data || echo "WARN: could not chmod /data; continuing"
+          exit 0
+        fi
+        if [ -z "$$ARTIFACT_URL" ] || [ -z "$$REPLAY_DB_URL" ]; then
+          echo "ARTIFACT_URL and REPLAY_DB_URL must be set together" >&2
+          exit 1
+        fi
 
         # --- Task 1: Artifact Download ---
         DEST_PATH="$$DOGEOS_L1_INTERFACE_EVENT_PLANE_ARTIFACT_PATH"
