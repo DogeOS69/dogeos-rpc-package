@@ -191,26 +191,59 @@ compatibility settings from earlier packages. See
 
 ## Service Endpoints
 
-- **Dogecoin RPC**: `http://localhost:44555` (testnet)
-- **L1 Interface RPC**: `http://localhost:8547` (L1 Ethereum client for L2Reth)
-- **L1 Interface Health**: `http://localhost:9090/health`
-- **L2Reth HTTP RPC**: `http://localhost:${L2_HTTP_PORT}` (`8545` by default on testnet)
-- **L2Reth WebSocket**: `ws://localhost:${L2_WS_PORT}` (`8546` by default on testnet)
+| Endpoint | Address | Exposure |
+|----------|---------|----------|
+| L2Reth HTTP RPC | `http://<host>:${L2_HTTP_PORT}` (`8545` on testnet) | Public product endpoint, behind your gateway |
+| L2Reth WebSocket | `ws://<host>:${L2_WS_PORT}` (`8546` on testnet) | Public product endpoint, behind your gateway |
+| L2Reth metrics | `http://127.0.0.1:${L2_METRICS_PORT}/` (`6060` by default) | Prometheus scrape target; this host only |
+| Dogecoin RPC | `http://localhost:${DOGECOIN_RPC_PORT}` (`44555` on testnet) | Internal |
+| L1 Interface RPC | `http://localhost:8547` | Internal (L1 client for L2Reth) |
+| L1 Interface health | `http://localhost:9090/health` | Internal; also the `l1-interface` container healthcheck |
+
+Internal ports follow `INTERNAL_BIND_ADDR`. The mainnet template sets it to
+`127.0.0.1`. The testnet template leaves it unset, which keeps publishing them
+on all host interfaces as earlier releases did; set it to `127.0.0.1` unless
+another host needs these ports.
 
 ## Network Security
 
-Compose currently publishes service ports on all host interfaces. Do not expose
-Dogecoin RPC, L1 Interface RPC/health, or L2Reth HTTP/WebSocket directly to the
-public internet. L2Reth exposes powerful `debug` and `trace` methods, and the
-Dogecoin credentials are stored only in the Git-ignored local Compose env, but
-RPC authentication is not a substitute for network isolation.
+The package is built for RPC providers that serve L2Reth through their own
+gateway or load balancer. Only these ports need to be internet-reachable:
 
-Use host/cloud firewalls, a private network or VPN, and an authenticated reverse
-proxy where remote RPC access is required. Normally only the intended P2P ports
-should be internet-reachable:
-
+- L2Reth HTTP/WebSocket, through your gateway
 - Dogecoin P2P: `${DOGECOIN_P2P_PORT}` (`44556` on testnet)
 - L2Reth P2P: `${L2_P2P_PORT}` TCP and UDP (`30303` by default)
+
+Keep Dogecoin RPC and the L1 Interface ports private with `INTERNAL_BIND_ADDR`,
+host/cloud firewalls, or a private network. RPC authentication is not a
+substitute for network isolation.
+
+### `debug` and `trace` methods
+
+L2Reth enables `eth,net,web3,debug,trace` on HTTP and WebSocket by default, so
+providers can offer tracing. Filter and rate-limit `debug_*` and `trace_*` in
+your gateway, including inside JSON-RPC batch requests and WebSocket sessions.
+Tracing is memory- and CPU-intensive: a burst can push L2Reth to its memory
+limit, and an OOM restart also interrupts syncing. As a second limit, cap
+concurrent tracing on the node:
+
+```bash
+# .env.testnet
+L2RETH_EXTRA_ARGS=--rpc.max-tracing-requests 8
+```
+
+To serve without them, set `L2RETH_HTTP_API` and `L2RETH_WS_API` to
+`eth,net,web3`. `L2RETH_EXTRA_ARGS` accepts other `rollup-node` flags, such as
+`--rpc.gascap` or `--rpc-cache.*`, separated by spaces. Do not repeat a flag
+that `scripts/l2reth_entrypoint.sh` already sets, such as
+`--rpc.max-connections`; `rollup-node` exits on duplicates. Recreate
+`l2reth-node` after changing these values.
+
+### Load balancer health
+
+`eth_syncing` alone is not enough to decide whether to route traffic to a node.
+Compare its `eth_blockNumber` with a reference node or your other backends, and
+remove a node that falls more than a few blocks behind.
 
 To change the bundled Dogecoin RPC credentials, edit
 `DOGECOIN_RPC_USER`/`DOGECOIN_RPC_PASSWORD` once in the local Compose env and
@@ -294,6 +327,10 @@ docker compose --env-file .env.testnet up -d l2reth-node
 ```bash
 docker compose --env-file .env.testnet logs -f [service_name]
 ```
+
+Each container keeps at most `LOG_MAX_FILE` files of `LOG_MAX_SIZE`
+(5 × 100 MB by default). Ship logs to your own system if you need longer
+retention.
 
 Useful checks:
 
