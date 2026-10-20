@@ -36,7 +36,7 @@ for network_dir in networks/*/; do
   step "docker compose config: $network"
   copy="$WORK_DIR/$network-repo"
   mkdir -p "$copy"
-  git ls-files -z | (cd "$REPO_ROOT" && xargs -0 tar -cf -) | tar -xf - -C "$copy"
+  git ls-files -z | tar --null -T - -cf - | tar -xf - -C "$copy"
   stubbed=""
   for f in $REQUIRED_FILES; do
     if [ ! -e "$copy/networks/$network/$f" ]; then

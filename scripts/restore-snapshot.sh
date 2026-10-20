@@ -141,10 +141,9 @@ if [ "$LIST" = true ] && [ -n "$COMPONENT" ] && [ -z "$ENV_FILE" ]; then
 fi
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-if [ -z "$ENV_FILE" ]; then
-  ENV_FILE="$REPO_ROOT/.env"
-  [ -f "$ENV_FILE" ] || fail "no env file given and $ENV_FILE does not exist; create it from networks/<network>/env.example"
-fi
+# shellcheck source=scripts/lib/env.sh
+. "$REPO_ROOT/scripts/lib/env.sh"
+ENV_FILE_ABS="$(resolve_env_file "$ENV_FILE" "$REPO_ROOT")"
 if [ "$LIST" = false ]; then
   case "$COMPONENT" in
     dogecoin|l1-interface|l2reth) ;;
@@ -168,21 +167,16 @@ require_command docker
 require_command sha256sum
 require_command tar
 
-[ -f "$ENV_FILE" ] || fail "env file not found: $ENV_FILE"
-ENV_DIR="$(cd "$(dirname "$ENV_FILE")" && pwd -P)"
-ENV_FILE_ABS="$ENV_DIR/$(basename "$ENV_FILE")"
 COMPOSE=(docker compose -f "$REPO_ROOT/docker-compose.yml" --project-directory "$REPO_ROOT" --env-file "$ENV_FILE_ABS")
 
-set -a
-# shellcheck disable=SC1090
-. "$ENV_FILE_ABS"
-set +a
+NETWORK="$(env_value "$ENV_FILE_ABS" NETWORK)"
+DATA_ROOT="$(env_value "$ENV_FILE_ABS" DATA_ROOT)"
 
 case "${NETWORK:-}" in
   testnet|mainnet) ;;
   *) fail "NETWORK must be testnet or mainnet, got: ${NETWORK:-unset}" ;;
 esac
-[ -n "${DATA_ROOT:-}" ] || fail "DATA_ROOT must be set in $ENV_FILE"
+[ -n "${DATA_ROOT:-}" ] || fail "DATA_ROOT must be set in $ENV_FILE_ABS"
 echo "Using env file: $ENV_FILE_ABS (NETWORK=$NETWORK)"
 
 REPO_ROOT_ABS="$(readlink -m "$REPO_ROOT")"
@@ -194,29 +188,7 @@ else
   COMPOSE_HINT="docker compose --env-file $(printf '%q' "$ENV_FILE_ABS")"
 fi
 
-# Reject placeholder, broad, temporary, and in-repository data paths.
-check_data_path() {
-  local name="$1" path="$2"
-  case "$path" in
-    /*) ;;
-    *) fail "$name must be an absolute path, got: $path" ;;
-  esac
-  path="$(readlink -m "$path")"
-  case "$path" in
-    /path/to|/path/to/*)
-      fail "replace the $name placeholder with your mounted data disk path: $path" ;;
-    /|/tmp|/var/tmp)
-      fail "$name is too broad or temporary: $path" ;;
-    "$REPO_ROOT_ABS"|"$REPO_ROOT_ABS"/*)
-      fail "$name must not be inside the repository: $path" ;;
-    /mnt/wsl/*)
-      grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null ||
-        fail "$name uses a WSL-only path on a non-WSL host: $path" ;;
-  esac
-  printf '%s\n' "$path"
-}
-
-DATA_ROOT_ABS="$(check_data_path DATA_ROOT "$DATA_ROOT")"
+DATA_ROOT_ABS="$(check_data_path DATA_ROOT "$DATA_ROOT" "$REPO_ROOT_ABS")"
 
 # --- Snapshot index ---------------------------------------------------------
 
@@ -450,7 +422,7 @@ case "$COMPONENT" in
           | join("\u001f") end')
     case "$DATA_TYPE" in
       volume) TARGET_VOLUME="$DATA_SOURCE" ;;
-      bind) TARGET_DIR="$(check_data_path "Dogecoin data directory" "$DATA_SOURCE")" ;;
+      bind) TARGET_DIR="$(check_data_path "Dogecoin data directory" "$DATA_SOURCE" "$REPO_ROOT_ABS")" ;;
       *) fail "cannot determine where dogecoin-node keeps its data" ;;
     esac
     COMPOSE_PROJECT="$(compose_json | jqx -r '.name')"

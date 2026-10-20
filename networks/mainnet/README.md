@@ -20,6 +20,6 @@ Before release, also:
 - Choose the mainnet images in `compose.yml` and review `L2RETH_NETWORK_ARGS`
   and the L1 Interface healthcheck for those versions.
 - Decide whether `l1-interface.env` ships a default Ethereum RPC or operators
-  must set `ETHEREUM_RPC_URL`.
+  must set `DOGEOS_ETHEREUM_RPC_URL`.
 - Publish `mainnet/index.json` in the snapshot bucket
   ([snapshot publishing](../../docs/snapshot-publishing.md)).

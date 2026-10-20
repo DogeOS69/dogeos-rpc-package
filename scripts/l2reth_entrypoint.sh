@@ -53,6 +53,8 @@ until curl -fsS --max-time 2 -H "content-type: application/json" \
 done
 echo "L1 interface is ready"
 
+# The unquoted flag lists below are split on whitespace only; never glob them.
+set -f
 exec rollup-node node \
   --chain /l2reth/genesis/genesis.json \
   --datadir=/l2reth \

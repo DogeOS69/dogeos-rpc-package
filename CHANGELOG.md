@@ -33,10 +33,10 @@ Recommended follow-ups:
 
   | Old setting in `l1-interface.local.env` | New setting in `.env` |
   |-----------------------------------------|-----------------------|
-  | `DOGEOS_L1_INTERFACE_ETHEREUM_DA__L1_RPC_URL` | `ETHEREUM_RPC_URL` |
-  | `DOGEOS_L1_INTERFACE_DOGECOIN_RPC__URL` | `EXTERNAL_DOGECOIN_RPC_URL` |
-  | `DOGEOS_L1_INTERFACE_DOGECOIN_RPC__USER` | `EXTERNAL_DOGECOIN_RPC_USER` |
-  | `DOGEOS_L1_INTERFACE_DOGECOIN_RPC__PASS` | `EXTERNAL_DOGECOIN_RPC_PASSWORD` |
+  | `DOGEOS_L1_INTERFACE_ETHEREUM_DA__L1_RPC_URL` | `DOGEOS_ETHEREUM_RPC_URL` |
+  | `DOGEOS_L1_INTERFACE_DOGECOIN_RPC__URL` | `DOGEOS_EXTERNAL_DOGECOIN_RPC_URL` |
+  | `DOGEOS_L1_INTERFACE_DOGECOIN_RPC__USER` | `DOGEOS_EXTERNAL_DOGECOIN_RPC_USER` |
+  | `DOGEOS_L1_INTERFACE_DOGECOIN_RPC__PASS` | `DOGEOS_EXTERNAL_DOGECOIN_RPC_PASSWORD` |
 
 - Set `INTERNAL_BIND_ADDR=127.0.0.1` unless another host needs the Dogecoin
   RPC or L1 Interface ports.
@@ -53,8 +53,9 @@ Recommended follow-ups:
 - **One settings file.** Operator settings live in `.env` in the repository
   root, which Compose and the scripts read by default; the scripts' env-file
   argument is optional. Overrides formerly in `l1-interface.local.env` are
-  `.env` settings, defaults moved into the network files, and Dogecoin host
-  ports no longer have to match `dogecoin.conf`.
+  `.env` settings, defaults moved into the network files, and the Dogecoin
+  RPC host port no longer has to match `dogecoin.conf`. `DOGECOIN_P2P_PORT`
+  is no longer used: P2P stays on the port Dogecoin advertises.
 - **Snapshots.** `scripts/restore-snapshot.sh` restores Dogecoin, L1
   Interface, and L2Reth snapshots listed in a per-network index on S3, so new
   snapshots need no package release. It selects the newest snapshot compatible

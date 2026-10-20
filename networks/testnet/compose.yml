@@ -23,11 +23,13 @@ services:
       # Docker volume named by DOGECOIN_VOLUME_NAME (declared in docker-compose.yml),
       # kept from earlier releases.
       - dogecoin_data:/data
-    # Container ports are fixed by dogecoin.conf; .env only changes host ports.
+    # Container ports are fixed by dogecoin.conf; DOGECOIN_RPC_PORT only changes
+    # the RPC host port.
     # INTERNAL_BIND_ADDR is unset by default, publishing RPC on all interfaces
     # as earlier releases did.
     ports:
-      - ${DOGECOIN_P2P_PORT:-44556}:44556
+      # P2P stays on the port dogecoind listens on and advertises.
+      - 44556:44556
       - ${INTERNAL_BIND_ADDR:+${INTERNAL_BIND_ADDR:-}:}${DOGECOIN_RPC_PORT:-44555}:44555
 
   l2reth-node:
@@ -102,7 +104,9 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 10m
+      # Initial sync on a new node can take hours; failures before the first
+      # success are not counted.
+      start_period: 12h
 
   l1-interface-init-fetch-sqlite:
     # One-time bootstrap of the pre-v0.3.0 testnet history; not a periodic snapshot.

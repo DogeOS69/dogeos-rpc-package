@@ -69,10 +69,8 @@ while [ "$#" -gt 0 ]; do
 done
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-if [ -z "$ENV_FILE" ]; then
-  ENV_FILE="$REPO_ROOT/.env"
-  [ -f "$ENV_FILE" ] || fail "no env file given and $ENV_FILE does not exist; create it from networks/<network>/env.example"
-fi
+# shellcheck source=scripts/lib/env.sh
+. "$REPO_ROOT/scripts/lib/env.sh"
 
 if "$CONFIRMED" && ! "$DELETE"; then
   fail "--yes is only valid together with --delete"
@@ -85,46 +83,15 @@ fi
 require_command docker
 require_command readlink
 
-[ -f "$ENV_FILE" ] || fail "env file not found: $ENV_FILE"
-
-ENV_DIR="$(cd "$(dirname "$ENV_FILE")" && pwd -P)"
-ENV_FILE_ABS="$ENV_DIR/$(basename "$ENV_FILE")"
+ENV_FILE_ABS="$(resolve_env_file "$ENV_FILE" "$REPO_ROOT")"
 REPO_ROOT_ABS="$(readlink -m "$REPO_ROOT")"
 
-set -a
-# shellcheck disable=SC1090
-. "$ENV_FILE_ABS"
-set +a
-
-[ -n "${DATA_ROOT:-}" ] || fail "DATA_ROOT must be set in $ENV_FILE"
+NETWORK="$(env_value "$ENV_FILE_ABS" NETWORK)"
+DATA_ROOT="$(env_value "$ENV_FILE_ABS" DATA_ROOT)"
+[ -n "$DATA_ROOT" ] || fail "DATA_ROOT must be set in $ENV_FILE_ABS"
 echo "Using env file: $ENV_FILE_ABS (NETWORK=${NETWORK:-unset})"
 
-case "$DATA_ROOT" in
-  /*) ;;
-  *) fail "DATA_ROOT must be an absolute path, got: $DATA_ROOT" ;;
-esac
-
-DATA_ROOT_ABS="$(readlink -m "$DATA_ROOT")"
-
-case "$DATA_ROOT_ABS" in
-  /path/to|/path/to/*)
-    fail "replace the DATA_ROOT placeholder with your mounted data disk path: $DATA_ROOT_ABS"
-    ;;
-  /|/tmp|/var/tmp)
-    fail "DATA_ROOT is too broad or temporary: $DATA_ROOT_ABS"
-    ;;
-  "$REPO_ROOT_ABS"|"$REPO_ROOT_ABS"/*)
-    fail "DATA_ROOT must not be inside the repository: $DATA_ROOT_ABS"
-    ;;
-esac
-
-case "$DATA_ROOT_ABS" in
-  /mnt/wsl/*)
-    if ! grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null; then
-      fail "DATA_ROOT uses a WSL-only path on a non-WSL host: $DATA_ROOT_ABS"
-    fi
-    ;;
-esac
+DATA_ROOT_ABS="$(check_data_path DATA_ROOT "$DATA_ROOT" "$REPO_ROOT_ABS")"
 
 L1_DIR="$DATA_ROOT_ABS/l1-interface"
 L2_DIR="$DATA_ROOT_ABS/l2reth"

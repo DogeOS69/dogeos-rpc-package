@@ -54,7 +54,7 @@ Testnet uses `https://ethereum-sepolia-rpc.publicnode.com` by default. To use
 another provider, set in `.env`:
 
 ```bash
-ETHEREUM_RPC_URL=https://your-sepolia-execution-rpc
+DOGEOS_ETHEREUM_RPC_URL=https://your-sepolia-execution-rpc
 ```
 
 The provider must support Sepolia (chain ID `11155111`) and execution methods
@@ -62,9 +62,9 @@ including `eth_getBlockByHash`. Apply it with `docker compose up -d`.
 
 Earlier releases set overrides in `envs/testnet/l1-interface.local.env`. That
 file is still read but deprecated: move its values to `.env`
-(`DOGEOS_L1_INTERFACE_ETHEREUM_DA__L1_RPC_URL` becomes `ETHEREUM_RPC_URL`,
+(`DOGEOS_L1_INTERFACE_ETHEREUM_DA__L1_RPC_URL` becomes `DOGEOS_ETHEREUM_RPC_URL`,
 `DOGEOS_L1_INTERFACE_DOGECOIN_RPC__URL`/`__USER`/`__PASS` become
-`EXTERNAL_DOGECOIN_RPC_URL`/`_USER`/`_PASSWORD`) and delete it. Settings in
+`DOGEOS_EXTERNAL_DOGECOIN_RPC_URL`/`_USER`/`_PASSWORD`) and delete it. Settings in
 `.env` win.
 
 <details>
@@ -76,9 +76,9 @@ L1 Interface, and is not behind the data L1 Interface has already indexed.
 Set in `.env`:
 
 ```bash
-EXTERNAL_DOGECOIN_RPC_URL=https://your-dogecoin-rpc
-EXTERNAL_DOGECOIN_RPC_USER=...
-EXTERNAL_DOGECOIN_RPC_PASSWORD=...
+DOGEOS_EXTERNAL_DOGECOIN_RPC_URL=https://your-dogecoin-rpc
+DOGEOS_EXTERNAL_DOGECOIN_RPC_USER=...
+DOGEOS_EXTERNAL_DOGECOIN_RPC_PASSWORD=...
 ```
 
 Then stop L2Reth while L1 Interface switches, and stop the bundled node:
@@ -107,7 +107,7 @@ The package is built for RPC providers that serve L2Reth through their own
 gateway or load balancer. Only these ports need to be internet-reachable:
 
 - L2Reth HTTP/WebSocket, through your gateway
-- Dogecoin P2P: `${DOGECOIN_P2P_PORT}`
+- Dogecoin P2P: `44556` on testnet, `22556` on mainnet
 - L2Reth P2P: `${L2_P2P_PORT}` TCP and UDP
 
 Keep Dogecoin RPC and the L1 Interface ports private with `INTERNAL_BIND_ADDR`,
