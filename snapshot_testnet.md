@@ -14,7 +14,7 @@ Compose env file below. For recovery of an existing v0.3.0 installation, keep
 its `.env.testnet` and review the settings; do not overwrite it with a template.
 
 ```bash
-if [ ! -e .env.testnet ]; then cp .env.example.testnet .env.testnet; fi
+if [ ! -e .env.testnet ]; then cp networks/testnet/env.example .env.testnet; fi
 chmod 600 .env.testnet
 
 # Edit the Compose env before continuing:
@@ -169,7 +169,7 @@ historical artifact and replay bootstrap database again.
 The supplied testnet configuration includes the public Ethereum RPC default.
 If the deployment needs another provider, configure
 `DOGEOS_L1_INTERFACE_ETHEREUM_DA__L1_RPC_URL` in
-`envs/testnet/l1-interface.local.env`, then run:
+`networks/testnet/l1-interface.local.env`, then run:
 
 ```bash
 set -euo pipefail

@@ -85,7 +85,7 @@ Copy the testnet template and review the stable Dogecoin RPC credentials,
 `DATA_ROOT`, ports, memory limits, and the Dogecoin volume name:
 
 ```bash
-if [ ! -e .env.testnet ]; then cp .env.example.testnet .env.testnet; fi
+if [ ! -e .env.testnet ]; then cp networks/testnet/env.example .env.testnet; fi
 # REQUIRED: fill in DATA_ROOT; review credentials and any port/memory overrides
 chmod 600 .env.testnet
 ```
@@ -272,7 +272,7 @@ Edit these local files for your deployment:
 | File | Settings |
 |------|----------|
 | `.env.testnet` | Project name, data path, Dogecoin volume and RPC credentials, ports, memory limits |
-| `envs/testnet/l1-interface.local.env` | Optional Ethereum RPC or external Dogecoin RPC overrides |
+| `networks/testnet/l1-interface.local.env` | Optional Ethereum RPC or external Dogecoin RPC overrides |
 
 Both files are gitignored. Keep them private and include them in your
 configuration backups. Keep the project name, Dogecoin volume name, and RPC
@@ -286,10 +286,10 @@ generation or entrypoint-script edits are required for normal operation.
 Create the optional override file only if it does not already exist:
 
 ```bash
-if [ ! -e envs/testnet/l1-interface.local.env ]; then
-  cp envs/testnet/l1-interface.local.env.example envs/testnet/l1-interface.local.env
+if [ ! -e networks/testnet/l1-interface.local.env ]; then
+  cp networks/testnet/l1-interface.local.env.example networks/testnet/l1-interface.local.env
 fi
-chmod 600 envs/testnet/l1-interface.local.env
+chmod 600 networks/testnet/l1-interface.local.env
 ```
 
 Uncomment and set this variable in that file:
@@ -307,7 +307,7 @@ to apply the change.
 <summary>Advanced: use an external Dogecoin RPC</summary>
 
 For temporary troubleshooting, set the external Dogecoin URL, user, and password
-in `envs/testnet/l1-interface.local.env`, using its example file. Confirm that
+in `networks/testnet/l1-interface.local.env`, using its example file. Confirm that
 the external node serves the required testnet history and is reachable from
 L1 Interface before switching.
 

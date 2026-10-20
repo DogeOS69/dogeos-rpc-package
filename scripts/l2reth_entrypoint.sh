@@ -17,12 +17,12 @@ export RUST_LOG=sqlx=off,info
 # that filter methods in their own gateway.
 HTTP_API="${L2RETH_HTTP_API:-eth,net,web3,debug,trace}"
 WS_API="${L2RETH_WS_API:-eth,net,web3,debug,trace}"
-# Extra rollup-node flags, split on whitespace (no quoting). Do not repeat a
-# flag set below, such as --rpc.max-connections; rollup-node rejects duplicates.
-#
-# --consensus.exit-on-signer-rotation below is always set: when the authorized
-# signer in the L1 system contract rotates, rollup-node exits with code 70 and
-# the container restart policy starts it again with the new signer.
+# Version-specific flags come from networks/<network>/compose.yml, including
+# --consensus.exit-on-signer-rotation (exit code 70 when the L1 signer rotates;
+# the restart policy starts the node again with the new signer).
+NETWORK_ARGS="${L2RETH_NETWORK_ARGS:?L2RETH_NETWORK_ARGS must be set by networks/<network>/compose.yml}"
+# Operator flags, split on whitespace (no quoting). Do not repeat a flag set
+# here or in L2RETH_NETWORK_ARGS; rollup-node rejects duplicates.
 EXTRA_ARGS="${L2RETH_EXTRA_ARGS:-}"
 # Parse the trusted peer list. Prefer L2RETH_PEER_LIST (manual override);
 # fall back to L2GETH_PEER_LIST, the historical name gen-rpc-package writes
@@ -54,22 +54,17 @@ until curl -fsS --max-time 2 -H "content-type: application/json" \
 done
 echo "L1 interface is ready"
 
-exec rollup-node node --chain /l2reth/genesis/genesis.json --datadir=/l2reth --metrics=0.0.0.0:6060 --network.scroll-wire=true --network.bridge=true  \
-  --network.legacy-geth-header-transform true \
+exec rollup-node node \
+  --chain /l2reth/genesis/genesis.json \
+  --datadir=/l2reth \
+  --metrics=0.0.0.0:6060 \
   --network-id "$NETWORK_ID" \
   --http --http.addr=0.0.0.0 --http.port=8545 --http.corsdomain "*" --http.api "$HTTP_API" \
   --ws --ws.addr=0.0.0.0 --ws.port=8546 --ws.api "$WS_API" \
   --log.stdout.format log-fmt -vvv \
-  --txpool.pending-max-count=1000 \
-  --builder.gaslimit=30000000 \
-  --sequencer.max-l1-messages 51 \
   --rpc.max-connections=5000 \
   $PEER_FLAGS \
-  --engine.sync-at-startup false \
-  --consensus.exit-on-signer-rotation \
   --l1.url "$L1_ENDPOINT" \
-  --l1.query-range 100 \
-  --l1.liveness-threshold 2147483647 \
-  --l1.liveness-check-interval 3600 \
   --blob.s3_url "$BLOB_S3_URL" \
+  $NETWORK_ARGS \
   $EXTRA_ARGS

@@ -1,0 +1,89 @@
+# Testnet component versions and version-specific settings.
+#
+# docker-compose.yml extends every service from networks/${NETWORK}/compose.yml,
+# so changing this file affects testnet only. Relative paths are resolved
+# against this directory.
+#
+# Image sources (behavior documented for this network was checked against
+# these revisions):
+#   dogecoin-node  dogeos69/dogecoin:1.14.9             Dogecoin Core 1.14.9
+#   l2reth-node    DogeOS69/dogeos-rollup-node          v0.3.0-beta.1c  d3260afe
+#   l1-interface   DogeOS69/dogeos-core (l1_interface)  v0.3.0-beta.3d  413c5fc8
+
+services:
+  dogecoin-node:
+    image: dogeos69/dogecoin:1.14.9
+    volumes:
+      - type: bind
+        source: ./dogecoin.conf
+        target: /etc/dogeos/dogecoin.conf
+        read_only: true
+        bind:
+          create_host_path: false
+
+  l2reth-node:
+    image: dogeos69/rollup-node:v0.3.0-beta.1c
+    env_file:
+      - ./l2reth.env
+    environment:
+      # rollup-node flags that depend on this image version. The entrypoint adds
+      # the common ones (datadir, RPC, peers, L1 URL, blob archive).
+      # --consensus.exit-on-signer-rotation exits with code 70 when the L1
+      # authorized signer rotates; the restart policy starts the node again
+      # with the new signer.
+      L2RETH_NETWORK_ARGS: >-
+        --network.scroll-wire=true
+        --network.bridge=true
+        --network.legacy-geth-header-transform true
+        --txpool.pending-max-count=1000
+        --builder.gaslimit=30000000
+        --sequencer.max-l1-messages 51
+        --engine.sync-at-startup false
+        --consensus.exit-on-signer-rotation
+        --l1.query-range 100
+        --l1.liveness-threshold 2147483647
+        --l1.liveness-check-interval 3600
+    volumes:
+      - type: bind
+        source: ./l2reth-genesis.json
+        target: /l2reth/genesis/genesis.json
+        read_only: true
+        bind:
+          create_host_path: false
+
+  l1-interface:
+    image: dogeos69/l1-interface:v0.3.0-beta.3d
+    env_file:
+      - ./l1-interface.env
+    volumes:
+      - type: bind
+        source: ./l2reth-genesis.json
+        target: /app/genesis/genesis.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./protocol_context.json
+        target: /app/protocol_context.json
+        read_only: true
+        bind:
+          create_host_path: false
+    # Readiness of the database and replay read model: 503 during startup,
+    # while reorg recovery is active, or after the replay pipeline stops.
+    # (The legacy /health endpoint only reports that startup finished.)
+    # Informational: L2Reth does not wait on it. The image has no curl.
+    healthcheck:
+      test:
+        - CMD
+        - bash
+        - -c
+        - exec 3<>/dev/tcp/127.0.0.1/9090 && printf 'GET /api/v1/health/ready HTTP/1.0\r\n\r\n' >&3 && head -n 1 <&3 | grep -q ' 200 '
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10m
+
+  l1-interface-init-fetch-sqlite:
+    # One-time bootstrap of the pre-v0.3.0 testnet history; not a periodic snapshot.
+    env_file:
+      - ./l1-interface-bootstrap.env

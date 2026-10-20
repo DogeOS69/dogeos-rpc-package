@@ -1,0 +1,81 @@
+# Mainnet component versions and version-specific settings.
+#
+# docker-compose.yml extends every service from networks/${NETWORK}/compose.yml,
+# so changing this file affects mainnet only. Relative paths are resolved
+# against this directory.
+#
+# Mainnet is not released. The images below are placeholders copied from
+# testnet until the mainnet versions are chosen, and the files listed in
+# README.md in this directory still have to be added.
+
+services:
+  dogecoin-node:
+    image: dogeos69/dogecoin:1.14.9
+    volumes:
+      - type: bind
+        source: ./dogecoin.conf
+        target: /etc/dogeos/dogecoin.conf
+        read_only: true
+        bind:
+          create_host_path: false
+
+  l2reth-node:
+    image: dogeos69/rollup-node:v0.3.0-beta.1c  # TBD for mainnet
+    env_file:
+      - ./l2reth.env
+    environment:
+      # rollup-node flags that depend on the image version; review them when the
+      # mainnet image is chosen. Keep --consensus.exit-on-signer-rotation.
+      L2RETH_NETWORK_ARGS: >-
+        --network.scroll-wire=true
+        --network.bridge=true
+        --network.legacy-geth-header-transform true
+        --txpool.pending-max-count=1000
+        --builder.gaslimit=30000000
+        --sequencer.max-l1-messages 51
+        --engine.sync-at-startup false
+        --consensus.exit-on-signer-rotation
+        --l1.query-range 100
+        --l1.liveness-threshold 2147483647
+        --l1.liveness-check-interval 3600
+    volumes:
+      - type: bind
+        source: ./l2reth-genesis.json
+        target: /l2reth/genesis/genesis.json
+        read_only: true
+        bind:
+          create_host_path: false
+
+  l1-interface:
+    image: dogeos69/l1-interface:v0.3.0-beta.3d  # TBD for mainnet
+    env_file:
+      - ./l1-interface.env
+    volumes:
+      - type: bind
+        source: ./l2reth-genesis.json
+        target: /app/genesis/genesis.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./protocol_context.json
+        target: /app/protocol_context.json
+        read_only: true
+        bind:
+          create_host_path: false
+    # Verify this endpoint against the mainnet l1-interface version.
+    healthcheck:
+      test:
+        - CMD
+        - bash
+        - -c
+        - exec 3<>/dev/tcp/127.0.0.1/9090 && printf 'GET /api/v1/health/ready HTTP/1.0\r\n\r\n' >&3 && head -n 1 <&3 | grep -q ' 200 '
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10m
+
+  l1-interface-init-fetch-sqlite:
+    # Mainnet has no pre-v0.3.0 history; both URLs are empty and it exits at once.
+    env_file:
+      - ./l1-interface-bootstrap.env
