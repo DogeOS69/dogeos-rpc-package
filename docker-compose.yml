@@ -38,6 +38,8 @@ services:
   l2reth-node:
     image: dogeos69/rollup-node:v0.3.0-beta.1c
     logging: *logging
+    # Required by --consensus.exit-on-signer-rotation: the node exits with code
+    # 70 when the L1 signer rotates and must be restarted to pick it up.
     restart: unless-stopped
     mem_reservation: 1g
     mem_limit: ${L2RETH_MEM_LIMIT:-8g}

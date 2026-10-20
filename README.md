@@ -382,6 +382,12 @@ docker compose --env-file .env.testnet up -d --force-recreate l1-interface
 - **L2Reth stays at `Waiting for L1 interface`:** L2Reth's entrypoint waits for
   an `eth_chainId` response from L1 Interface. Check L1 Interface health and
   logs first.
+- **L2Reth exits with code 70 and restarts:** Expected after the authorized
+  signer in the L1 system contract rotates. L2Reth always runs with
+  `--consensus.exit-on-signer-rotation`, which exits so that the restart reads
+  the new signer; Compose restarts it automatically. If you run the image under
+  your own orchestrator, keep a restart-always policy and do not treat a single
+  exit 70 as a crash.
 - **`net_peerCount` is `0x0`:** Confirm every enode hostname resolves, TCP/UDP
   port 30303 is reachable, and `L2RETH_NETWORK_ID` matches the remote peers.
   Configured enodes are not proof of completed devp2p handshakes.

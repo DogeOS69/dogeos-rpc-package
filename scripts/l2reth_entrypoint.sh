@@ -19,6 +19,10 @@ HTTP_API="${L2RETH_HTTP_API:-eth,net,web3,debug,trace}"
 WS_API="${L2RETH_WS_API:-eth,net,web3,debug,trace}"
 # Extra rollup-node flags, split on whitespace (no quoting). Do not repeat a
 # flag set below, such as --rpc.max-connections; rollup-node rejects duplicates.
+#
+# --consensus.exit-on-signer-rotation below is always set: when the authorized
+# signer in the L1 system contract rotates, rollup-node exits with code 70 and
+# the container restart policy starts it again with the new signer.
 EXTRA_ARGS="${L2RETH_EXTRA_ARGS:-}"
 # Parse the trusted peer list. Prefer L2RETH_PEER_LIST (manual override);
 # fall back to L2GETH_PEER_LIST, the historical name gen-rpc-package writes
