@@ -132,3 +132,7 @@ archived [v0.3.0 upgrade guide](docs/testnet/history/upgrade-v0.3.0.md).
 - [Snapshot Publishing](docs/snapshot-publishing.md) — index format and
   publishing process (for the team that publishes snapshots)
 - [Changelog](CHANGELOG.md)
+
+Changes to this repository should pass `./scripts/check.sh` (shellcheck,
+Compose configuration of every network, documentation links); CI runs it on
+every pull request.
