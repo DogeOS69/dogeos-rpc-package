@@ -25,11 +25,12 @@ else
     -S warning "${scripts[@]}" || failed "shellcheck"
 fi
 
-# Resolve the Compose configuration of every network from its env template.
+# Resolve the Compose configuration of every network the way a new operator
+# runs it: env.example copied to .env, plain `docker compose` without flags.
 # Files a network does not ship yet (see networks/<network>/README.md) are
 # stubbed in a temporary copy so the rest of its configuration is still
 # checked; the repository itself is not modified.
-REQUIRED_FILES="compose.yml env.example dogecoin.conf l2reth.env l2reth-genesis.json protocol_context.json l1-interface.env l1-interface-bootstrap.env"
+REQUIRED_FILES="compose.yml env.example README.md dogecoin.conf l2reth.env l2reth-genesis.json protocol_context.json l1-interface.env l1-interface-bootstrap.env"
 for network_dir in networks/*/; do
   network="$(basename "$network_dir")"
   step "docker compose config: $network"
@@ -40,7 +41,7 @@ for network_dir in networks/*/; do
   for f in $REQUIRED_FILES; do
     if [ ! -e "$copy/networks/$network/$f" ]; then
       case "$f" in
-        compose.yml|env.example) failed "$network: networks/$network/$f is missing"; continue 2 ;;
+        compose.yml|env.example|README.md) failed "$network: networks/$network/$f is missing"; continue 2 ;;
         *.json) echo '{}' >"$copy/networks/$network/$f" ;;
         *) : >"$copy/networks/$network/$f" ;;
       esac
@@ -48,13 +49,12 @@ for network_dir in networks/*/; do
     fi
   done
   [ -z "$stubbed" ] || echo "stubbed (not shipped yet):$stubbed"
-  env_file="$WORK_DIR/$network.env"
   sed -e "s|^DATA_ROOT=.*|DATA_ROOT=$WORK_DIR/data-$network|" \
       -e "s|^DOGECOIN_RPC_PASSWORD=\$|DOGECOIN_RPC_PASSWORD=check|" \
-      "$copy/networks/$network/env.example" >"$env_file"
-  grep -qx "NETWORK=$network" "$env_file" ||
+      "$copy/networks/$network/env.example" >"$copy/.env"
+  grep -qx "NETWORK=$network" "$copy/.env" ||
     failed "$network: env.example must set NETWORK=$network"
-  if config="$(cd "$copy" && docker compose --env-file "$env_file" config --format json)"; then
+  if config="$(cd "$copy" && docker compose config --format json)"; then
     printf '%s' "$config" | python3 -c '
 import json, sys
 network = sys.argv[1]

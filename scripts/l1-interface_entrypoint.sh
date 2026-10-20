@@ -36,6 +36,21 @@ read_secret() {
 mkdir -p "$DATA_DIR"
 [ -w "$DATA_DIR" ] || fail "L1 Interface data directory is not writable: $DATA_DIR (check DATA_ROOT and host ownership)"
 
+# Operator overrides from .env (passed by docker-compose.yml). When set, they
+# win over the network's l1-interface.env and the deprecated
+# envs/<network>/l1-interface.local.env.
+if [ -n "${DOGEOS_RPC_PACKAGE_ETHEREUM_RPC_URL:-}" ]; then
+  DOGEOS_L1_INTERFACE_ETHEREUM_DA__L1_RPC_URL=$DOGEOS_RPC_PACKAGE_ETHEREUM_RPC_URL
+  export DOGEOS_L1_INTERFACE_ETHEREUM_DA__L1_RPC_URL
+fi
+if [ -n "${DOGEOS_RPC_PACKAGE_EXTERNAL_DOGECOIN_RPC_URL:-}" ]; then
+  DOGEOS_L1_INTERFACE_DOGECOIN_RPC__URL=$DOGEOS_RPC_PACKAGE_EXTERNAL_DOGECOIN_RPC_URL
+  DOGEOS_L1_INTERFACE_DOGECOIN_RPC__USER=${DOGEOS_RPC_PACKAGE_EXTERNAL_DOGECOIN_RPC_USER:-}
+  DOGEOS_L1_INTERFACE_DOGECOIN_RPC__PASS=${DOGEOS_RPC_PACKAGE_EXTERNAL_DOGECOIN_RPC_PASSWORD:-}
+  export DOGEOS_L1_INTERFACE_DOGECOIN_RPC__URL DOGEOS_L1_INTERFACE_DOGECOIN_RPC__USER \
+    DOGEOS_L1_INTERFACE_DOGECOIN_RPC__PASS
+fi
+
 dogecoin_rpc_url=${DOGEOS_L1_INTERFACE_DOGECOIN_RPC__URL:-}
 if [ -z "$dogecoin_rpc_url" ]; then
   dogecoin_rpc_url=${DOGEOS_RPC_PACKAGE_DOGECOIN_RPC_URL:-}

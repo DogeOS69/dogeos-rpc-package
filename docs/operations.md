@@ -1,88 +1,102 @@
 # Operations
 
-Configuration, security, and maintenance for a running stack. Commands use
-testnet; on mainnet use `.env.mainnet` and `networks/mainnet/`.
+Configuration, security, and maintenance for a running stack. Run commands
+from the repository root; Docker Compose and the scripts read `.env` there.
 
 ## Configuration
 
-Files you edit locally (all gitignored; keep them private and in your
-configuration backups):
+`.env` in the repository root is the only file you edit. Create it from
+`networks/<network>/env.example`; that template lists every setting with its
+default. Keep it private (`chmod 600 .env`) and in your configuration backups.
+Everything under `networks/<network>/` is maintained by this package.
 
-| File | Settings |
-|------|----------|
-| `.env.<network>` | Project name, `DATA_ROOT`, Dogecoin storage and RPC credentials, ports, memory limits, L2Reth RPC options, log rotation |
-| `networks/<network>/l1-interface.local.env` | Optional Ethereum RPC or external Dogecoin RPC overrides |
+One checkout runs one network. To run testnet and mainnet, use two checkouts,
+each with its own `.env`, on separate hosts.
 
-Everything else in `networks/<network>/` (images, genesis, protocol context,
-peers, service settings) is maintained by this package; do not edit it. Keep
-the project name, Dogecoin storage, and RPC credentials unchanged when
-upgrading.
-
-`docker compose restart` does not reload env files. After changing a setting,
-recreate the affected service:
+`docker compose restart` does not reload settings. After changing `.env`, apply
+it with:
 
 ```bash
-docker compose --env-file .env.testnet up -d --force-recreate l1-interface
+docker compose up -d
 ```
+
+Compose recreates only the services whose configuration changed.
+
+<details>
+<summary>Existing nodes with <code>.env.testnet</code></summary>
+
+Earlier releases used `.env.testnet` and `--env-file`. That still works: pass
+`--env-file .env.testnet` to `docker compose` and `.env.testnet` as the last
+argument of the scripts. To drop the flags, rename it once:
+
+```bash
+mv .env.testnet .env
+```
+
+Before renaming, check that no `.env` exists yet; very old releases created a
+`.env` that is no longer used and can be removed. Compose and the scripts
+reject an env file without `DATA_ROOT`.
+
+</details>
 
 ### Dogecoin RPC Credentials
 
-`DOGECOIN_RPC_USER` and `DOGECOIN_RPC_PASSWORD` in `.env.<network>` are passed
-to both `dogecoin-node` and `l1-interface` as Compose secrets; do not put them
-in `dogecoin.conf`. Supported characters are letters, digits, and
-`._~:@%+=,-`. Testnet keeps the earlier package's public defaults
-(`doge`/`password`) for compatibility; mainnet requires a password before the
-first start. To change them, edit both values and recreate `dogecoin-node` and
-`l1-interface`; every external consumer of the Dogecoin RPC must update too.
+`DOGECOIN_RPC_USER` and `DOGECOIN_RPC_PASSWORD` are passed to `dogecoin-node`
+and `l1-interface` as Docker secrets; do not put them in `dogecoin.conf`.
+Supported characters are letters, digits, and `._~:@%+=,-`. Testnet keeps the
+earlier package's public defaults (`doge`/`password`) for compatibility;
+mainnet requires a password before the first start. Changing them recreates
+both services, and every external consumer of the Dogecoin RPC must update.
 
 ### Custom Ethereum RPC
 
 Testnet uses `https://ethereum-sepolia-rpc.publicnode.com` by default. To use
-another provider, create the override file if it does not exist:
+another provider, set in `.env`:
 
 ```bash
-if [ ! -e networks/testnet/l1-interface.local.env ]; then
-  cp networks/testnet/l1-interface.local.env.example networks/testnet/l1-interface.local.env
-fi
-chmod 600 networks/testnet/l1-interface.local.env
-```
-
-and set:
-
-```bash
-DOGEOS_L1_INTERFACE_ETHEREUM_DA__L1_RPC_URL=https://your-sepolia-execution-rpc
+ETHEREUM_RPC_URL=https://your-sepolia-execution-rpc
 ```
 
 The provider must support Sepolia (chain ID `11155111`) and execution methods
-including `eth_getBlockByHash`. Recreate `l1-interface` to apply it.
+including `eth_getBlockByHash`. Apply it with `docker compose up -d`.
 
-Earlier releases kept this file at `envs/testnet/l1-interface.local.env`. That
-location is still read; if both exist, the `networks/` one wins.
+Earlier releases set overrides in `envs/testnet/l1-interface.local.env`. That
+file is still read but deprecated: move its values to `.env`
+(`DOGEOS_L1_INTERFACE_ETHEREUM_DA__L1_RPC_URL` becomes `ETHEREUM_RPC_URL`,
+`DOGEOS_L1_INTERFACE_DOGECOIN_RPC__URL`/`__USER`/`__PASS` become
+`EXTERNAL_DOGECOIN_RPC_URL`/`_USER`/`_PASSWORD`) and delete it. Settings in
+`.env` win.
 
 <details>
 <summary>Advanced: use an external Dogecoin RPC</summary>
 
-For temporary troubleshooting, set the external Dogecoin URL, user, and
-password in `networks/<network>/l1-interface.local.env`, using its example
-file. Confirm that the external node serves the required history and is
-reachable from L1 Interface. The external node must not be behind the data L1
-Interface has already indexed.
+For temporary troubleshooting, L1 Interface can use another Dogecoin node.
+Confirm that the external node serves the required history, is reachable from
+L1 Interface, and is not behind the data L1 Interface has already indexed.
+Set in `.env`:
 
 ```bash
-docker compose --env-file .env.testnet stop l2reth-node
-docker compose --env-file .env.testnet stop dogecoin-node
-docker compose --env-file .env.testnet up -d --force-recreate l1-interface
-docker compose --env-file .env.testnet up -d l2reth-node
+EXTERNAL_DOGECOIN_RPC_URL=https://your-dogecoin-rpc
+EXTERNAL_DOGECOIN_RPC_USER=...
+EXTERNAL_DOGECOIN_RPC_PASSWORD=...
 ```
 
-Targeted startup does not start the bundled Dogecoin node; keep its data for
-switching back. To return to it, remove the external overrides and run:
+Then stop L2Reth while L1 Interface switches, and stop the bundled node:
 
 ```bash
-docker compose --env-file .env.testnet stop l2reth-node
-docker compose --env-file .env.testnet up -d dogecoin-node
-docker compose --env-file .env.testnet up -d --force-recreate l1-interface
-docker compose --env-file .env.testnet up -d l2reth-node
+docker compose stop l2reth-node dogecoin-node
+docker compose up -d --force-recreate l1-interface
+docker compose up -d l2reth-node
+```
+
+Targeted startup does not start the bundled Dogecoin node; its data is kept
+for switching back. To return to it, remove the three settings and run:
+
+```bash
+docker compose stop l2reth-node
+docker compose up -d dogecoin-node
+docker compose up -d --force-recreate l1-interface
+docker compose up -d l2reth-node
 ```
 
 </details>
@@ -110,7 +124,7 @@ limit, and an OOM restart also interrupts syncing. As a second limit, cap
 concurrent tracing on the node:
 
 ```bash
-# .env.testnet
+# .env
 L2RETH_EXTRA_ARGS=--rpc.max-tracing-requests 8
 ```
 
@@ -138,7 +152,8 @@ backends, and remove a node that falls more than a few blocks behind.
 | L1 Interface RPC | `http://localhost:8547` | Internal (L1 client for L2Reth) |
 | L1 Interface health | `http://localhost:9090/health`, `/api/v1/health/ready` | Internal |
 
-Default ports per network are listed in each `networks/<network>/env.example`.
+Default ports per network are listed in each `networks/<network>/env.example`;
+set them in `.env` to change the host ports.
 Internal ports follow `INTERNAL_BIND_ADDR`: mainnet sets `127.0.0.1`; testnet
 leaves it unset, which keeps publishing them on all interfaces as earlier
 releases did. Set it to `127.0.0.1` unless another host needs these ports.
@@ -148,7 +163,7 @@ releases did. Set it to `127.0.0.1` unless another host needs these ports.
 ### Logs
 
 ```bash
-docker compose --env-file .env.testnet logs -f [service_name]
+docker compose logs -f [service_name]
 ```
 
 Each container keeps at most `LOG_MAX_FILE` files of `LOG_MAX_SIZE` (5 × 100 MB
@@ -185,7 +200,7 @@ scripts follow this rule; see [Snapshots and Recovery](snapshots.md).
 ### Stop Services
 
 ```bash
-docker compose --env-file .env.testnet down
+docker compose down
 ```
 
 Shutdown keeps all chain data. Do not use `down -v` if you want to keep a
@@ -230,10 +245,9 @@ Dogecoin Docker volume.
 | L2Reth | `${DATA_ROOT}/l2reth` |
 | L1 Interface | `${DATA_ROOT}/l1-interface` |
 | Dogecoin (testnet) | Docker volume `DOGECOIN_VOLUME_NAME`, in Docker's data root |
-| Dogecoin (mainnet) | `${DATA_ROOT}/dogecoin` (`DOGECOIN_DATA`) |
+| Dogecoin (mainnet) | `${DATA_ROOT}/dogecoin` |
 | Snapshot downloads | `${DATA_ROOT}/.snapshot-cache` |
 
-Keep `DATA_ROOT` on a mounted data disk outside the repository. Do not set
-`DOGECOIN_DATA` on an existing testnet node: Dogecoin would start from an empty
-directory instead of its volume. This Compose file supports one complete stack
-per host.
+Keep `DATA_ROOT` on a mounted data disk outside the repository. Where Dogecoin
+keeps its data is part of each network's configuration
+(`networks/<network>/compose.yml`), not an operator setting.

@@ -7,8 +7,8 @@ Mainnet is not released yet.
 
 ### Testnet: what to do
 
-No configuration changes are required. Keep your `.env.testnet`, project name,
-Dogecoin volume, and RPC credentials.
+No configuration changes are required. Keep your env file, project name,
+Dogecoin volume, and RPC credentials. Your existing commands keep working:
 
 ```bash
 git pull
@@ -21,22 +21,40 @@ reloads its block index, which takes several minutes; L1 Interface retries
 until it is ready, and L2 RPC is briefly unavailable. Verify with
 [Verify Services](README.md#5-verify-services).
 
-Optional follow-ups:
+Recommended follow-ups:
 
-- Move `envs/testnet/l1-interface.local.env`, if you have one, to
-  `networks/testnet/l1-interface.local.env`. The old location still works.
-- Set `INTERNAL_BIND_ADDR=127.0.0.1` in `.env.testnet` unless another host
-  needs the Dogecoin RPC or L1 Interface ports.
+- **Use `.env` and drop `--env-file`.** If no `.env` exists in the repository
+  root, run `mv .env.testnet .env`; afterwards `docker compose up -d` and the
+  scripts need no env-file argument. (A `.env` left by a pre-v0.3.0 release is
+  unused; remove it first.)
+- **Move overrides into `.env`.** If you have
+  `envs/testnet/l1-interface.local.env`, move its values to `.env` and delete
+  it; the file still works but is deprecated:
+
+  | Old setting in `l1-interface.local.env` | New setting in `.env` |
+  |-----------------------------------------|-----------------------|
+  | `DOGEOS_L1_INTERFACE_ETHEREUM_DA__L1_RPC_URL` | `ETHEREUM_RPC_URL` |
+  | `DOGEOS_L1_INTERFACE_DOGECOIN_RPC__URL` | `EXTERNAL_DOGECOIN_RPC_URL` |
+  | `DOGEOS_L1_INTERFACE_DOGECOIN_RPC__USER` | `EXTERNAL_DOGECOIN_RPC_USER` |
+  | `DOGEOS_L1_INTERFACE_DOGECOIN_RPC__PASS` | `EXTERNAL_DOGECOIN_RPC_PASSWORD` |
+
+- Set `INTERNAL_BIND_ADDR=127.0.0.1` unless another host needs the Dogecoin
+  RPC or L1 Interface ports.
 - Use `./scripts/restore-snapshot.sh` for snapshots;
   `restore-l2reth-snapshot.sh` still works but is deprecated.
 
 ### Changes
 
 - **Network isolation.** Each network has its own directory,
-  `networks/<network>/`, with its images, configuration, service env files,
+  `networks/<network>/`, with its images, configuration, data and port layout,
   and env template. Testnet and mainnet can run different image versions, and
   a change to one network does not affect the other. `configs/` and `envs/`
   are gone; `.env.example.<network>` is now `networks/<network>/env.example`.
+- **One settings file.** Operator settings live in `.env` in the repository
+  root, which Compose and the scripts read by default; the scripts' env-file
+  argument is optional. Overrides formerly in `l1-interface.local.env` are
+  `.env` settings, defaults moved into the network files, and Dogecoin host
+  ports no longer have to match `dogecoin.conf`.
 - **Snapshots.** `scripts/restore-snapshot.sh` restores Dogecoin, L1
   Interface, and L2Reth snapshots listed in a per-network index on S3, so new
   snapshots need no package release. It selects the newest snapshot compatible

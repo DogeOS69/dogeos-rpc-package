@@ -15,12 +15,15 @@ usage() {
 Restore a published Dogecoin, L1 Interface, or L2Reth snapshot.
 
 Usage:
-  scripts/restore-snapshot.sh [options] <dogecoin|l1-interface|l2reth> <env-file>
-  scripts/restore-snapshot.sh --list <env-file>
+  scripts/restore-snapshot.sh [options] <dogecoin|l1-interface|l2reth> [env-file]
+  scripts/restore-snapshot.sh --list [env-file]
+
+The env file defaults to .env in the repository root.
 
 Examples:
-  scripts/restore-snapshot.sh --list .env.testnet
-  scripts/restore-snapshot.sh --no-start dogecoin .env.testnet
+  scripts/restore-snapshot.sh --list
+  scripts/restore-snapshot.sh --no-start dogecoin
+  scripts/restore-snapshot.sh l2reth
   scripts/restore-snapshot.sh l2reth .env.testnet
 
 The newest snapshot compatible with the network's image is used.
@@ -137,7 +140,11 @@ if [ "$LIST" = true ] && [ -n "$COMPONENT" ] && [ -z "$ENV_FILE" ]; then
   COMPONENT=""
 fi
 
-[ -n "$ENV_FILE" ] || { usage >&2; exit 1; }
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+if [ -z "$ENV_FILE" ]; then
+  ENV_FILE="$REPO_ROOT/.env"
+  [ -f "$ENV_FILE" ] || fail "no env file given and $ENV_FILE does not exist; create it from networks/<network>/env.example"
+fi
 if [ "$LIST" = false ]; then
   case "$COMPONENT" in
     dogecoin|l1-interface|l2reth) ;;
@@ -164,7 +171,6 @@ require_command tar
 [ -f "$ENV_FILE" ] || fail "env file not found: $ENV_FILE"
 ENV_DIR="$(cd "$(dirname "$ENV_FILE")" && pwd -P)"
 ENV_FILE_ABS="$ENV_DIR/$(basename "$ENV_FILE")"
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 COMPOSE=(docker compose -f "$REPO_ROOT/docker-compose.yml" --project-directory "$REPO_ROOT" --env-file "$ENV_FILE_ABS")
 
 set -a
@@ -177,8 +183,16 @@ case "${NETWORK:-}" in
   *) fail "NETWORK must be testnet or mainnet, got: ${NETWORK:-unset}" ;;
 esac
 [ -n "${DATA_ROOT:-}" ] || fail "DATA_ROOT must be set in $ENV_FILE"
+echo "Using env file: $ENV_FILE_ABS (NETWORK=$NETWORK)"
 
 REPO_ROOT_ABS="$(readlink -m "$REPO_ROOT")"
+
+# How to repeat a Compose command for this env file, for printed hints.
+if [ "$ENV_FILE_ABS" = "$REPO_ROOT_ABS/.env" ]; then
+  COMPOSE_HINT="docker compose"
+else
+  COMPOSE_HINT="docker compose --env-file $(printf '%q' "$ENV_FILE_ABS")"
+fi
 
 # Reject placeholder, broad, temporary, and in-repository data paths.
 check_data_path() {
@@ -273,14 +287,14 @@ services_to_stop() {
 # block (dogecoin_height).
 UPSTREAM_JQ='(if $c == "l2reth" then .l1_height elif $c == "l1-interface" then .dogecoin_height else null end) // "" | tostring'
 
-COMPOSE_JSON=""
+# Resolve the configuration once; callers run in subshells.
+COMPOSE_JSON="$("${COMPOSE[@]}" config --format json)" ||
+  fail "docker compose cannot read the configuration for $ENV_FILE_ABS"
+compose_json() {
+  printf '%s' "$COMPOSE_JSON"
+}
 service_image() {
-  if [ -z "$COMPOSE_JSON" ]; then
-    COMPOSE_JSON="$("${COMPOSE[@]}" config --format json)" ||
-      fail "docker compose cannot read the configuration for $ENV_FILE"
-  fi
-  printf '%s' "$COMPOSE_JSON" |
-    jqx -r --arg s "$(service_for "$1")" '.services[$s].image // empty'
+  compose_json | jqx -r --arg s "$(service_for "$1")" '.services[$s].image // empty'
 }
 
 if [ "$LIST" = true ]; then
@@ -410,8 +424,9 @@ esac
 
 # --- Restore target ---------------------------------------------------------
 
-# L2Reth, L1 Interface, and bind-mounted Dogecoin data are directories;
-# testnet Dogecoin without DOGECOIN_DATA is a Docker named volume.
+# L2Reth and L1 Interface data are directories under DATA_ROOT. Dogecoin data is
+# whatever the network's compose file mounts at /data: a Docker volume
+# (testnet) or a directory (mainnet).
 TARGET_DIR=""
 TARGET_VOLUME=""
 case "$COMPONENT" in
@@ -428,14 +443,17 @@ case "$COMPONENT" in
   dogecoin)
     ARCHIVE_ROOT="dogecoin"
     STRIP_COMPONENTS=1
-    if [ -n "${DOGECOIN_DATA:-}" ]; then
-      case "$DOGECOIN_DATA" in
-        /*) TARGET_DIR="$(check_data_path DOGECOIN_DATA "$DOGECOIN_DATA")" ;;
-        *) fail "DOGECOIN_DATA must be an absolute path; unset it to use a Docker volume" ;;
-      esac
-    else
-      TARGET_VOLUME="${DOGECOIN_VOLUME_NAME:-${COMPOSE_PROJECT_NAME:?COMPOSE_PROJECT_NAME must be set}_dogecoin_data}"
-    fi
+    IFS=$'\x1f' read -r DATA_TYPE DATA_SOURCE < <(compose_json | jqx -r '
+      (.services["dogecoin-node"].volumes // [] | map(select(.target == "/data")) | first) as $m
+      | if $m == null then "" else
+          [$m.type, (if $m.type == "volume" then (.volumes[$m.source].name // $m.source) else $m.source end)]
+          | join("\u001f") end')
+    case "$DATA_TYPE" in
+      volume) TARGET_VOLUME="$DATA_SOURCE" ;;
+      bind) TARGET_DIR="$(check_data_path "Dogecoin data directory" "$DATA_SOURCE")" ;;
+      *) fail "cannot determine where dogecoin-node keeps its data" ;;
+    esac
+    COMPOSE_PROJECT="$(compose_json | jqx -r '.name')"
     ;;
 esac
 
@@ -443,7 +461,7 @@ if [ -n "$TARGET_VOLUME" ]; then
   docker info >/dev/null 2>&1 || fail "cannot reach the Docker daemon"
   if docker volume inspect "$TARGET_VOLUME" >/dev/null 2>&1; then
     fail "Docker volume $TARGET_VOLUME already exists. Keep it, set a new, unused
-DOGECOIN_VOLUME_NAME in $ENV_FILE to restore into, and rerun."
+DOGECOIN_VOLUME_NAME in $ENV_FILE_ABS to restore into, and rerun."
   fi
 elif [ -d "$TARGET_DIR" ] &&
      find "$TARGET_DIR" -mindepth 1 -maxdepth 1 -print -quit | grep -q . &&
@@ -618,7 +636,7 @@ if [ -n "$TARGET_VOLUME" ]; then
   fi
   echo "Creating Docker volume $TARGET_VOLUME and extracting the snapshot..."
   docker volume create \
-    --label "com.docker.compose.project=$COMPOSE_PROJECT_NAME" \
+    --label "com.docker.compose.project=$COMPOSE_PROJECT" \
     --label "com.docker.compose.volume=dogecoin_data" \
     "$TARGET_VOLUME" >/dev/null
   if ! docker run --rm --network none \
@@ -702,13 +720,13 @@ else
   if [ -n "$TARGET_VOLUME" ]; then
     echo "Restore complete; running services were not touched. Switch to the new"
     echo "volume by stopping the services that depend on Dogecoin first:"
-    printf '  docker compose --env-file %q stop %s\n' "$ENV_FILE_ABS" "$(services_to_stop dogecoin)"
-    printf '  docker compose --env-file %q up -d --force-recreate dogecoin-node\n' "$ENV_FILE_ABS"
+    echo "  $COMPOSE_HINT stop $(services_to_stop dogecoin)"
+    echo "  $COMPOSE_HINT up -d --force-recreate dogecoin-node"
   else
     echo "Restore complete. Stopped services: $STOPPED_SERVICES"
     echo "Start the stack later with:"
   fi
-  printf '  docker compose --env-file %q up -d\n' "$ENV_FILE_ABS"
+  echo "  $COMPOSE_HINT up -d"
 fi
 
 echo

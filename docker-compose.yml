@@ -1,7 +1,11 @@
-# Shared service definitions. Network-specific images, configuration files, and
-# version-dependent settings live in networks/${NETWORK}/compose.yml, which each
-# service extends; NETWORK comes from the Compose env file (.env.testnet,
-# .env.mainnet).
+# Shared service definitions. Each service extends networks/${NETWORK}/compose.yml,
+# which holds everything that differs per network: images, configuration files,
+# data and port layout, and version-dependent settings. Settings here apply to
+# both networks and win over the network file, so keep network- or
+# version-specific values out of this file.
+#
+# Operator settings come from .env in this directory (Compose reads it by
+# default), or from the file given with --env-file.
 
 x-logging: &logging
   driver: json-file
@@ -22,17 +26,9 @@ services:
     oom_score_adj: -100
     volumes:
       - ./scripts/dogecoin_entrypoint.sh:/entrypoint.sh:ro
-      # DOGECOIN_DATA set to an absolute path (mainnet) is a bind mount. When it
-      # is unset (existing testnet nodes), the named volume below is used.
-      - ${DOGECOIN_DATA:-dogecoin_data}:/data
     secrets:
       - dogecoin_rpc_user
       - dogecoin_rpc_password
-    ports:
-      - ${DOGECOIN_P2P_PORT}:${DOGECOIN_P2P_PORT}
-      # INTERNAL_BIND_ADDR limits RPC ports that only this stack needs. Unset
-      # (testnet default) publishes on all interfaces; mainnet uses 127.0.0.1.
-      - ${INTERNAL_BIND_ADDR:+${INTERNAL_BIND_ADDR:-}:}${DOGECOIN_RPC_PORT}:${DOGECOIN_RPC_PORT}
     entrypoint:
       - /bin/sh
       - /entrypoint.sh
@@ -64,12 +60,6 @@ services:
         target: /l2reth
         bind:
           create_host_path: true
-    ports:
-      - ${L2_HTTP_PORT:-8545}:8545
-      - ${L2_WS_PORT:-8546}:8546
-      - ${L2_P2P_PORT:-30303}:30303/tcp
-      - ${L2_P2P_PORT:-30303}:30303/udp
-      - 127.0.0.1:${L2_METRICS_PORT:-6060}:6060
     depends_on:
       l1-interface:
         condition: service_started
@@ -86,15 +76,18 @@ services:
     mem_limit: ${L1_INTERFACE_MEM_LIMIT:-2g}
     memswap_limit: ${L1_INTERFACE_MEM_LIMIT:-2g}
     oom_score_adj: -100
-    # Operator overrides, loaded after the network's l1-interface.env. The
-    # envs/ path is the location used by earlier releases and still works.
+    # Deprecated: the operator override file of earlier releases, still read
+    # after the network's l1-interface.env. Use the .env settings below instead.
     env_file:
       - path: ./envs/${NETWORK}/l1-interface.local.env
         required: false
-      - path: ./networks/${NETWORK}/l1-interface.local.env
-        required: false
+    # Optional operator overrides from .env; the entrypoint applies the ones
+    # that are set, ahead of l1-interface.env and the deprecated file.
     environment:
-      DOGEOS_RPC_PACKAGE_DOGECOIN_RPC_URL: http://dogecoin-node:${DOGECOIN_RPC_PORT}
+      DOGEOS_RPC_PACKAGE_ETHEREUM_RPC_URL: ${ETHEREUM_RPC_URL:-}
+      DOGEOS_RPC_PACKAGE_EXTERNAL_DOGECOIN_RPC_URL: ${EXTERNAL_DOGECOIN_RPC_URL:-}
+      DOGEOS_RPC_PACKAGE_EXTERNAL_DOGECOIN_RPC_USER: ${EXTERNAL_DOGECOIN_RPC_USER:-}
+      DOGEOS_RPC_PACKAGE_EXTERNAL_DOGECOIN_RPC_PASSWORD: ${EXTERNAL_DOGECOIN_RPC_PASSWORD:-}
     entrypoint:
       - /bin/sh
       - /entrypoint.sh
@@ -108,10 +101,6 @@ services:
     secrets:
       - dogecoin_rpc_user
       - dogecoin_rpc_password
-    ports:
-      - ${INTERNAL_BIND_ADDR:+${INTERNAL_BIND_ADDR:-}:}8547:8545
-      - ${INTERNAL_BIND_ADDR:+${INTERNAL_BIND_ADDR:-}:}5052:5052
-      - ${INTERNAL_BIND_ADDR:+${INTERNAL_BIND_ADDR:-}:}9090:9090
     depends_on:
       l1-interface-init-fetch-sqlite:
         condition: service_completed_successfully
@@ -119,7 +108,6 @@ services:
     extends:
       file: networks/${NETWORK:?NETWORK must be set in the Compose env file}/compose.yml
       service: l1-interface-init-fetch-sqlite
-    container_name: l1-interface-init-fetch-sqlite
     image: curlimages/curl:8.20.0
     logging: *logging
     restart: "no"
@@ -202,9 +190,10 @@ services:
         fi
 
 volumes:
+  # Used by networks that keep Dogecoin data in a Docker volume (testnet). Not
+  # created for networks that bind-mount it (mainnet). The fallback is the name
+  # Compose generated before v0.3.0.
   dogecoin_data:
-    # Falls back to the name Compose generated before v0.3.0. Unused, and not
-    # created, when DOGECOIN_DATA selects a bind mount.
     name: ${DOGECOIN_VOLUME_NAME:-${COMPOSE_PROJECT_NAME}_dogecoin_data}
 secrets:
   dogecoin_rpc_user:

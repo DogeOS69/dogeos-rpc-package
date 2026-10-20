@@ -17,8 +17,10 @@ operators. It runs three services, each depending on the one before it:
 
 Each network has its own directory under `networks/` with its images,
 configuration, and env template, so the networks can run different versions.
-`docker-compose.yml` holds what they share and selects the network from
-`NETWORK` in your Compose env file.
+`docker-compose.yml` holds what they share. Your settings live in one file,
+`.env` in the repository root, which also selects the network (`NETWORK`);
+Docker Compose and the scripts read it automatically, so commands need no
+extra flags. One checkout runs one network.
 
 ```text
 docker-compose.yml        shared service definitions
@@ -45,15 +47,14 @@ Docker Compose 2.24 or later is required.
 
 ## Quick Start
 
-These steps set up a new **testnet** node. Do not use `.env.mainnet` until
-mainnet is released.
+These steps set up a new **testnet** node. Mainnet is not released yet.
 
-### 1. Configure the Compose Environment
+### 1. Configure `.env`
 
 ```bash
-if [ ! -e .env.testnet ]; then cp networks/testnet/env.example .env.testnet; fi
-# REQUIRED: set DATA_ROOT; review credentials, ports, and memory limits
-chmod 600 .env.testnet
+if [ ! -e .env ]; then cp networks/testnet/env.example .env; fi
+# REQUIRED: set DATA_ROOT; optional settings are listed, commented out
+chmod 600 .env
 ```
 
 Set `DATA_ROOT` to an absolute path on your mounted data disk, outside the
@@ -61,9 +62,9 @@ repository, and check the mount (for example `findmnt -T /data`); otherwise
 chain data can fill the root disk.
 
 The testnet template keeps the earlier package's project name, Dogecoin volume
-name, and public default RPC credentials (`doge`/`password`). Existing nodes
-must keep their actual values. Never expose the Dogecoin RPC port to an
-untrusted network with the default credentials.
+name, and public default RPC credentials (`doge`/`password`). Never expose the
+Dogecoin RPC port to an untrusted network with the default credentials; setting
+`INTERNAL_BIND_ADDR=127.0.0.1` keeps it on this host.
 
 ### 2. Check the Ethereum RPC
 
@@ -76,9 +77,9 @@ Snapshots are published to S3 and listed per network. Restore Dogecoin first,
 then L2Reth, without starting services yet:
 
 ```bash
-./scripts/restore-snapshot.sh --list .env.testnet
-./scripts/restore-snapshot.sh --no-start dogecoin .env.testnet
-./scripts/restore-snapshot.sh --no-start l2reth .env.testnet
+./scripts/restore-snapshot.sh --list
+./scripts/restore-snapshot.sh --no-start dogecoin
+./scripts/restore-snapshot.sh --no-start l2reth
 ```
 
 Skip the Dogecoin restore for a node that already has Dogecoin data. The
@@ -88,7 +89,7 @@ network's images. See [Snapshots and Recovery](docs/snapshots.md).
 ### 4. Start Services
 
 ```bash
-docker compose --env-file .env.testnet up -d
+docker compose up -d
 ```
 
 On first start, L1 Interface downloads its testnet bootstrap data and catches
@@ -98,7 +99,7 @@ finish syncing before sending RPC traffic.
 ### 5. Verify Services
 
 ```bash
-docker compose --env-file .env.testnet ps -a
+docker compose ps -a
 curl --fail http://localhost:9090/health
 ```
 
@@ -119,8 +120,10 @@ Before serving traffic, review [Network Security](docs/operations.md#network-sec
 ## Upgrading
 
 Follow the [changelog](CHANGELOG.md): each entry states the affected network
-and the commands to run. Keep your Compose env file, project name, Dogecoin
-storage, and RPC credentials. Nodes still on the v0.2.x package start with the
+and the commands to run. Keep your `.env`, project name, Dogecoin storage, and
+RPC credentials. Nodes set up with `.env.testnet` keep working with
+`--env-file .env.testnet`; see
+[existing nodes](docs/operations.md#configuration) to switch to `.env`. Nodes still on the v0.2.x package start with the
 archived [v0.3.0 upgrade guide](docs/testnet/history/upgrade-v0.3.0.md).
 
 ## Documentation

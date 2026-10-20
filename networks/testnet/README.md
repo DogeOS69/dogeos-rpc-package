@@ -19,21 +19,21 @@ ordering, L1 reorg handling) was checked against these revisions.
 | File | Purpose |
 |------|---------|
 | `compose.yml` | Images, version-specific L2Reth flags, L1 Interface healthcheck |
-| `env.example` | Template for your `.env.testnet` |
-| `dogecoin.conf` | Dogecoin Core settings (RPC credentials come from `.env.testnet`) |
+| `env.example` | Template for your `.env` |
+| `dogecoin.conf` | Dogecoin Core settings (RPC credentials come from `.env`) |
 | `l2reth-genesis.json`, `protocol_context.json` | Chain configuration |
 | `l2reth.env` | L2Reth peers, P2P network ID, L1 endpoint, blob archive |
 | `l1-interface.env` | L1 Interface settings |
 | `l1-interface-bootstrap.env` | One-time bootstrap of the pre-v0.3.0 testnet history |
-| `l1-interface.local.env.example` | Template for optional operator overrides |
 
 ## Defaults
 
 - Compose project `dogeos-rpc-package` and Dogecoin volume
   `dogeos-rpc-package_dogecoin_data`, as in earlier releases. Existing nodes
   keep their actual names.
+- Dogecoin data in the Docker volume `DOGECOIN_VOLUME_NAME`.
 - Dogecoin P2P `44556`, RPC `44555`; L2Reth HTTP `8545`, WebSocket `8546`,
-  P2P `30303`.
+  P2P `30303`, metrics `6060`.
 - Internal ports are published on all interfaces unless `INTERNAL_BIND_ADDR`
   is set.
 - Ethereum DA reads the public Sepolia RPC and the public S3 blob archive.

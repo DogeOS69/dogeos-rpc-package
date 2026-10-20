@@ -6,14 +6,16 @@ usage() {
 Reset the bind-mounted L1 Interface and L2Reth data directories.
 
 Usage:
-  scripts/reset-chain-data.sh [options] <env-file>
+  scripts/reset-chain-data.sh [options] [env-file]
+
+The env file defaults to .env in the repository root.
 
 Examples:
   # Recommended: move existing data to timestamped backup directories.
-  scripts/reset-chain-data.sh .env.testnet
+  scripts/reset-chain-data.sh
 
   # Irreversibly delete existing data instead of keeping backups.
-  scripts/reset-chain-data.sh --delete --yes .env.testnet
+  scripts/reset-chain-data.sh --delete --yes
 
 Options:
   --delete  Permanently delete the existing l1-interface and l2reth data.
@@ -23,8 +25,8 @@ Options:
   -h, --help
             Show this help.
 
-This script stops the Compose project before resetting data. It does not remove
-the Dogecoin named volume or DATA_ROOT/.snapshot-cache.
+This script stops the Compose project before resetting data. It does not touch
+Dogecoin data (a Docker volume or DATA_ROOT/dogecoin) or DATA_ROOT/.snapshot-cache.
 USAGE
 }
 
@@ -66,10 +68,11 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-[ -n "$ENV_FILE" ] || {
-  usage >&2
-  exit 1
-}
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+if [ -z "$ENV_FILE" ]; then
+  ENV_FILE="$REPO_ROOT/.env"
+  [ -f "$ENV_FILE" ] || fail "no env file given and $ENV_FILE does not exist; create it from networks/<network>/env.example"
+fi
 
 if "$CONFIRMED" && ! "$DELETE"; then
   fail "--yes is only valid together with --delete"
@@ -86,7 +89,6 @@ require_command readlink
 
 ENV_DIR="$(cd "$(dirname "$ENV_FILE")" && pwd -P)"
 ENV_FILE_ABS="$ENV_DIR/$(basename "$ENV_FILE")"
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 REPO_ROOT_ABS="$(readlink -m "$REPO_ROOT")"
 
 set -a
@@ -95,6 +97,7 @@ set -a
 set +a
 
 [ -n "${DATA_ROOT:-}" ] || fail "DATA_ROOT must be set in $ENV_FILE"
+echo "Using env file: $ENV_FILE_ABS (NETWORK=${NETWORK:-unset})"
 
 case "$DATA_ROOT" in
   /*) ;;
@@ -132,13 +135,13 @@ L2_DIR="$DATA_ROOT_ABS/l2reth"
 echo "Data reset targets:"
 echo "  $L1_DIR"
 echo "  $L2_DIR"
-echo "Dogecoin named volume and snapshot cache will be preserved."
+echo "Dogecoin data and the snapshot cache will be preserved."
 echo
 
 echo "Stopping Compose services..."
 (
   cd "$REPO_ROOT_ABS"
-  docker compose --env-file "$ENV_FILE_ABS" down
+  docker compose --project-directory "$REPO_ROOT_ABS" --env-file "$ENV_FILE_ABS" down
 )
 
 if "$DELETE"; then
@@ -167,11 +170,12 @@ mkdir -p "$L1_DIR" "$L2_DIR"
 
 echo
 echo "Reset complete. Empty data directories were created; the services remain stopped."
-echo "To restore the published L2Reth snapshot without starting services:"
-printf '  %q --no-start l2reth %q\n' \
-  "$REPO_ROOT_ABS/scripts/restore-snapshot.sh" \
-  "$ENV_FILE_ABS"
-echo "To start L2Reth and its dependencies without the bundled Dogecoin node:"
-printf '  cd %q && docker compose --env-file %q up -d l2reth-node\n' \
-  "$REPO_ROOT_ABS" \
-  "$ENV_FILE_ABS"
+echo "Next, from $REPO_ROOT_ABS, restore the published L2Reth snapshot and start"
+echo "the stack:"
+if [ "$ENV_FILE_ABS" = "$REPO_ROOT_ABS/.env" ]; then
+  echo "  ./scripts/restore-snapshot.sh --no-start l2reth"
+  echo "  docker compose up -d"
+else
+  printf '  ./scripts/restore-snapshot.sh --no-start l2reth %q\n' "$ENV_FILE_ABS"
+  printf '  docker compose --env-file %q up -d\n' "$ENV_FILE_ABS"
+fi

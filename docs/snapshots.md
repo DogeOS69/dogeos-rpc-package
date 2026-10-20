@@ -1,13 +1,14 @@
 # Snapshots and Recovery
 
-How to restore published snapshots and recover service data. Commands use
-testnet; on mainnet use `.env.mainnet` instead of `.env.testnet`. Mainnet
-snapshots are not published yet ([mainnet status](../networks/mainnet/README.md)).
+How to restore published snapshots and recover service data. Run commands
+from the repository root; they use the network configured in `.env` (see
+[Quick Start](../README.md#quick-start)). Mainnet snapshots are not published
+yet ([mainnet status](../networks/mainnet/README.md)).
 
-Run commands from the repository root with an existing `.env.testnet` (see
-[Quick Start](../README.md#quick-start)). When recovering a node, keep its env
-file, project name, Dogecoin volume name, and RPC credentials; do not replace
-the env file with the template.
+When recovering a node, keep its `.env`, project name, Dogecoin volume name,
+and RPC credentials; do not replace `.env` with the template. A node that still
+uses `.env.testnet` passes it as the last argument of the scripts and with
+`--env-file` to `docker compose`.
 
 ## How Snapshots Work
 
@@ -35,7 +36,7 @@ List the published snapshots, their heights, and whether they match your
 images:
 
 ```bash
-./scripts/restore-snapshot.sh --list .env.testnet
+./scripts/restore-snapshot.sh --list
 ```
 
 ## Restore Order and Service Dependencies
@@ -67,7 +68,7 @@ Restore the newest compatible L2Reth snapshot into `${DATA_ROOT}/l2reth` and
 start the stack:
 
 ```bash
-./scripts/restore-snapshot.sh l2reth .env.testnet
+./scripts/restore-snapshot.sh l2reth
 ```
 
 The archive holds Reth databases and static files under one `l2reth/` root. It
@@ -81,7 +82,7 @@ given. With `--force`, the old directory is kept next to it, for example
 manually only after verifying the restored node.
 
 Use `--no-start` to restore without starting services, then start them with
-`docker compose --env-file .env.testnet up -d`.
+`docker compose up -d`.
 
 <details>
 <summary>Advanced: use a mirror or alternate cache</summary>
@@ -95,7 +96,7 @@ compatibility check is made in this mode:
   --snapshot-url https://mirror.example/l2reth-snapshot.tar.gz \
   --sha256 'REPLACE_WITH_64_HEX_CHARACTER_SHA256' \
   --cache-dir /path/on/a/large/disk \
-  l2reth .env.testnet
+  l2reth
 ```
 
 A cached archive with the expected checksum is reused. A cached archive with a
@@ -123,11 +124,11 @@ On testnet, Dogecoin keeps its data in the Docker volume named by
 `DOGECOIN_VOLUME_NAME`. **The script only restores into a volume that does not
 exist yet.** For a new installation, the template's name is unused. To recover
 an existing node, keep its original volume and set `DOGECOIN_VOLUME_NAME` in
-`.env.testnet` to a new, unused name; you can switch back by restoring the old
+`.env` to a new, unused name; you can switch back by restoring the old
 name. Never delete or clear the original volume.
 
 ```bash
-./scripts/restore-snapshot.sh --no-start dogecoin .env.testnet
+./scripts/restore-snapshot.sh --no-start dogecoin
 ```
 
 With `--no-start`, running services are not touched and the script prints the
@@ -135,9 +136,9 @@ commands that switch to the new volume. They stop the dependent services first
 and recreate `dogecoin-node`:
 
 ```bash
-docker compose --env-file .env.testnet stop l2reth-node l1-interface dogecoin-node
-docker compose --env-file .env.testnet up -d --force-recreate dogecoin-node
-docker compose --env-file .env.testnet up -d
+docker compose stop l2reth-node l1-interface dogecoin-node
+docker compose up -d --force-recreate dogecoin-node
+docker compose up -d
 ```
 
 `DATA_ROOT` holds the download cache, but the extracted data goes to Docker's
@@ -147,9 +148,9 @@ on it, and remove it before retrying.
 
 ### Mainnet: Restore into `${DATA_ROOT}/dogecoin`
 
-On mainnet, `DOGECOIN_DATA` points Dogecoin at `${DATA_ROOT}/dogecoin`, and the
-restore works like L2Reth: a non-empty directory is replaced only with
-`--force`, and the old one is kept as a backup.
+On mainnet, Dogecoin keeps its data in `${DATA_ROOT}/dogecoin`, and the restore
+works like L2Reth: a non-empty directory is replaced only with `--force`, and
+the old one is kept as a backup.
 
 ### Verify the Restored Node
 
@@ -158,18 +159,18 @@ minutes, including several minutes at `Rewinding blocks...` without another
 log line. `-rpcwait` waits for RPC warmup:
 
 ```bash
-docker compose --env-file .env.testnet logs --tail 100 dogecoin-node
+docker compose logs --tail 100 dogecoin-node
 
-docker compose --env-file .env.testnet exec -T dogecoin-node \
+docker compose exec -T dogecoin-node \
   /dogecoin/bin/dogecoin-cli -rpcwait -conf=/run/dogeos/dogecoin.conf \
   -datadir=/data getblockchaininfo
 
 # Replace HEIGHT with the checkpoint height from the snapshot manifest.
-docker compose --env-file .env.testnet exec -T dogecoin-node \
+docker compose exec -T dogecoin-node \
   /dogecoin/bin/dogecoin-cli -conf=/run/dogeos/dogecoin.conf \
   -datadir=/data getblockhash HEIGHT
 
-docker compose --env-file .env.testnet exec -T dogecoin-node \
+docker compose exec -T dogecoin-node \
   /dogecoin/bin/dogecoin-cli -conf=/run/dogeos/dogecoin.conf \
   -datadir=/data verifychain 3 288
 ```
@@ -186,7 +187,7 @@ When L1 Interface snapshots are published for a network, restore them like
 L2Reth; the script stops `l2reth-node` and `l1-interface` first:
 
 ```bash
-./scripts/restore-snapshot.sh l1-interface .env.testnet
+./scripts/restore-snapshot.sh l1-interface
 ```
 
 Do not restore a pre-v0.3.0 L1 Interface database; its storage format changed
@@ -202,7 +203,7 @@ ready:
 ```bash
 set -euo pipefail
 set -a
-. ./.env.testnet
+. ./.env
 set +a
 : "${DATA_ROOT:?DATA_ROOT must be set}"
 case "$DATA_ROOT" in
@@ -212,7 +213,7 @@ case "$DATA_ROOT" in
   *) echo "DATA_ROOT must be absolute" >&2; exit 1 ;;
 esac
 
-docker compose --env-file .env.testnet stop l2reth-node l1-interface
+docker compose stop l2reth-node l1-interface
 
 L1_BACKUP="${DATA_ROOT}/l1-interface.backup-$(date -u +%Y%m%dT%H%M%SZ)"
 if [ -d "${DATA_ROOT}/l1-interface" ]; then
@@ -221,8 +222,8 @@ if [ -d "${DATA_ROOT}/l1-interface" ]; then
 fi
 
 # Run the one-shot downloader again for the new empty directory.
-docker compose --env-file .env.testnet rm -f l1-interface-init-fetch-sqlite
-docker compose --env-file .env.testnet up -d l1-interface
+docker compose rm -f l1-interface-init-fetch-sqlite
+docker compose up -d l1-interface
 ```
 
 Wait until `curl http://localhost:9090/health` returns HTTP 200 with
@@ -230,7 +231,7 @@ Wait until `curl http://localhost:9090/health` returns HTTP 200 with
 still catching up), then start L2Reth:
 
 ```bash
-docker compose --env-file .env.testnet up -d l2reth-node
+docker compose up -d l2reth-node
 ```
 
 Keep the backup until L1 Interface has caught up and L2Reth follows the
@@ -244,9 +245,9 @@ upgrade step. The helper stops the stack, moves `${DATA_ROOT}/l2reth` and
 directories. Dogecoin data and the snapshot cache are kept:
 
 ```bash
-./scripts/reset-chain-data.sh .env.testnet
-./scripts/restore-snapshot.sh --no-start l2reth .env.testnet
-docker compose --env-file .env.testnet up -d
+./scripts/reset-chain-data.sh
+./scripts/restore-snapshot.sh --no-start l2reth
+docker compose up -d
 ```
 
 Verify with [Verify Services](../README.md#5-verify-services) and keep the
@@ -259,7 +260,7 @@ This stops the stack and permanently deletes both data directories without
 backups. Dogecoin data and the snapshot cache are kept.
 
 ```bash
-./scripts/reset-chain-data.sh --delete --yes .env.testnet
+./scripts/reset-chain-data.sh --delete --yes
 ```
 
 </details>
