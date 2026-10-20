@@ -9,7 +9,9 @@ services:
     volumes:
       - ./configs/${NETWORK}/dogecoin.conf:/etc/dogeos/dogecoin.conf:ro
       - ./scripts/dogecoin_entrypoint.sh:/entrypoint.sh:ro
-      - dogecoin_data:/data
+      # DOGECOIN_DATA set to an absolute path (mainnet) is a bind mount. When it
+      # is unset (existing testnet nodes), the named volume below is used.
+      - ${DOGECOIN_DATA:-dogecoin_data}:/data
     secrets:
       - dogecoin_rpc_user
       - dogecoin_rpc_password
@@ -176,7 +178,9 @@ services:
         chmod 777 "$$REPLAY_DIR" || echo "WARN: could not chmod $$REPLAY_DIR; continuing because mounted PVC permissions are managed by Kubernetes/storage driver"
 volumes:
   dogecoin_data:
-    name: ${DOGECOIN_VOLUME_NAME:?DOGECOIN_VOLUME_NAME must be set}
+    # Falls back to the name Compose generated before v0.3.0. Unused, and not
+    # created, when DOGECOIN_DATA selects a bind mount.
+    name: ${DOGECOIN_VOLUME_NAME:-${COMPOSE_PROJECT_NAME}_dogecoin_data}
 secrets:
   dogecoin_rpc_user:
     environment: DOGECOIN_RPC_USER

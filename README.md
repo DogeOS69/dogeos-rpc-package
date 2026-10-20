@@ -90,10 +90,10 @@ if [ ! -e .env.testnet ]; then cp .env.example.testnet .env.testnet; fi
 chmod 600 .env.testnet
 ```
 
-The templates retain the old Compose project names: `dogeos-rpc-package` for
-testnet and `dogeos-rpc-package-mainnet` for mainnet. Existing deployments
-should keep their actual project name and Dogecoin volume name, including
-any custom names; see the [upgrade guide](upgrade_v0.3.0.md).
+The testnet template retains the old Compose project name,
+`dogeos-rpc-package`. Existing testnet deployments should keep their actual
+project name and Dogecoin volume name, including any custom names; see the
+[upgrade guide](upgrade_v0.3.0.md).
 
 `DATA_ROOT` uses a `/path/to/...` placeholder. Replace it with an absolute path
 on your mounted data disk, outside the repository. Verify the disk mount
@@ -185,8 +185,9 @@ This release supports the complete RPC stack on **testnet only**. Mainnet
 full-stack deployment and snapshots are not supported. Do not start this stack
 with `.env.mainnet` or use testnet data for mainnet.
 
-Existing mainnet operators should keep their current configuration and Dogecoin
-volume. See [mainnet snapshot status](snapshot_mainnet.md).
+Mainnet has not been released, so the mainnet template carries no
+compatibility settings from earlier packages. See
+[mainnet snapshot status](snapshot_mainnet.md).
 
 ## Service Endpoints
 
@@ -357,8 +358,11 @@ normal shutdown or upgrade.
 ## Data Storage
 
 L2Reth uses `${DATA_ROOT}/l2reth`; L1 Interface uses
-`${DATA_ROOT}/l1-interface`. Dogecoin uses `DOGECOIN_VOLUME_NAME` in Docker's
-volume storage, independently of `DATA_ROOT`.
+`${DATA_ROOT}/l1-interface`. On testnet, Dogecoin uses `DOGECOIN_VOLUME_NAME`
+in Docker's volume storage, independently of `DATA_ROOT`. The mainnet template
+instead sets `DOGECOIN_DATA=${DATA_ROOT}/dogecoin`, so all three services store
+data under `DATA_ROOT`. Do not set `DOGECOIN_DATA` on an existing testnet node:
+Dogecoin would start from an empty directory instead of its volume.
 
 Keep data outside the repository and retain the existing Dogecoin volume when
 upgrading. This Compose file supports one complete stack per host; changing
