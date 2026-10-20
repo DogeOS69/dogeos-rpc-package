@@ -167,10 +167,8 @@ compose_json() {
 NETWORK="$(compose_json | config_network)"
 DATA_ROOT="$(compose_json | config_data_root)"
 
-case "${NETWORK:-}" in
-  testnet|mainnet) ;;
-  *) fail "NETWORK must be testnet or mainnet, got: ${NETWORK:-unset}" ;;
-esac
+[ -n "$NETWORK" ] && [ -d "$REPO_ROOT/networks/$NETWORK" ] ||
+  fail "NETWORK must name a directory under networks/, got: ${NETWORK:-unset}"
 [ -n "${DATA_ROOT:-}" ] || fail "cannot determine DATA_ROOT from the Compose configuration"
 echo "Using env file: $ENV_FILE_ABS (NETWORK=$NETWORK, DATA_ROOT=$DATA_ROOT)"
 
@@ -188,12 +186,27 @@ fi
 INDEX_URL="${INDEX_URL:-$DEFAULT_INDEX_BASE/$NETWORK/index.json}"
 TMP_DIR="$(mktemp -d)"
 STAGING_DIR=""
+PENDING_BACKUP=""
+PENDING_TARGET=""
+CREATED_VOLUME=""
 cleanup() {
   rm -rf "$TMP_DIR"
+  # Interrupted between moving the current data aside and activating the
+  # restored data: put the current data back.
+  if [ -n "$PENDING_BACKUP" ] && [ ! -e "$PENDING_TARGET" ] && [ -d "$PENDING_BACKUP" ]; then
+    echo "Restoring previous data to $PENDING_TARGET" >&2
+    mv "$PENDING_BACKUP" "$PENDING_TARGET"
+  fi
   # Only this run's own staging directory; it is gone after a successful restore.
   if [ -n "$STAGING_DIR" ] && [ -d "$STAGING_DIR" ]; then
     echo "Removing incomplete staging directory: $STAGING_DIR" >&2
     rm -rf "$STAGING_DIR"
+  fi
+  # Only a volume this run created and did not finish filling.
+  if [ -n "$CREATED_VOLUME" ]; then
+    echo "Removing incomplete Docker volume: $CREATED_VOLUME" >&2
+    docker volume rm "$CREATED_VOLUME" >/dev/null 2>&1 ||
+      echo "Could not remove it; remove it with: docker volume rm $CREATED_VOLUME" >&2
   fi
 }
 trap cleanup EXIT
@@ -481,6 +494,19 @@ if [ "$COMPONENT" = l2reth ] && [ ! -e "$ARCHIVE_PATH" ] && [ ! -e "$PARTIAL_PAT
   done
 fi
 
+# A cached archive with the wrong checksum is set aside first, so the space
+# check below counts the download it will need.
+verify_checksum() {
+  printf '%s  %s\n' "$SNAPSHOT_SHA256" "$1" | sha256sum --check --status -
+}
+
+if [ -f "$ARCHIVE_PATH" ] && ! verify_checksum "$ARCHIVE_PATH"; then
+  INVALID_PATH="$ARCHIVE_PATH.invalid-$(date -u +%Y%m%dT%H%M%SZ)"
+  echo "Cached archive has the wrong checksum; preserving it as:"
+  echo "  $INVALID_PATH"
+  mv "$ARCHIVE_PATH" "$INVALID_PATH"
+fi
+
 # --- Disk space -------------------------------------------------------------
 
 available_bytes() { df -PB1 "$1" | awk 'NR == 2 { print $4 }'; }
@@ -517,17 +543,6 @@ if [ "$SKIP_SPACE_CHECK" != true ] && [ -n "$SIZE_BYTES" ]; then
 fi
 
 # --- Download and verify ----------------------------------------------------
-
-verify_checksum() {
-  printf '%s  %s\n' "$SNAPSHOT_SHA256" "$1" | sha256sum --check --status -
-}
-
-if [ -f "$ARCHIVE_PATH" ] && ! verify_checksum "$ARCHIVE_PATH"; then
-  INVALID_PATH="$ARCHIVE_PATH.invalid-$(date -u +%Y%m%dT%H%M%SZ)"
-  echo "Cached archive has the wrong checksum; preserving it as:"
-  echo "  $INVALID_PATH"
-  mv "$ARCHIVE_PATH" "$INVALID_PATH"
-fi
 
 if [ ! -f "$ARCHIVE_PATH" ]; then
   echo "Downloading $COMPONENT snapshot:"
@@ -607,8 +622,11 @@ STOPPED_SERVICES=""
 stop_services() {
   STOPPED_SERVICES="$(services_to_stop "$COMPONENT")"
   echo "Stopping $STOPPED_SERVICES before activating the restored data..."
+  # Stopping services that do not exist succeeds; any other failure must not
+  # let data be replaced under a running service.
   # shellcheck disable=SC2086
-  "${COMPOSE[@]}" stop $STOPPED_SERVICES >/dev/null 2>&1 || true
+  "${COMPOSE[@]}" stop $STOPPED_SERVICES ||
+    fail "could not stop $STOPPED_SERVICES; the restored data was not activated"
 }
 
 if [ -n "$TARGET_VOLUME" ]; then
@@ -620,6 +638,7 @@ if [ -n "$TARGET_VOLUME" ]; then
     --label "com.docker.compose.project=$COMPOSE_PROJECT" \
     --label "com.docker.compose.volume=dogecoin_data" \
     "$TARGET_VOLUME" >/dev/null
+  CREATED_VOLUME="$TARGET_VOLUME"
   if ! docker run --rm --network none \
       --mount "type=volume,source=$TARGET_VOLUME,target=/data" \
       --mount "type=bind,source=$CACHE_DIR,target=/snapshot,readonly" \
@@ -629,9 +648,9 @@ if [ -n "$TARGET_VOLUME" ]; then
         tar -xzf "/snapshot/$ARCHIVE_NAME" --strip-components=1 -C /data
         for f in $REQUIRED_FILES; do test -f "/data/$f"; done
       '; then
-    fail "extraction into $TARGET_VOLUME failed. Do not start the node on it. Remove
-the partial volume with: docker volume rm $TARGET_VOLUME"
+    fail "extraction into $TARGET_VOLUME failed; the partial volume is removed"
   fi
+  CREATED_VOLUME=""
   echo
   echo "Dogecoin snapshot restored to Docker volume: $TARGET_VOLUME"
 else
@@ -659,6 +678,8 @@ else
     if find "$TARGET_DIR" -mindepth 1 -maxdepth 1 -print -quit | grep -q .; then
       BACKUP_DIR="$TARGET_DIR.backup-$(date -u +%Y%m%dT%H%M%SZ)-$$"
       [ ! -e "$BACKUP_DIR" ] || fail "backup destination already exists: $BACKUP_DIR"
+      PENDING_TARGET="$TARGET_DIR"
+      PENDING_BACKUP="$BACKUP_DIR"
       mv "$TARGET_DIR" "$BACKUP_DIR"
     else
       rmdir "$TARGET_DIR"
@@ -672,6 +693,7 @@ else
     mv "$STAGING_DIR" "$TARGET_DIR"
   fi
   STAGING_DIR=""
+  PENDING_BACKUP=""
 
   echo
   echo "$COMPONENT snapshot restored to:"

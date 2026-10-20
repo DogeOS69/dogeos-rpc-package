@@ -143,8 +143,8 @@ docker compose up -d
 
 `DATA_ROOT` holds the download cache, but the extracted data goes to Docker's
 volume storage; make sure the disk behind Docker's data root has room. If
-extraction fails, the script names the partial volume: do not start the node
-on it, and remove it before retrying.
+extraction fails or is interrupted, the script removes the partly filled
+volume it created; fix the cause and run it again.
 
 ### Mainnet: Restore into `${DATA_ROOT}/dogecoin`
 
@@ -198,14 +198,17 @@ in v0.3.0.
 Without a snapshot, testnet L1 Interface data can be rebuilt from the pinned,
 verified bootstrap data that the `l1-interface-init-fetch-sqlite` service
 downloads. L2Reth is stopped first and started only after L1 Interface is
-ready:
+ready.
+
+The block runs in its own `bash`, so an error stops it without closing your
+shell. It takes `DATA_ROOT` from the configuration Docker Compose resolves
+(this needs `jq`), so it acts on the directory the stack actually mounts:
 
 ```bash
+bash <<'EOF'
 set -euo pipefail
-set -a
-. ./.env
-set +a
-: "${DATA_ROOT:?DATA_ROOT must be set}"
+DATA_ROOT="$(docker compose config --format json |
+  jq -r '.services["l2reth-node"].volumes[] | select(.target == "/l2reth") | .source | rtrimstr("/l2reth")')"
 case "$DATA_ROOT" in
   /path/to|/path/to/*) echo 'Replace the DATA_ROOT placeholder first' >&2; exit 1 ;;
   /|/tmp|/var/tmp) echo "Refusing unsafe DATA_ROOT: $DATA_ROOT" >&2; exit 1 ;;
@@ -224,6 +227,7 @@ fi
 # Run the one-shot downloader again for the new empty directory.
 docker compose rm -f l1-interface-init-fetch-sqlite
 docker compose up -d l1-interface
+EOF
 ```
 
 Wait until `curl http://localhost:9090/health` returns HTTP 200 with
