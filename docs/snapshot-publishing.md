@@ -14,10 +14,12 @@ s3://dogeos-rpc-snapshots/
   <network>/                         # testnet, mainnet
     index.json                       # the only object that is overwritten
     index.json.sig                   # only once signing is enabled
-    l2reth/<archive>.tar.gz
-    l2reth/<archive>.manifest.json   # optional, recommended
     dogecoin/<archive>.tar.gz
-    dogecoin/<archive>.manifest.json
+    dogecoin/<archive>.manifest.json # optional, recommended
+    l1-interface/<archive>.tar.gz
+    l1-interface/<archive>.manifest.json
+    l2reth/<archive>.tar.gz
+    l2reth/<archive>.manifest.json
 ```
 
 - Archives and manifests are immutable. Never overwrite one; publish a new
@@ -34,8 +36,9 @@ s3://dogeos-rpc-snapshots/
   "network": "testnet",
   "published_at": "2026-10-20T00:00:00Z",
   "components": {
-    "l2reth": [ <entry>, ... ],
-    "dogecoin": [ <entry>, ... ]
+    "dogecoin": [ <entry>, ... ],
+    "l1-interface": [ <entry>, ... ],
+    "l2reth": [ <entry>, ... ]
   }
 }
 ```
@@ -46,7 +49,9 @@ Each entry:
 |-------|----------|---------|
 | `id` | yes | Unique within the component. Users pass it to `--snapshot-id`. |
 | `created_at` | yes | ISO 8601 UTC time of the source data. The newest compatible entry is selected. |
-| `height` | no | Block height of the data, shown by `--list`. |
+| `height` | no | Block height of the data (Dogecoin, L1 Interface synthetic L1, or L2), shown by `--list`. |
+| `dogecoin_height` | no | `l1-interface` only: Dogecoin height the data was indexed against. |
+| `l1_height` | no | `l2reth` only: L1 Interface block the data was derived against. |
 | `compatible_images` | yes | Image references that can open this data, written exactly as in `docker-compose.yml` (for example `dogeos69/rollup-node:v0.3.0-beta.1c`). |
 | `archive.url` | yes | HTTPS URL of a `.tar.gz` archive. |
 | `archive.sha256` | yes | Lowercase hex SHA-256 of the archive. |
@@ -54,15 +59,17 @@ Each entry:
 | `archive.uncompressed_bytes` | no | Extracted size; used for the free-space check. |
 | `manifest_url` | no | Human-readable manifest; printed when the snapshot is selected. |
 
-Clients ignore unknown fields, so fields can be added without a schema change.
+A component with no entries can be omitted. Clients ignore unknown fields, so fields can be added without a schema change.
 Change `schema_version` only for an incompatible change; older scripts then
 refuse the index instead of misreading it.
 
 ## Image Compatibility
 
 The script restores only a snapshot whose `compatible_images` contains the
-image the operator's `docker-compose.yml` uses. Before releasing a package that
-changes the `l2reth-node` or `dogecoin-node` image:
+image that network uses (`networks/<network>/compose.yml`). Testnet and mainnet
+can run different versions, and each network has its own index. Before
+releasing a package that changes a network's `dogecoin-node`, `l1-interface`,
+or `l2reth-node` image, update that network's index:
 
 - If the new image opens existing data unchanged, add the new image reference
   to the `compatible_images` of the current entries.
@@ -73,6 +80,37 @@ Otherwise operators of the new release see "no published snapshot is
 compatible". Keep the old image listed while operators of the previous release
 still restore snapshots.
 
+## Component Dependencies
+
+Services depend on each other as Dogecoin -> L1 Interface -> L2Reth. Snapshots
+of different components may be published at different times, so a restore can
+combine data of different ages:
+
+- **Downstream older than upstream** is the normal case: the restored service
+  catches up.
+- **Downstream newer than upstream** is safe but slow to settle. L1 Interface
+  restarts until Dogecoin reaches the height it indexed; L2Reth retries until
+  L1 Interface reaches the L1 block it derived from. The restore script warns
+  when it can see this.
+- **Upstream moving backwards under a running downstream** is the case to
+  avoid: rollup-node treats a lower L1 Interface head as an L1 reorg and
+  unwinds L2 state. The restore script therefore stops the component and every
+  service downstream of it before activating restored data.
+
+Record `dogecoin_height` and `l1_height` so the script can warn about the
+second case. Upper bounds are enough:
+
+- `l1_height`: the L1 Interface `eth_blockNumber` the source L2Reth node was
+  following, read just before the L2Reth snapshot.
+- `dogecoin_height`: the source Dogecoin node's `getblockcount`, read just
+  before the L1 Interface snapshot.
+
+When one pipeline run publishes several components, snapshot them in the
+order **L2Reth, then L1 Interface, then Dogecoin**. Each later snapshot is at
+least as advanced as the one before it, so a set taken together never has a
+downstream component ahead of its upstream. Components may also be published
+on their own schedules, for example L2Reth weekly and Dogecoin monthly.
+
 ## Archive Layout
 
 The script rejects archives that do not match these rules.
@@ -80,6 +118,12 @@ The script rejects archives that do not match these rules.
 **l2reth** — a single `l2reth/` root containing `db/mdbx.dat`, `db/scroll.db`,
 and `static_files/`. It must not contain `jwt.hex`, `reth.toml`, `genesis/`,
 `protocol_context.json`, `lost+found`, node keys, or keystores.
+
+**l1-interface** — a single `l1-interface/` root containing
+`l1-interface.sqlite` and `replay.sqlite`, plus `replay.artifacts/` and the
+historical artifact when present. Take it after a clean shutdown of L1
+Interface so SQLite has no pending write-ahead log. It must not contain
+`*.env`, `*.toml`, or `*.conf` files.
 
 **dogecoin** — a single `dogecoin/` root containing the network data
 directory: `dogecoin/testnet3/{blocks,chainstate}` on testnet and

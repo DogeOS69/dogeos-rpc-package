@@ -12,10 +12,10 @@ SIGNATURE_NAMESPACE="dogeos-snapshot-index"
 
 usage() {
   cat <<'USAGE'
-Restore a published L2Reth or Dogecoin snapshot.
+Restore a published Dogecoin, L1 Interface, or L2Reth snapshot.
 
 Usage:
-  scripts/restore-snapshot.sh [options] <l2reth|dogecoin> <env-file>
+  scripts/restore-snapshot.sh [options] <dogecoin|l1-interface|l2reth> <env-file>
   scripts/restore-snapshot.sh --list <env-file>
 
 Examples:
@@ -23,7 +23,12 @@ Examples:
   scripts/restore-snapshot.sh --no-start dogecoin .env.testnet
   scripts/restore-snapshot.sh l2reth .env.testnet
 
-The newest snapshot compatible with the image in docker-compose.yml is used.
+The newest snapshot compatible with the network's image is used.
+
+Services depend on each other as Dogecoin -> L1 Interface -> L2Reth. Before
+the restored data is activated, the component and every service that depends
+on it are stopped, so L2Reth never runs while L1 Interface data moves
+backwards. Starting the stack afterwards lets each service catch up.
 
 Options:
   --list                  List published snapshots and exit.
@@ -135,8 +140,8 @@ fi
 [ -n "$ENV_FILE" ] || { usage >&2; exit 1; }
 if [ "$LIST" = false ]; then
   case "$COMPONENT" in
-    l2reth|dogecoin) ;;
-    *) fail "component must be l2reth or dogecoin, got: ${COMPONENT:-none}" ;;
+    dogecoin|l1-interface|l2reth) ;;
+    *) fail "component must be dogecoin, l1-interface, or l2reth, got: ${COMPONENT:-none}" ;;
   esac
 fi
 
@@ -246,10 +251,27 @@ fetch_index() {
 
 service_for() {
   case "$1" in
-    l2reth) echo l2reth-node ;;
     dogecoin) echo dogecoin-node ;;
+    l1-interface) echo l1-interface ;;
+    l2reth) echo l2reth-node ;;
   esac
 }
+
+# The component and every service downstream of it, downstream first.
+# rollup-node treats a lower L1 Interface head as an L1 reorg and unwinds L2
+# state, so L2Reth must be stopped whenever data upstream of it is replaced.
+services_to_stop() {
+  case "$1" in
+    dogecoin) echo "l2reth-node l1-interface dogecoin-node" ;;
+    l1-interface) echo "l2reth-node l1-interface" ;;
+    l2reth) echo "l2reth-node" ;;
+  esac
+}
+
+# Height of the upstream data a snapshot was built against, when recorded:
+# L2Reth -> L1 Interface block (l1_height); L1 Interface -> Dogecoin
+# block (dogecoin_height).
+UPSTREAM_JQ='(if $c == "l2reth" then .l1_height elif $c == "l1-interface" then .dogecoin_height else null end) // "" | tostring'
 
 COMPOSE_JSON=""
 service_image() {
@@ -264,20 +286,25 @@ service_image() {
 if [ "$LIST" = true ]; then
   fetch_index
   echo "Snapshot index: $INDEX_URL"
-  for component in l2reth dogecoin; do
+  for component in dogecoin l1-interface l2reth; do
     image="$(service_image "$component")"
     echo
     echo "$component (compose image: $image)"
-    printf '  %-16s %-22s %12s %10s  %s\n' ID CREATED HEIGHT SIZE COMPATIBLE
-    jqx -r --arg c "$component" --arg img "$image" '
+    rows="$(jqx -r --arg c "$component" --arg img "$image" '
       (.components[$c] // []) | sort_by(.created_at) | reverse | .[]
-      | [.id, .created_at, (.height // "" | tostring), (.archive.size_bytes // "" | tostring),
+      | [.id, .created_at, (.height // "" | tostring), ('"$UPSTREAM_JQ"'),
+         (.archive.size_bytes // "" | tostring),
          (if ((.compatible_images // []) | index($img)) != null then "yes" else "no" end)]
-      | join("\u001f")' <"$INDEX_PATH" |
-    while IFS=$'\x1f' read -r id created height size compatible; do
-      printf '  %-16s %-22s %12s %10s  %s\n' \
-        "$id" "$created" "${height:--}" "$(human_size "$size")" "$compatible"
-    done
+      | join("\u001f")' <"$INDEX_PATH")"
+    if [ -z "$rows" ]; then
+      echo "  (no snapshots published)"
+      continue
+    fi
+    printf '  %-16s %-22s %12s %12s %10s  %s\n' ID CREATED HEIGHT UPSTREAM SIZE COMPATIBLE
+    while IFS=$'\x1f' read -r id created height upstream size compatible; do
+      printf '  %-16s %-22s %12s %12s %10s  %s\n' \
+        "$id" "$created" "${height:--}" "${upstream:--}" "$(human_size "$size")" "$compatible"
+    done <<<"$rows"
   done
   exit 0
 fi
@@ -285,6 +312,8 @@ fi
 SERVICE="$(service_for "$COMPONENT")"
 SIZE_BYTES=""
 UNCOMPRESSED_BYTES=""
+HEIGHT=""
+UPSTREAM_HEIGHT=""
 
 if [ -n "$SNAPSHOT_URL" ]; then
   echo "Using the snapshot given on the command line; skipping the index and"
@@ -308,14 +337,15 @@ else
   fi
 
   FIELDS="$(
-    printf '%s' "$ENTRY" | jqx -r --arg img "$IMAGE" '
-      [.id, .created_at, (.height // "" | tostring), .archive.url, .archive.sha256,
+    printf '%s' "$ENTRY" | jqx -r --arg img "$IMAGE" --arg c "$COMPONENT" '
+      [.id, .created_at, (.height // "" | tostring), ('"$UPSTREAM_JQ"'),
+       .archive.url, .archive.sha256,
        (.archive.size_bytes // "" | tostring),
        (.archive.uncompressed_bytes // "" | tostring),
        (.manifest_url // ""),
        (if ((.compatible_images // []) | index($img)) != null then "yes" else "no" end)]
       | join("\u001f")')" || fail "snapshot index entry is malformed"
-  IFS=$'\x1f' read -r SELECTED_ID CREATED_AT HEIGHT SNAPSHOT_URL SNAPSHOT_SHA256 \
+  IFS=$'\x1f' read -r SELECTED_ID CREATED_AT HEIGHT UPSTREAM_HEIGHT SNAPSHOT_URL SNAPSHOT_SHA256 \
     SIZE_BYTES UNCOMPRESSED_BYTES MANIFEST_URL COMPATIBLE <<<"$FIELDS"
   [ "$COMPATIBLE" = yes ] ||
     fail "snapshot $SELECTED_ID does not list $IMAGE as compatible; see --list"
@@ -325,6 +355,48 @@ else
   echo "  compatible with: $IMAGE"
   [ -z "$MANIFEST_URL" ] || echo "  manifest: $MANIFEST_URL"
 fi
+
+# Warn when the snapshot is ahead of the running service it depends on. That
+# is safe, but the restored service waits or restarts until upstream catches up.
+check_upstream() {
+  local current="" upstream_name=""
+  case "$COMPONENT" in
+    l2reth)
+      upstream_name="L1 Interface"
+      if [ -n "$UPSTREAM_HEIGHT" ]; then
+        current="$(curl -fsS --max-time 3 -H 'content-type: application/json' \
+          --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
+          http://127.0.0.1:8547 2>/dev/null | jqx -r '.result // empty' 2>/dev/null || true)"
+        case "$current" in 0x*) current=$((current)) ;; *) current="" ;; esac
+      fi
+      ;;
+    l1-interface)
+      upstream_name="Dogecoin"
+      if [ -n "$UPSTREAM_HEIGHT" ]; then
+        current="$("${COMPOSE[@]}" exec -T dogecoin-node /dogecoin/bin/dogecoin-cli \
+          -conf=/run/dogeos/dogecoin.conf -datadir=/data getblockcount 2>/dev/null || true)"
+        case "$current" in ''|*[!0-9]*) current="" ;; esac
+      fi
+      ;;
+    dogecoin)
+      if [ -n "$HEIGHT" ]; then
+        echo "Note: if L1 Interface has indexed Dogecoin beyond height $HEIGHT, it restarts"
+        echo "until the restored node catches up. Its data is not affected."
+      fi
+      return 0
+      ;;
+  esac
+  [ -n "$UPSTREAM_HEIGHT" ] || return 0
+  if [ -z "$current" ]; then
+    echo "Note: could not read the running $upstream_name height to compare with this"
+    echo "snapshot ($UPSTREAM_HEIGHT)."
+  elif [ "$current" -lt "$UPSTREAM_HEIGHT" ]; then
+    echo "WARNING: this snapshot was built against $upstream_name height $UPSTREAM_HEIGHT,"
+    echo "but the running $upstream_name is at $current. $SERVICE will wait and retry"
+    echo "until $upstream_name catches up; this is expected and does not change data."
+  fi
+}
+check_upstream
 
 case "$SNAPSHOT_URL" in
   https://*) ;;
@@ -338,14 +410,19 @@ esac
 
 # --- Restore target ---------------------------------------------------------
 
-# l2reth and bind-mounted Dogecoin data are directories; testnet Dogecoin
-# without DOGECOIN_DATA is a Docker named volume.
+# L2Reth, L1 Interface, and bind-mounted Dogecoin data are directories;
+# testnet Dogecoin without DOGECOIN_DATA is a Docker named volume.
 TARGET_DIR=""
 TARGET_VOLUME=""
 case "$COMPONENT" in
   l2reth)
     TARGET_DIR="$DATA_ROOT_ABS/l2reth"
     ARCHIVE_ROOT="l2reth"
+    STRIP_COMPONENTS=0
+    ;;
+  l1-interface)
+    TARGET_DIR="$DATA_ROOT_ABS/l1-interface"
+    ARCHIVE_ROOT="l1-interface"
     STRIP_COMPONENTS=0
     ;;
   dogecoin)
@@ -506,6 +583,14 @@ case "$COMPONENT" in
     require_member '^l2reth/static_files(/|$)' l2reth/static_files
     REQUIRED_FILES="db/mdbx.dat db/scroll.db"
     ;;
+  l1-interface)
+    if grep -Eq '(^|/)[^/]*\.(env|toml|conf)$' "$LISTING_PATH"; then
+      fail "snapshot contains a configuration or environment file"
+    fi
+    require_member '^l1-interface/l1-interface\.sqlite$' l1-interface/l1-interface.sqlite
+    require_member '^l1-interface/replay\.sqlite$' l1-interface/replay.sqlite
+    REQUIRED_FILES="l1-interface.sqlite replay.sqlite"
+    ;;
   dogecoin)
     if [ "$NETWORK" = testnet ]; then CHAIN_DIR="testnet3/"; else CHAIN_DIR=""; fi
     if grep -Eq '(^|/)(wallet\.dat|wallets|[^/]*\.conf|\.cookie|peers\.dat|banlist\.dat|\.lock)(/|$)' "$LISTING_PATH"; then
@@ -518,6 +603,14 @@ case "$COMPONENT" in
 esac
 
 # --- Extract and activate ---------------------------------------------------
+
+STOPPED_SERVICES=""
+stop_services() {
+  STOPPED_SERVICES="$(services_to_stop "$COMPONENT")"
+  echo "Stopping $STOPPED_SERVICES before activating the restored data..."
+  # shellcheck disable=SC2086
+  "${COMPOSE[@]}" stop $STOPPED_SERVICES >/dev/null 2>&1 || true
+}
 
 if [ -n "$TARGET_VOLUME" ]; then
   if docker volume inspect "$TARGET_VOLUME" >/dev/null 2>&1; then
@@ -560,8 +653,7 @@ else
     [ -f "$EXTRACTED/$f" ] || fail "extracted snapshot is missing $f"
   done
 
-  echo "Stopping $SERVICE before activating the restored data..."
-  "${COMPOSE[@]}" stop "$SERVICE" >/dev/null 2>&1 || true
+  stop_services
 
   BACKUP_DIR=""
   if [ -d "$TARGET_DIR" ]; then
@@ -593,6 +685,9 @@ fi
 
 if [ "$START_AFTER_RESTORE" = true ]; then
   echo
+  if [ -n "$TARGET_VOLUME" ]; then
+    stop_services
+  fi
   echo "Starting the $NETWORK stack..."
   if [ -n "$TARGET_VOLUME" ]; then
     # The service still names the same volume key, so Compose would otherwise
@@ -604,9 +699,14 @@ if [ "$START_AFTER_RESTORE" = true ]; then
   "${COMPOSE[@]}" ps
 else
   echo
-  echo "Restore complete. Start the stack later with:"
   if [ -n "$TARGET_VOLUME" ]; then
+    echo "Restore complete; running services were not touched. Switch to the new"
+    echo "volume by stopping the services that depend on Dogecoin first:"
+    printf '  docker compose --env-file %q stop %s\n' "$ENV_FILE_ABS" "$(services_to_stop dogecoin)"
     printf '  docker compose --env-file %q up -d --force-recreate dogecoin-node\n' "$ENV_FILE_ABS"
+  else
+    echo "Restore complete. Stopped services: $STOPPED_SERVICES"
+    echo "Start the stack later with:"
   fi
   printf '  docker compose --env-file %q up -d\n' "$ENV_FILE_ABS"
 fi
