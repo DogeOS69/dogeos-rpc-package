@@ -86,10 +86,13 @@ require_command readlink
 ENV_FILE_ABS="$(resolve_env_file "$ENV_FILE" "$REPO_ROOT")"
 REPO_ROOT_ABS="$(readlink -m "$REPO_ROOT")"
 
-NETWORK="$(env_value "$ENV_FILE_ABS" NETWORK)"
-DATA_ROOT="$(env_value "$ENV_FILE_ABS" DATA_ROOT)"
-[ -n "$DATA_ROOT" ] || fail "DATA_ROOT must be set in $ENV_FILE_ABS"
-echo "Using env file: $ENV_FILE_ABS (NETWORK=${NETWORK:-unset})"
+# NETWORK and DATA_ROOT as Compose resolves them (see scripts/lib/env.sh), so
+# the directories reset are the ones the stack mounts.
+COMPOSE_JSON="$(compose_config_json "$ENV_FILE_ABS" "$REPO_ROOT_ABS")"
+NETWORK="$(printf '%s' "$COMPOSE_JSON" | config_network)"
+DATA_ROOT="$(printf '%s' "$COMPOSE_JSON" | config_data_root)"
+[ -n "$DATA_ROOT" ] || fail "cannot determine DATA_ROOT from the Compose configuration"
+echo "Using env file: $ENV_FILE_ABS (NETWORK=${NETWORK:-unset}, DATA_ROOT=$DATA_ROOT)"
 
 DATA_ROOT_ABS="$(check_data_path DATA_ROOT "$DATA_ROOT" "$REPO_ROOT_ABS")"
 

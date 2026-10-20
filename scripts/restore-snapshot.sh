@@ -5,7 +5,6 @@ set -euo pipefail
 # snapshot needs only an S3 upload, not a package release. See
 # docs/snapshot-publishing.md for the index format.
 DEFAULT_INDEX_BASE="https://dogeos-rpc-snapshots.s3.us-west-2.amazonaws.com"
-JQ_IMAGE="ghcr.io/jqlang/jq:1.7.1"
 EXTRACT_IMAGE="alpine:3.20"
 SIGNER_IDENTITY="dogeos-snapshots"
 SIGNATURE_NAMESPACE="dogeos-snapshot-index"
@@ -69,16 +68,6 @@ fail() {
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || fail "required command not found: $1"
-}
-
-# jq from the host, or from a pinned container image. Input must come from
-# stdin so the container variant can read it.
-jqx() {
-  if command -v jq >/dev/null 2>&1; then
-    jq "$@"
-  else
-    docker run --rm -i "$JQ_IMAGE" "$@"
-  fi
 }
 
 human_size() {
@@ -169,15 +158,21 @@ require_command tar
 
 COMPOSE=(docker compose -f "$REPO_ROOT/docker-compose.yml" --project-directory "$REPO_ROOT" --env-file "$ENV_FILE_ABS")
 
-NETWORK="$(env_value "$ENV_FILE_ABS" NETWORK)"
-DATA_ROOT="$(env_value "$ENV_FILE_ABS" DATA_ROOT)"
+# NETWORK and DATA_ROOT as Compose resolves them (see scripts/lib/env.sh).
+# Resolved once; callers of compose_json run in subshells.
+COMPOSE_JSON="$(compose_config_json "$ENV_FILE_ABS" "$REPO_ROOT")"
+compose_json() {
+  printf '%s' "$COMPOSE_JSON"
+}
+NETWORK="$(compose_json | config_network)"
+DATA_ROOT="$(compose_json | config_data_root)"
 
 case "${NETWORK:-}" in
   testnet|mainnet) ;;
   *) fail "NETWORK must be testnet or mainnet, got: ${NETWORK:-unset}" ;;
 esac
-[ -n "${DATA_ROOT:-}" ] || fail "DATA_ROOT must be set in $ENV_FILE_ABS"
-echo "Using env file: $ENV_FILE_ABS (NETWORK=$NETWORK)"
+[ -n "${DATA_ROOT:-}" ] || fail "cannot determine DATA_ROOT from the Compose configuration"
+echo "Using env file: $ENV_FILE_ABS (NETWORK=$NETWORK, DATA_ROOT=$DATA_ROOT)"
 
 REPO_ROOT_ABS="$(readlink -m "$REPO_ROOT")"
 
@@ -187,8 +182,6 @@ if [ "$ENV_FILE_ABS" = "$REPO_ROOT_ABS/.env" ]; then
 else
   COMPOSE_HINT="docker compose --env-file $(printf '%q' "$ENV_FILE_ABS")"
 fi
-
-DATA_ROOT_ABS="$(check_data_path DATA_ROOT "$DATA_ROOT" "$REPO_ROOT_ABS")"
 
 # --- Snapshot index ---------------------------------------------------------
 
@@ -259,12 +252,6 @@ services_to_stop() {
 # block (dogecoin_height).
 UPSTREAM_JQ='(if $c == "l2reth" then .l1_height elif $c == "l1-interface" then .dogecoin_height else null end) // "" | tostring'
 
-# Resolve the configuration once; callers run in subshells.
-COMPOSE_JSON="$("${COMPOSE[@]}" config --format json)" ||
-  fail "docker compose cannot read the configuration for $ENV_FILE_ABS"
-compose_json() {
-  printf '%s' "$COMPOSE_JSON"
-}
 service_image() {
   compose_json | jqx -r --arg s "$(service_for "$1")" '.services[$s].image // empty'
 }
@@ -294,6 +281,9 @@ if [ "$LIST" = true ]; then
   done
   exit 0
 fi
+
+# Listing needs no data directory; restoring does.
+DATA_ROOT_ABS="$(check_data_path DATA_ROOT "$DATA_ROOT" "$REPO_ROOT_ABS")"
 
 SERVICE="$(service_for "$COMPONENT")"
 SIZE_BYTES=""
@@ -350,9 +340,14 @@ check_upstream() {
     l2reth)
       upstream_name="L1 Interface"
       if [ -n "$UPSTREAM_HEIGHT" ]; then
+        # The published L1 Interface RPC port, on the address it is bound to.
+        local l1_rpc
+        l1_rpc="$(compose_json | jqx -r '.services["l1-interface"].ports // [] | map(select(.target == 8545)) | first
+          | if . == null then "" else
+              "\((if (.host_ip // "") == "" or .host_ip == "0.0.0.0" then "127.0.0.1" else .host_ip end)):\(.published)" end')"
         current="$(curl -fsS --max-time 3 -H 'content-type: application/json' \
           --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
-          http://127.0.0.1:8547 2>/dev/null | jqx -r '.result // empty' 2>/dev/null || true)"
+          "http://$l1_rpc" 2>/dev/null | jqx -r '.result // empty' 2>/dev/null || true)"
         case "$current" in 0x*) current=$((current)) ;; *) current="" ;; esac
       fi
       ;;
@@ -454,7 +449,8 @@ case "$CACHE_DIR" in
   /*) ;;
   *) CACHE_DIR="$(readlink -m "$PWD/$CACHE_DIR")" ;;
 esac
-CACHE_DIR="$CACHE_DIR/$COMPONENT"
+CACHE_BASE="$CACHE_DIR"
+CACHE_DIR="$CACHE_BASE/$COMPONENT"
 if [ -n "$TARGET_DIR" ]; then
   case "$CACHE_DIR" in
     "$TARGET_DIR"|"$TARGET_DIR"/*) fail "cache directory must not be inside $TARGET_DIR" ;;
@@ -471,6 +467,19 @@ esac
 mkdir -p "$CACHE_DIR"
 ARCHIVE_PATH="$CACHE_DIR/$ARCHIVE_NAME"
 PARTIAL_PATH="$ARCHIVE_PATH.partial"
+
+# Earlier releases cached L2Reth archives directly in the cache directory.
+# Move such a download (complete or partial) into place instead of fetching it
+# again; its checksum is verified below as usual.
+if [ "$COMPONENT" = l2reth ] && [ ! -e "$ARCHIVE_PATH" ] && [ ! -e "$PARTIAL_PATH" ]; then
+  for suffix in "" .partial; do
+    if [ -f "$CACHE_BASE/$ARCHIVE_NAME$suffix" ]; then
+      echo "Reusing archive cached by an earlier release: $CACHE_BASE/$ARCHIVE_NAME$suffix"
+      mv "$CACHE_BASE/$ARCHIVE_NAME$suffix" "$ARCHIVE_PATH$suffix"
+      break
+    fi
+  done
+fi
 
 # --- Disk space -------------------------------------------------------------
 

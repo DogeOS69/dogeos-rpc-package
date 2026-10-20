@@ -1,9 +1,24 @@
-# Shared helpers for scripts that read the Compose env file. Source this file;
-# callers define fail().
+# shellcheck shell=bash
+# Shared helpers for scripts that act on the Compose deployment. Source this
+# file; callers define fail().
 #
-# The env file uses Docker Compose syntax, which is not shell syntax (unquoted
-# values may contain spaces), so it is never sourced. env_value reads single
-# keys instead.
+# Settings are taken from the configuration Docker Compose resolves, never by
+# reading the env file directly: Compose syntax is not shell syntax, exported
+# shell variables take precedence over the file, and values may reference
+# other variables. The scripts therefore always act on the same NETWORK and
+# DATA_ROOT that `docker compose up` uses.
+
+JQ_IMAGE="ghcr.io/jqlang/jq:1.7.1"
+
+# jq from the host, or from a pinned container image. Input must come from
+# stdin so the container variant can read it.
+jqx() {
+  if command -v jq >/dev/null 2>&1; then
+    jq "$@"
+  else
+    docker run --rm -i "$JQ_IMAGE" "$@"
+  fi
+}
 
 # resolve_env_file <arg-or-empty> <repo-root>: print the absolute env file
 # path, defaulting to .env in the repository root.
@@ -18,27 +33,25 @@ resolve_env_file() {
   printf '%s/%s\n' "$(cd "$(dirname "$file")" && pwd -P)" "$(basename "$file")"
 }
 
-# env_value <file> <key>: print the last value assigned to key, without
-# surrounding quotes or a trailing " # comment". Variable references are not
-# expanded; the keys read by the scripts do not use them.
-env_value() {
-  local line value=""
-  while IFS= read -r line || [ -n "$line" ]; do
-    line="${line%$'\r'}"
-    line="${line#export }"
-    case "$line" in
-      "$2="*) value="${line#*=}" ;;
-    esac
-  done <"$1"
-  case "$value" in
-    \"*\") value="${value#\"}"; value="${value%\"}" ;;
-    \'*\') value="${value#\'}"; value="${value%\'}" ;;
-    *)
-      value="${value%%[[:space:]]#*}"
-      value="${value%"${value##*[![:space:]]}"}"
-      ;;
-  esac
-  printf '%s' "$value"
+# compose_config_json <env-file> <repo-root>: print the resolved configuration.
+compose_config_json() {
+  docker compose -f "$2/docker-compose.yml" --project-directory "$2" \
+    --env-file "$1" config --format json ||
+    fail "docker compose cannot read the configuration for $1"
+}
+
+# config_network: NETWORK, from the network directory that provides
+# dogecoin.conf. Reads the configuration JSON on stdin.
+config_network() {
+  jqx -r '.services["dogecoin-node"].volumes // [] | map(select(.target == "/etc/dogeos/dogecoin.conf"))
+    | first | .source // "" | split("/") | .[-2] // ""'
+}
+
+# config_data_root: DATA_ROOT, from the L2Reth data mount. Reads the
+# configuration JSON on stdin.
+config_data_root() {
+  jqx -r '.services["l2reth-node"].volumes // [] | map(select(.target == "/l2reth"))
+    | first | .source // "" | rtrimstr("/l2reth")'
 }
 
 # check_data_path <name> <path> <repo-root-abs>: print the normalized path, or
