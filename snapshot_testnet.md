@@ -36,23 +36,36 @@ come from `.env.testnet`; keep their existing values when recovering a node.
 
 ## L2Reth Snapshot (Recommended)
 
-The repository includes a one-command restore script with a versioned public
-snapshot URL and SHA-256 pinned together:
+Snapshots are published to S3 and listed in a per-network index, so new
+snapshots do not require a package update. List them, with block heights and
+compatibility with your configured images:
 
 ```bash
-./scripts/restore-l2reth-snapshot.sh .env.testnet
+./scripts/restore-snapshot.sh --list .env.testnet
 ```
 
-The script requires `curl`, `docker`, `sha256sum`, and GNU `tar` with gzip
-support. It performs the following workflow:
+Restore the newest compatible L2Reth snapshot and start the stack:
 
-1. Validates `NETWORK=testnet` and an absolute, safe `DATA_ROOT`.
-2. Downloads or resumes the archive under `${DATA_ROOT}/.snapshot-cache`.
-3. Verifies the archive against the pinned SHA-256.
-4. Rejects unsafe archive paths, unexpected roots, and known key or
+```bash
+./scripts/restore-snapshot.sh l2reth .env.testnet
+```
+
+`./scripts/restore-l2reth-snapshot.sh .env.testnet` is the same command, kept
+for existing instructions. The script requires `curl`, `docker`, `sha256sum`,
+GNU `tar`, and `jq`; without `jq` it runs the `ghcr.io/jqlang/jq` image. It
+performs the following workflow:
+
+1. Validates `NETWORK` and an absolute, safe `DATA_ROOT`.
+2. Reads the snapshot index and selects the newest snapshot that lists the
+   `l2reth-node` image from `docker-compose.yml` as compatible. Use
+   `--snapshot-id` to choose another listed snapshot.
+3. Checks free disk space, then downloads or resumes the archive under
+   `${DATA_ROOT}/.snapshot-cache/l2reth`.
+4. Verifies the archive against the SHA-256 in the index.
+5. Rejects unsafe archive paths, unexpected roots, and known key or
    environment-specific configuration paths.
-5. Extracts into a staging directory before changing the active datadir.
-6. Stops `l2reth-node`, activates `${DATA_ROOT}/l2reth`, and starts the complete
+6. Extracts into a staging directory before changing the active datadir.
+7. Stops `l2reth-node`, activates `${DATA_ROOT}/l2reth`, and starts the complete
    testnet stack, including the user's Compose Dogecoin node.
 
 The archive contains Reth databases and static files under one `l2reth/` root.
@@ -73,13 +86,13 @@ By default, the script refuses to replace a non-empty datadir. Use `--force` to
 move the old directory to a timestamped sibling and activate the snapshot:
 
 ```bash
-./scripts/restore-l2reth-snapshot.sh --force .env.testnet
+./scripts/restore-snapshot.sh --force l2reth .env.testnet
 ```
 
 The previous data remains recoverable at a path such as:
 
 ```text
-${DATA_ROOT}/l2reth.backup-20260806T120000Z
+${DATA_ROOT}/l2reth.backup-20260806T120000Z-12345
 ```
 
 Remove that backup manually only after verifying the restored node.
@@ -87,7 +100,7 @@ Remove that backup manually only after verifying the restored node.
 ### Restore Without Starting Containers
 
 ```bash
-./scripts/restore-l2reth-snapshot.sh --no-start .env.testnet
+./scripts/restore-snapshot.sh --no-start l2reth .env.testnet
 ```
 
 Start it later with:
@@ -99,16 +112,20 @@ docker compose --env-file .env.testnet up -d
 <details>
 <summary>Advanced: use a mirror or alternate cache</summary>
 
-Use the URL and checksum pinned by the script unless you need a trusted mirror.
-When overriding the URL, supply the matching SHA-256 as well:
+Use the published index unless you need a trusted mirror. To bypass the index,
+supply both the archive URL and its SHA-256; no image compatibility check is
+made in this mode:
 
 ```bash
-./scripts/restore-l2reth-snapshot.sh \
+./scripts/restore-snapshot.sh \
   --snapshot-url https://mirror.example/l2reth-snapshot.tar.gz \
   --sha256 'REPLACE_WITH_64_HEX_CHARACTER_SHA256' \
   --cache-dir /path/on/a/large/disk \
-  .env.testnet
+  l2reth .env.testnet
 ```
+
+`--index-url` (or `SNAPSHOT_INDEX_URL`) points the script at a mirrored index
+instead.
 
 A cached archive with the expected checksum is reused. A cached archive with a
 different checksum is preserved with an `.invalid-<timestamp>` suffix before a
@@ -119,9 +136,9 @@ fresh download.
 ## Dogecoin Node Recovery
 
 For a new node or recovery into a new volume, use the
-[checksum-pinned Dogecoin testnet snapshot](snapshot_dogecoin_testnet.md).
-It includes block data, the transaction index, and chainstate, with no wallet
-or deployment credentials. Use the versioned URL and checksum in that guide.
+[Dogecoin testnet snapshot](snapshot_dogecoin_testnet.md):
+`./scripts/restore-snapshot.sh dogecoin .env.testnet`. It includes block data,
+the transaction index, and chainstate, with no wallet or deployment credentials.
 
 For a healthy existing node, preserve its named volume and let Dogecoin Core
 continue syncing from peers; an upgrade does not require snapshot restoration:
@@ -140,9 +157,7 @@ docker compose --env-file .env.testnet logs --tail 100 dogecoin-node
 
 Do not delete or rename this volume during an upgrade. If recovery is needed,
 the Dogecoin snapshot guide restores into a new volume and refuses an existing
-destination. Keep the previous volume until recovery is accepted. Do not use
-the L2Reth restore script for Dogecoin; their archive layouts and storage
-destinations differ.
+destination. Keep the previous volume until recovery is accepted.
 
 ## L1 Interface Recovery
 
@@ -215,7 +230,7 @@ cache:
 Then restore L2Reth and start the stack:
 
 ```bash
-./scripts/restore-l2reth-snapshot.sh --no-start .env.testnet
+./scripts/restore-snapshot.sh --no-start l2reth .env.testnet
 docker compose --env-file .env.testnet up -d
 ```
 

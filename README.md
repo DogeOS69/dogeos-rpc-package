@@ -118,27 +118,40 @@ The package uses `https://ethereum-sepolia-rpc.publicnode.com` by default.
 No extra configuration is required. If you need a different provider, follow
 [Custom Ethereum RPC](#custom-ethereum-rpc) before starting the stack.
 
-### 3. Restore the L2Reth Snapshot (Recommended for New Nodes)
+### 3. Restore Snapshots (Recommended for New Nodes)
 
-If the bundled Dogecoin node has no existing chain data, first follow the
-[Dogecoin testnet snapshot guide](snapshot_dogecoin_testnet.md) to restore its
-chain data into a new named volume. Existing Dogecoin nodes should keep their
-current volume; they do not need snapshot replacement.
+Snapshots are published to S3 and listed in a per-network index; the restore
+script picks the newest one compatible with the images in `docker-compose.yml`.
+See what is available:
+
+```bash
+./scripts/restore-snapshot.sh --list .env.testnet
+```
+
+If the bundled Dogecoin node has no existing chain data, restore its snapshot
+into the new volume named by `DOGECOIN_VOLUME_NAME`. Existing Dogecoin nodes
+should keep their current volume; they do not need snapshot replacement.
+
+```bash
+./scripts/restore-snapshot.sh --no-start dogecoin .env.testnet
+```
 
 For a new testnet RPC node, restore the published L2Reth database instead of
 syncing from genesis:
 
 ```bash
-./scripts/restore-l2reth-snapshot.sh --no-start .env.testnet
+./scripts/restore-snapshot.sh --no-start l2reth .env.testnet
 ```
 
-The script downloads the published snapshot, verifies its SHA-256 and archive
-layout, and restores it to `${DATA_ROOT}/l2reth`. Downloads are resumable and
+The script verifies each archive's SHA-256 and layout, checks free disk space,
+and restores L2Reth to `${DATA_ROOT}/l2reth`. Downloads are resumable and
 cached under `${DATA_ROOT}/.snapshot-cache`. `--no-start` leaves service startup
-for the next step.
+for the next step. It needs `jq`, or runs the `ghcr.io/jqlang/jq` image when
+`jq` is not installed.
 
-See the [testnet snapshot guide](snapshot_testnet.md#l2reth-snapshot-recommended)
-for replacement and recovery options.
+See the [testnet snapshot guide](snapshot_testnet.md) and the
+[Dogecoin snapshot guide](snapshot_dogecoin_testnet.md) for verification,
+replacement, and recovery options.
 
 ### 4. Start Services
 

@@ -83,7 +83,7 @@ docker volume inspect dogeos-rpc-package_dogecoin_data
 
 ```bash
 docker compose --env-file .env.testnet pull
-./scripts/restore-l2reth-snapshot.sh --no-start .env.testnet
+./scripts/restore-snapshot.sh --no-start l2reth .env.testnet
 ```
 
 The script downloads, verifies, and extracts the snapshot into the new directory.

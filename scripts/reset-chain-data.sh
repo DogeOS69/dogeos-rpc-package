@@ -168,8 +168,8 @@ mkdir -p "$L1_DIR" "$L2_DIR"
 echo
 echo "Reset complete. Empty data directories were created; the services remain stopped."
 echo "To restore the testnet L2Reth snapshot without starting services:"
-printf '  %q --no-start %q\n' \
-  "$REPO_ROOT_ABS/scripts/restore-l2reth-snapshot.sh" \
+printf '  %q --no-start l2reth %q\n' \
+  "$REPO_ROOT_ABS/scripts/restore-snapshot.sh" \
   "$ENV_FILE_ABS"
 echo "To start L2Reth and its dependencies without the bundled Dogecoin node:"
 printf '  cd %q && docker compose --env-file %q up -d l2reth-node\n' \

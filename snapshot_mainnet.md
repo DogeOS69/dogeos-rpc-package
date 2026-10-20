@@ -8,3 +8,8 @@ by changing `NETWORK` to `mainnet`.
 Mainnet has not been released. No mainnet snapshots are published, and the
 mainnet template stores all service data under `DATA_ROOT`, including Dogecoin
 at `${DATA_ROOT}/dogecoin`.
+
+Mainnet snapshots will use the same mechanism as testnet: an index at
+`mainnet/index.json` in the snapshot bucket and `scripts/restore-snapshot.sh`,
+which restores Dogecoin into `${DATA_ROOT}/dogecoin`. See
+[snapshot publishing](docs/snapshot-publishing.md).

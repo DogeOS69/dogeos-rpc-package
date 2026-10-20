@@ -1,0 +1,616 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Published snapshots are listed in a per-network index on S3, so a new
+# snapshot needs only an S3 upload, not a package release. See
+# docs/snapshot-publishing.md for the index format.
+DEFAULT_INDEX_BASE="https://dogeos-rpc-snapshots.s3.us-west-2.amazonaws.com"
+JQ_IMAGE="ghcr.io/jqlang/jq:1.7.1"
+EXTRACT_IMAGE="alpine:3.20"
+SIGNER_IDENTITY="dogeos-snapshots"
+SIGNATURE_NAMESPACE="dogeos-snapshot-index"
+
+usage() {
+  cat <<'USAGE'
+Restore a published L2Reth or Dogecoin snapshot.
+
+Usage:
+  scripts/restore-snapshot.sh [options] <l2reth|dogecoin> <env-file>
+  scripts/restore-snapshot.sh --list <env-file>
+
+Examples:
+  scripts/restore-snapshot.sh --list .env.testnet
+  scripts/restore-snapshot.sh --no-start dogecoin .env.testnet
+  scripts/restore-snapshot.sh l2reth .env.testnet
+
+The newest snapshot compatible with the image in docker-compose.yml is used.
+
+Options:
+  --list                  List published snapshots and exit.
+  --snapshot-id ID        Restore this snapshot instead of the newest one.
+  --force                 Replace non-empty bind-mounted data. The old
+                          directory is moved to a timestamped backup.
+                          Docker volumes are never replaced.
+  --no-start              Restore without starting services.
+  --index-url URL         Override the snapshot index URL.
+  --snapshot-url URL      Skip the index and use this archive. Requires
+                          --sha256. No compatibility check is made.
+  --sha256 SHA256         SHA-256 of --snapshot-url.
+  --cache-dir DIR         Download cache. Defaults to DATA_ROOT/.snapshot-cache.
+  --skip-space-check      Do not check free disk space before downloading.
+  -h, --help              Show this help.
+
+Environment overrides:
+  SNAPSHOT_INDEX_URL      Same as --index-url.
+  SNAPSHOT_CACHE_DIR      Same as --cache-dir.
+  L2RETH_SNAPSHOT_URL, L2RETH_SNAPSHOT_SHA256, L2RETH_SNAPSHOT_CACHE_DIR
+                          Earlier l2reth overrides; still honored.
+
+Requirements: bash, curl, docker, sha256sum, GNU tar, and jq (run from the
+ghcr.io/jqlang/jq image when jq is not installed).
+
+Archives contain chain data only. Genesis, configuration, credentials, and
+peer settings always come from this package.
+USAGE
+}
+
+fail() {
+  echo "ERROR: $*" >&2
+  exit 1
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || fail "required command not found: $1"
+}
+
+# jq from the host, or from a pinned container image. Input must come from
+# stdin so the container variant can read it.
+jqx() {
+  if command -v jq >/dev/null 2>&1; then
+    jq "$@"
+  else
+    docker run --rm -i "$JQ_IMAGE" "$@"
+  fi
+}
+
+human_size() {
+  awk -v b="$1" 'BEGIN {
+    if (b == "") { print "?"; exit }
+    split("B KiB MiB GiB TiB", u, " "); i = 1
+    while (b >= 1024 && i < 5) { b /= 1024; i++ }
+    printf "%.1f %s\n", b, u[i]
+  }'
+}
+
+LIST=false
+FORCE=false
+START_AFTER_RESTORE=true
+SKIP_SPACE_CHECK=false
+SNAPSHOT_ID=""
+INDEX_URL="${SNAPSHOT_INDEX_URL:-}"
+SNAPSHOT_URL=""
+SNAPSHOT_SHA256=""
+CACHE_DIR="${SNAPSHOT_CACHE_DIR:-}"
+COMPONENT=""
+ENV_FILE=""
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --list) LIST=true; shift ;;
+    --force) FORCE=true; shift ;;
+    --no-start) START_AFTER_RESTORE=false; shift ;;
+    --skip-space-check) SKIP_SPACE_CHECK=true; shift ;;
+    --snapshot-id|--index-url|--snapshot-url|--sha256|--cache-dir)
+      [ "$#" -ge 2 ] || fail "$1 requires a value"
+      case "$1" in
+        --snapshot-id) SNAPSHOT_ID="$2" ;;
+        --index-url) INDEX_URL="$2" ;;
+        --snapshot-url) SNAPSHOT_URL="$2" ;;
+        --sha256) SNAPSHOT_SHA256="$2" ;;
+        --cache-dir) CACHE_DIR="$2" ;;
+      esac
+      shift 2
+      ;;
+    -h|--help) usage; exit 0 ;;
+    -*) fail "unknown option: $1" ;;
+    *)
+      if [ "$LIST" = false ] && [ -z "$COMPONENT" ]; then
+        COMPONENT="$1"
+      elif [ -z "$ENV_FILE" ]; then
+        ENV_FILE="$1"
+      else
+        fail "unexpected argument: $1"
+      fi
+      shift
+      ;;
+  esac
+done
+
+# `--list <env-file>` may also be written after a component-less parse.
+if [ "$LIST" = true ] && [ -n "$COMPONENT" ] && [ -z "$ENV_FILE" ]; then
+  ENV_FILE="$COMPONENT"
+  COMPONENT=""
+fi
+
+[ -n "$ENV_FILE" ] || { usage >&2; exit 1; }
+if [ "$LIST" = false ]; then
+  case "$COMPONENT" in
+    l2reth|dogecoin) ;;
+    *) fail "component must be l2reth or dogecoin, got: ${COMPONENT:-none}" ;;
+  esac
+fi
+
+if [ "$COMPONENT" = l2reth ]; then
+  SNAPSHOT_URL="${SNAPSHOT_URL:-${L2RETH_SNAPSHOT_URL:-}}"
+  SNAPSHOT_SHA256="${SNAPSHOT_SHA256:-${L2RETH_SNAPSHOT_SHA256:-}}"
+  CACHE_DIR="${CACHE_DIR:-${L2RETH_SNAPSHOT_CACHE_DIR:-}}"
+fi
+if [ -n "$SNAPSHOT_URL" ] || [ -n "$SNAPSHOT_SHA256" ]; then
+  [ -n "$SNAPSHOT_URL" ] && [ -n "$SNAPSHOT_SHA256" ] ||
+    fail "--snapshot-url and --sha256 must be given together"
+  [ -z "$SNAPSHOT_ID" ] || fail "--snapshot-id cannot be combined with --snapshot-url"
+fi
+
+require_command curl
+require_command docker
+require_command sha256sum
+require_command tar
+
+[ -f "$ENV_FILE" ] || fail "env file not found: $ENV_FILE"
+ENV_DIR="$(cd "$(dirname "$ENV_FILE")" && pwd -P)"
+ENV_FILE_ABS="$ENV_DIR/$(basename "$ENV_FILE")"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+COMPOSE=(docker compose -f "$REPO_ROOT/docker-compose.yml" --project-directory "$REPO_ROOT" --env-file "$ENV_FILE_ABS")
+
+set -a
+# shellcheck disable=SC1090
+. "$ENV_FILE_ABS"
+set +a
+
+case "${NETWORK:-}" in
+  testnet|mainnet) ;;
+  *) fail "NETWORK must be testnet or mainnet, got: ${NETWORK:-unset}" ;;
+esac
+[ -n "${DATA_ROOT:-}" ] || fail "DATA_ROOT must be set in $ENV_FILE"
+
+REPO_ROOT_ABS="$(readlink -m "$REPO_ROOT")"
+
+# Reject placeholder, broad, temporary, and in-repository data paths.
+check_data_path() {
+  local name="$1" path="$2"
+  case "$path" in
+    /*) ;;
+    *) fail "$name must be an absolute path, got: $path" ;;
+  esac
+  path="$(readlink -m "$path")"
+  case "$path" in
+    /path/to|/path/to/*)
+      fail "replace the $name placeholder with your mounted data disk path: $path" ;;
+    /|/tmp|/var/tmp)
+      fail "$name is too broad or temporary: $path" ;;
+    "$REPO_ROOT_ABS"|"$REPO_ROOT_ABS"/*)
+      fail "$name must not be inside the repository: $path" ;;
+    /mnt/wsl/*)
+      grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null ||
+        fail "$name uses a WSL-only path on a non-WSL host: $path" ;;
+  esac
+  printf '%s\n' "$path"
+}
+
+DATA_ROOT_ABS="$(check_data_path DATA_ROOT "$DATA_ROOT")"
+
+# --- Snapshot index ---------------------------------------------------------
+
+INDEX_URL="${INDEX_URL:-$DEFAULT_INDEX_BASE/$NETWORK/index.json}"
+TMP_DIR="$(mktemp -d)"
+STAGING_DIR=""
+cleanup() {
+  rm -rf "$TMP_DIR"
+  # Only this run's own staging directory; it is gone after a successful restore.
+  if [ -n "$STAGING_DIR" ] && [ -d "$STAGING_DIR" ]; then
+    echo "Removing incomplete staging directory: $STAGING_DIR" >&2
+    rm -rf "$STAGING_DIR"
+  fi
+}
+trap cleanup EXIT
+INDEX_PATH="$TMP_DIR/index.json"
+
+fetch_index() {
+  case "$INDEX_URL" in
+    https://*) ;;
+    *) fail "snapshot index URL must use HTTPS: $INDEX_URL" ;;
+  esac
+  curl -fsSL --retry 3 --retry-delay 2 -o "$INDEX_PATH" "$INDEX_URL" ||
+    fail "cannot download snapshot index: $INDEX_URL"
+
+  # Signature checking turns on once the package ships a signer list.
+  local signers="$REPO_ROOT/snapshots/allowed_signers"
+  if [ -f "$signers" ]; then
+    require_command ssh-keygen
+    curl -fsSL --retry 3 --retry-delay 2 -o "$INDEX_PATH.sig" "$INDEX_URL.sig" ||
+      fail "cannot download snapshot index signature: $INDEX_URL.sig"
+    ssh-keygen -Y verify -f "$signers" -I "$SIGNER_IDENTITY" \
+      -n "$SIGNATURE_NAMESPACE" -s "$INDEX_PATH.sig" <"$INDEX_PATH" >/dev/null ||
+      fail "snapshot index signature verification failed: $INDEX_URL"
+    echo "Snapshot index signature verified."
+  fi
+
+  local header
+  header="$(jqx -r '[.schema_version, .network] | @tsv' <"$INDEX_PATH")" ||
+    fail "snapshot index is not valid JSON: $INDEX_URL"
+  [ "${header%%$'\t'*}" = 1 ] ||
+    fail "unsupported snapshot index schema_version: ${header%%$'\t'*}"
+  [ "${header#*$'\t'}" = "$NETWORK" ] ||
+    fail "snapshot index is for network ${header#*$'\t'}, not $NETWORK"
+}
+
+service_for() {
+  case "$1" in
+    l2reth) echo l2reth-node ;;
+    dogecoin) echo dogecoin-node ;;
+  esac
+}
+
+COMPOSE_JSON=""
+service_image() {
+  if [ -z "$COMPOSE_JSON" ]; then
+    COMPOSE_JSON="$("${COMPOSE[@]}" config --format json)" ||
+      fail "docker compose cannot read the configuration for $ENV_FILE"
+  fi
+  printf '%s' "$COMPOSE_JSON" |
+    jqx -r --arg s "$(service_for "$1")" '.services[$s].image // empty'
+}
+
+if [ "$LIST" = true ]; then
+  fetch_index
+  echo "Snapshot index: $INDEX_URL"
+  for component in l2reth dogecoin; do
+    image="$(service_image "$component")"
+    echo
+    echo "$component (compose image: $image)"
+    printf '  %-16s %-22s %12s %10s  %s\n' ID CREATED HEIGHT SIZE COMPATIBLE
+    jqx -r --arg c "$component" --arg img "$image" '
+      (.components[$c] // []) | sort_by(.created_at) | reverse | .[]
+      | [.id, .created_at, (.height // "" | tostring), (.archive.size_bytes // "" | tostring),
+         (if ((.compatible_images // []) | index($img)) != null then "yes" else "no" end)]
+      | join("\u001f")' <"$INDEX_PATH" |
+    while IFS=$'\x1f' read -r id created height size compatible; do
+      printf '  %-16s %-22s %12s %10s  %s\n' \
+        "$id" "$created" "${height:--}" "$(human_size "$size")" "$compatible"
+    done
+  done
+  exit 0
+fi
+
+SERVICE="$(service_for "$COMPONENT")"
+SIZE_BYTES=""
+UNCOMPRESSED_BYTES=""
+
+if [ -n "$SNAPSHOT_URL" ]; then
+  echo "Using the snapshot given on the command line; skipping the index and"
+  echo "the image compatibility check."
+else
+  fetch_index
+  IMAGE="$(service_image "$COMPONENT")"
+  [ -n "$IMAGE" ] || fail "cannot determine the $SERVICE image from docker compose"
+
+  ENTRY="$(jqx -c --arg c "$COMPONENT" --arg id "$SNAPSHOT_ID" --arg img "$IMAGE" '
+    (.components[$c] // []) | sort_by(.created_at) | reverse
+    | if $id != "" then map(select(.id == $id))
+      else map(select(((.compatible_images // []) | index($img)) != null)) end
+    | first // empty' <"$INDEX_PATH")"
+
+  if [ -z "$ENTRY" ]; then
+    if [ -n "$SNAPSHOT_ID" ]; then
+      fail "snapshot $SNAPSHOT_ID is not listed for $COMPONENT; see --list"
+    fi
+    fail "no published $COMPONENT snapshot is compatible with $IMAGE; see --list"
+  fi
+
+  FIELDS="$(
+    printf '%s' "$ENTRY" | jqx -r --arg img "$IMAGE" '
+      [.id, .created_at, (.height // "" | tostring), .archive.url, .archive.sha256,
+       (.archive.size_bytes // "" | tostring),
+       (.archive.uncompressed_bytes // "" | tostring),
+       (.manifest_url // ""),
+       (if ((.compatible_images // []) | index($img)) != null then "yes" else "no" end)]
+      | join("\u001f")')" || fail "snapshot index entry is malformed"
+  IFS=$'\x1f' read -r SELECTED_ID CREATED_AT HEIGHT SNAPSHOT_URL SNAPSHOT_SHA256 \
+    SIZE_BYTES UNCOMPRESSED_BYTES MANIFEST_URL COMPATIBLE <<<"$FIELDS"
+  [ "$COMPATIBLE" = yes ] ||
+    fail "snapshot $SELECTED_ID does not list $IMAGE as compatible; see --list"
+
+  echo "Selected $COMPONENT snapshot $SELECTED_ID"
+  echo "  created: $CREATED_AT   height: ${HEIGHT:-unknown}   size: $(human_size "$SIZE_BYTES")"
+  echo "  compatible with: $IMAGE"
+  [ -z "$MANIFEST_URL" ] || echo "  manifest: $MANIFEST_URL"
+fi
+
+case "$SNAPSHOT_URL" in
+  https://*) ;;
+  *) fail "snapshot URL must use HTTPS: $SNAPSHOT_URL" ;;
+esac
+[ "${#SNAPSHOT_SHA256}" -eq 64 ] ||
+  fail "snapshot SHA-256 must contain exactly 64 hex characters"
+case "$SNAPSHOT_SHA256" in
+  *[!0-9a-fA-F]*) fail "snapshot SHA-256 must contain only hexadecimal characters" ;;
+esac
+
+# --- Restore target ---------------------------------------------------------
+
+# l2reth and bind-mounted Dogecoin data are directories; testnet Dogecoin
+# without DOGECOIN_DATA is a Docker named volume.
+TARGET_DIR=""
+TARGET_VOLUME=""
+case "$COMPONENT" in
+  l2reth)
+    TARGET_DIR="$DATA_ROOT_ABS/l2reth"
+    ARCHIVE_ROOT="l2reth"
+    STRIP_COMPONENTS=0
+    ;;
+  dogecoin)
+    ARCHIVE_ROOT="dogecoin"
+    STRIP_COMPONENTS=1
+    if [ -n "${DOGECOIN_DATA:-}" ]; then
+      case "$DOGECOIN_DATA" in
+        /*) TARGET_DIR="$(check_data_path DOGECOIN_DATA "$DOGECOIN_DATA")" ;;
+        *) fail "DOGECOIN_DATA must be an absolute path; unset it to use a Docker volume" ;;
+      esac
+    else
+      TARGET_VOLUME="${DOGECOIN_VOLUME_NAME:-${COMPOSE_PROJECT_NAME:?COMPOSE_PROJECT_NAME must be set}_dogecoin_data}"
+    fi
+    ;;
+esac
+
+if [ -n "$TARGET_VOLUME" ]; then
+  docker info >/dev/null 2>&1 || fail "cannot reach the Docker daemon"
+  if docker volume inspect "$TARGET_VOLUME" >/dev/null 2>&1; then
+    fail "Docker volume $TARGET_VOLUME already exists. Keep it, set a new, unused
+DOGECOIN_VOLUME_NAME in $ENV_FILE to restore into, and rerun."
+  fi
+elif [ -d "$TARGET_DIR" ] &&
+     find "$TARGET_DIR" -mindepth 1 -maxdepth 1 -print -quit | grep -q . &&
+     [ "$FORCE" != true ]; then
+  fail "$TARGET_DIR is not empty; rerun with --force to keep it as a backup and restore the snapshot"
+fi
+
+mkdir -p "$DATA_ROOT_ABS"
+[ -w "$DATA_ROOT_ABS" ] || fail "DATA_ROOT is not writable by the current user: $DATA_ROOT_ABS"
+if [ -n "$TARGET_DIR" ]; then
+  TARGET_PARENT="$(dirname "$TARGET_DIR")"
+  mkdir -p "$TARGET_PARENT"
+  [ -w "$TARGET_PARENT" ] || fail "not writable by the current user: $TARGET_PARENT"
+fi
+
+CACHE_DIR="${CACHE_DIR:-$DATA_ROOT_ABS/.snapshot-cache}"
+case "$CACHE_DIR" in
+  /*) ;;
+  *) CACHE_DIR="$(readlink -m "$PWD/$CACHE_DIR")" ;;
+esac
+CACHE_DIR="$CACHE_DIR/$COMPONENT"
+if [ -n "$TARGET_DIR" ]; then
+  case "$CACHE_DIR" in
+    "$TARGET_DIR"|"$TARGET_DIR"/*) fail "cache directory must not be inside $TARGET_DIR" ;;
+  esac
+fi
+
+ARCHIVE_NAME="${SNAPSHOT_URL%%\?*}"
+ARCHIVE_NAME="${ARCHIVE_NAME##*/}"
+case "$ARCHIVE_NAME" in
+  *.tar.gz) ;;
+  *) fail "snapshot filename must end in .tar.gz: $ARCHIVE_NAME" ;;
+esac
+
+mkdir -p "$CACHE_DIR"
+ARCHIVE_PATH="$CACHE_DIR/$ARCHIVE_NAME"
+PARTIAL_PATH="$ARCHIVE_PATH.partial"
+
+# --- Disk space -------------------------------------------------------------
+
+available_bytes() { df -PB1 "$1" | awk 'NR == 2 { print $4 }'; }
+filesystem_id() { stat -c %d "$1"; }
+file_bytes() { if [ -f "$1" ]; then stat -c %s "$1"; else echo 0; fi; }
+
+if [ "$SKIP_SPACE_CHECK" != true ] && [ -n "$SIZE_BYTES" ]; then
+  download_need=0
+  if [ ! -f "$ARCHIVE_PATH" ]; then
+    download_need=$(( SIZE_BYTES - $(file_bytes "$PARTIAL_PATH") ))
+  fi
+  extract_need="${UNCOMPRESSED_BYTES:-0}"
+  if [ -n "$TARGET_DIR" ] && [ "$(filesystem_id "$CACHE_DIR")" = "$(filesystem_id "$TARGET_PARENT")" ]; then
+    need=$(( download_need + extract_need ))
+    have="$(available_bytes "$CACHE_DIR")"
+    [ "$have" -ge "$need" ] ||
+      fail "not enough space on $CACHE_DIR: need $(human_size "$need"), have $(human_size "$have") (--skip-space-check to override)"
+  else
+    have="$(available_bytes "$CACHE_DIR")"
+    [ "$have" -ge "$download_need" ] ||
+      fail "not enough space for the download in $CACHE_DIR: need $(human_size "$download_need"), have $(human_size "$have")"
+    if [ -n "$TARGET_DIR" ]; then
+      have="$(available_bytes "$TARGET_PARENT")"
+      [ "$have" -ge "$extract_need" ] ||
+        fail "not enough space in $TARGET_PARENT: need $(human_size "$extract_need"), have $(human_size "$have")"
+    fi
+  fi
+  if [ -z "$UNCOMPRESSED_BYTES" ]; then
+    echo "Note: the index does not list the extracted size; only the download size was checked."
+  fi
+  if [ -n "$TARGET_VOLUME" ]; then
+    echo "Note: check that Docker's data root has room for $(human_size "${UNCOMPRESSED_BYTES:-0}") of extracted Dogecoin data."
+  fi
+fi
+
+# --- Download and verify ----------------------------------------------------
+
+verify_checksum() {
+  printf '%s  %s\n' "$SNAPSHOT_SHA256" "$1" | sha256sum --check --status -
+}
+
+if [ -f "$ARCHIVE_PATH" ] && ! verify_checksum "$ARCHIVE_PATH"; then
+  INVALID_PATH="$ARCHIVE_PATH.invalid-$(date -u +%Y%m%dT%H%M%SZ)"
+  echo "Cached archive has the wrong checksum; preserving it as:"
+  echo "  $INVALID_PATH"
+  mv "$ARCHIVE_PATH" "$INVALID_PATH"
+fi
+
+if [ ! -f "$ARCHIVE_PATH" ]; then
+  echo "Downloading $COMPONENT snapshot:"
+  echo "  $SNAPSHOT_URL"
+  echo "Download cache:"
+  echo "  $ARCHIVE_PATH"
+  echo
+  curl --fail --location --retry 5 --retry-delay 3 --continue-at - \
+    --output "$PARTIAL_PATH" "$SNAPSHOT_URL"
+  mv "$PARTIAL_PATH" "$ARCHIVE_PATH"
+else
+  echo "Using cached snapshot: $ARCHIVE_PATH"
+fi
+
+echo "Verifying SHA-256..."
+verify_checksum "$ARCHIVE_PATH" || fail "snapshot checksum mismatch: $ARCHIVE_PATH"
+echo "SHA-256 verified."
+
+# --- Archive layout ---------------------------------------------------------
+
+LISTING_PATH="$TMP_DIR/listing"
+echo "Validating archive layout (reads the whole archive)..."
+tar -tzf "$ARCHIVE_PATH" >"$LISTING_PATH"
+
+awk -v root="$ARCHIVE_ROOT" '
+  /^\// { bad = 1; print "absolute path: " $0 > "/dev/stderr" }
+  /(^|\/)\.\.(\/|$)/ { bad = 1; print "parent traversal: " $0 > "/dev/stderr" }
+  $0 != root && $0 != root "/" && index($0, root "/") != 1 {
+    bad = 1; print "unexpected archive root: " $0 > "/dev/stderr"
+  }
+  END { exit bad }
+' "$LISTING_PATH" || fail "snapshot archive contains unsafe or unexpected paths"
+
+require_member() {
+  grep -Eq "$1" "$LISTING_PATH" || fail "snapshot does not contain $2"
+}
+
+case "$COMPONENT" in
+  l2reth)
+    for forbidden_path in l2reth/jwt.hex l2reth/reth.toml l2reth/lost+found \
+        l2reth/genesis l2reth/protocol_context.json; do
+      if grep -Fxq "$forbidden_path" "$LISTING_PATH" ||
+         grep -Fxq "$forbidden_path/" "$LISTING_PATH"; then
+        fail "snapshot contains forbidden path: $forbidden_path"
+      fi
+    done
+    if grep -Eq '(^|/)(nodekey|keystore[^/]*)(/|$)' "$LISTING_PATH"; then
+      fail "snapshot contains a P2P node key or keystore path"
+    fi
+    require_member '^l2reth/db/mdbx\.dat$' l2reth/db/mdbx.dat
+    require_member '^l2reth/db/scroll\.db$' l2reth/db/scroll.db
+    require_member '^l2reth/static_files(/|$)' l2reth/static_files
+    REQUIRED_FILES="db/mdbx.dat db/scroll.db"
+    ;;
+  dogecoin)
+    if [ "$NETWORK" = testnet ]; then CHAIN_DIR="testnet3/"; else CHAIN_DIR=""; fi
+    if grep -Eq '(^|/)(wallet\.dat|wallets|[^/]*\.conf|\.cookie|peers\.dat|banlist\.dat|\.lock)(/|$)' "$LISTING_PATH"; then
+      fail "snapshot contains a wallet, configuration, credential, or peer-state file"
+    fi
+    require_member "^dogecoin/${CHAIN_DIR}blocks/index/CURRENT\$" "dogecoin/${CHAIN_DIR}blocks/index"
+    require_member "^dogecoin/${CHAIN_DIR}chainstate/CURRENT\$" "dogecoin/${CHAIN_DIR}chainstate"
+    REQUIRED_FILES="${CHAIN_DIR}blocks/index/CURRENT ${CHAIN_DIR}chainstate/CURRENT"
+    ;;
+esac
+
+# --- Extract and activate ---------------------------------------------------
+
+if [ -n "$TARGET_VOLUME" ]; then
+  if docker volume inspect "$TARGET_VOLUME" >/dev/null 2>&1; then
+    fail "Docker volume $TARGET_VOLUME was created during the download; stop and inspect it"
+  fi
+  echo "Creating Docker volume $TARGET_VOLUME and extracting the snapshot..."
+  docker volume create \
+    --label "com.docker.compose.project=$COMPOSE_PROJECT_NAME" \
+    --label "com.docker.compose.volume=dogecoin_data" \
+    "$TARGET_VOLUME" >/dev/null
+  if ! docker run --rm --network none \
+      --mount "type=volume,source=$TARGET_VOLUME,target=/data" \
+      --mount "type=bind,source=$CACHE_DIR,target=/snapshot,readonly" \
+      -e ARCHIVE_NAME="$ARCHIVE_NAME" -e REQUIRED_FILES="$REQUIRED_FILES" \
+      "$EXTRACT_IMAGE" sh -eu -c '
+        test -z "$(ls -A /data)" || { echo "volume is not empty" >&2; exit 1; }
+        tar -xzf "/snapshot/$ARCHIVE_NAME" --strip-components=1 -C /data
+        for f in $REQUIRED_FILES; do test -f "/data/$f"; done
+      '; then
+    fail "extraction into $TARGET_VOLUME failed. Do not start the node on it. Remove
+the partial volume with: docker volume rm $TARGET_VOLUME"
+  fi
+  echo
+  echo "Dogecoin snapshot restored to Docker volume: $TARGET_VOLUME"
+else
+  STAGING_DIR="$TARGET_PARENT/.$COMPONENT-snapshot-restore-$$"
+  [ ! -e "$STAGING_DIR" ] || fail "staging directory already exists: $STAGING_DIR"
+  mkdir "$STAGING_DIR"
+
+  echo "Extracting snapshot to staging directory:"
+  echo "  $STAGING_DIR"
+  tar --extract --gzip --file "$ARCHIVE_PATH" --directory "$STAGING_DIR" \
+    --no-same-owner --strip-components="$STRIP_COMPONENTS"
+  if [ "$STRIP_COMPONENTS" -eq 0 ]; then
+    EXTRACTED="$STAGING_DIR/$ARCHIVE_ROOT"
+  else
+    EXTRACTED="$STAGING_DIR"
+  fi
+  for f in $REQUIRED_FILES; do
+    [ -f "$EXTRACTED/$f" ] || fail "extracted snapshot is missing $f"
+  done
+
+  echo "Stopping $SERVICE before activating the restored data..."
+  "${COMPOSE[@]}" stop "$SERVICE" >/dev/null 2>&1 || true
+
+  BACKUP_DIR=""
+  if [ -d "$TARGET_DIR" ]; then
+    if find "$TARGET_DIR" -mindepth 1 -maxdepth 1 -print -quit | grep -q .; then
+      BACKUP_DIR="$TARGET_DIR.backup-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+      [ ! -e "$BACKUP_DIR" ] || fail "backup destination already exists: $BACKUP_DIR"
+      mv "$TARGET_DIR" "$BACKUP_DIR"
+    else
+      rmdir "$TARGET_DIR"
+    fi
+  fi
+
+  if [ "$STRIP_COMPONENTS" -eq 0 ]; then
+    mv "$EXTRACTED" "$TARGET_DIR"
+    rmdir "$STAGING_DIR"
+  else
+    mv "$STAGING_DIR" "$TARGET_DIR"
+  fi
+  STAGING_DIR=""
+
+  echo
+  echo "$COMPONENT snapshot restored to:"
+  echo "  $TARGET_DIR"
+  if [ -n "$BACKUP_DIR" ]; then
+    echo "Previous data was preserved at:"
+    echo "  $BACKUP_DIR"
+  fi
+fi
+
+if [ "$START_AFTER_RESTORE" = true ]; then
+  echo
+  echo "Starting the $NETWORK stack..."
+  if [ -n "$TARGET_VOLUME" ]; then
+    # The service still names the same volume key, so Compose would otherwise
+    # keep an existing container attached to the previous volume.
+    "${COMPOSE[@]}" up -d --force-recreate dogecoin-node
+  fi
+  "${COMPOSE[@]}" up -d
+  echo
+  "${COMPOSE[@]}" ps
+else
+  echo
+  echo "Restore complete. Start the stack later with:"
+  if [ -n "$TARGET_VOLUME" ]; then
+    printf '  docker compose --env-file %q up -d --force-recreate dogecoin-node\n' "$ENV_FILE_ABS"
+  fi
+  printf '  docker compose --env-file %q up -d\n' "$ENV_FILE_ABS"
+fi
+
+echo
+echo "The downloaded archive remains cached at:"
+echo "  $ARCHIVE_PATH"
