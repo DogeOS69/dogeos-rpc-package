@@ -4,11 +4,11 @@
 # so changing this file affects testnet only. Relative paths are resolved
 # against this directory.
 #
-# Image sources (behavior documented for this network was checked against
-# these revisions):
-#   dogecoin-node  dogeos69/dogecoin:1.14.9             Dogecoin Core 1.14.9
-#   l2reth-node    DogeOS69/dogeos-rollup-node          v0.3.0-beta.1c  d3260afe
-#   l1-interface   DogeOS69/dogeos-core (l1_interface)  v0.3.0-beta.3d  413c5fc8
+# Image versions (behavior documented for this network was checked against
+# these versions):
+#   dogecoin-node  Dogecoin Core 1.14.9
+#   l2reth-node    DogeOS69/dogeos-rollup-node  v0.3.0-beta.1c  d3260afe
+#   l1-interface   DogeOS L1 Interface          v0.3.0-beta.3d
 
 services:
   dogecoin-node:
