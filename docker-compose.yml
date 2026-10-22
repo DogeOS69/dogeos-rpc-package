@@ -26,7 +26,7 @@ services:
       - "-printtoconsole"
   l2reth-node:
     image: dogeos69/rollup-node:v0.3.0-beta.1c
-    restart: on-failure
+    restart: unless-stopped
     mem_reservation: 1g
     mem_limit: ${L2RETH_MEM_LIMIT:-8g}
     memswap_limit: ${L2RETH_MEM_LIMIT:-8g}

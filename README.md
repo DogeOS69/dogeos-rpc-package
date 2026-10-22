@@ -45,6 +45,10 @@ The testnet stack runs three services:
 L2Reth and L1 Interface store their data under the `DATA_ROOT` you configure.
 The package includes the testnet network settings and peer addresses.
 
+L2Reth runs as a follower with `--consensus.exit-on-signer-rotation`: when the
+sequencer signer rotates on L1, it exits and Docker restarts it
+(`restart: unless-stopped`) so it picks up the new signer.
+
 ## Hardware Requirements
 
 ### Minimum Specifications (Testnet)
