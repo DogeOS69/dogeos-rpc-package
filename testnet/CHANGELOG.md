@@ -1,7 +1,7 @@
-# Changelog
+# Testnet Changelog
 
-Each entry states which network it affects and what operators must do.
-Mainnet is not released yet.
+Each entry states what testnet operators must do. Mainnet has its own
+changelog in `mainnet/`.
 
 ## Unreleased
 
@@ -45,14 +45,16 @@ Recommended follow-ups:
   RPC or L1 Interface ports.
 - Snapshots are restored with `./scripts/restore-snapshot.sh <component>`
   inside `testnet/`; `scripts/restore-l2reth-snapshot.sh` is gone.
+- Documentation and the changelog are now in `testnet/` as well; the root
+  directory only has a short README.
 
 ### Changes
 
 - **Self-contained networks.** `testnet/` and `mainnet/` each have their own
-  `docker-compose.yml`, configuration, scripts, and env template, and share
-  nothing, so they can run different versions and change independently. The
-  root `docker-compose.yml`, `configs/`, `envs/`, and `scripts/` (except the
-  repository check) are gone. Only testnet has the one-time L1 Interface
+  `docker-compose.yml`, configuration, scripts, documentation, changelog, and
+  env template, and share nothing, so they can run different versions and
+  change independently. The root `docker-compose.yml`, `configs/`, `envs/`,
+  `scripts/`, and `docs/` are gone. Only testnet has the one-time L1 Interface
   history download.
 - **One settings file per network.** Operator settings live in `.env` in the
   network directory, which Compose and the scripts read by default. Overrides
@@ -60,10 +62,10 @@ Recommended follow-ups:
   `docker-compose.yml`, and the Dogecoin RPC host port no longer has to match
   `dogecoin.conf`. `DOGECOIN_P2P_PORT` is no longer used: P2P stays on the
   port Dogecoin advertises. `NETWORK` is no longer needed.
-- **Snapshots.** `scripts/restore-snapshot.sh` restores Dogecoin, L1
+- **Snapshots.** `testnet/scripts/restore-snapshot.sh` restores Dogecoin, L1
   Interface, and L2Reth snapshots listed in a per-network index on S3, so new
   snapshots need no package release. It selects the newest snapshot compatible
-  with the network's images, stops the restored service and every service that
+  with testnet's images, stops the restored service and every service that
   depends on it before activating data, and warns when a snapshot is ahead of
   its upstream service. See [Snapshots and Recovery](docs/snapshots.md).
 - **L2Reth RPC options** for RPC providers: `L2RETH_HTTP_API`,
@@ -78,14 +80,7 @@ Recommended follow-ups:
 - **Cleanup.** Removed Celestia and L2Geth leftovers, unused env files, the
   unused `L2RETH_VALID_SIGNER`, and unnecessary permission changes in the L1
   Interface bootstrap. The peer list is now `L2RETH_PEER_LIST`
-  (`L2GETH_PEER_LIST` is still accepted). Documentation moved to `docs/`.
-
-### Mainnet
-
-Not released. The layout is prepared: Dogecoin data under `DATA_ROOT`, internal
-ports on `127.0.0.1`, wallet disabled, an explicit RPC password, and no testnet
-bootstrap data. Missing configuration is listed in
-[mainnet/README.md](mainnet/README.md).
+  (`L2GETH_PEER_LIST` is still accepted).
 
 ## Testnet: L2Reth v0.3.0-beta.1c (Galileo, Galileo V2, and Tsuki)
 
@@ -110,4 +105,4 @@ docker compose --env-file .env.testnet up -d --no-deps --force-recreate l2reth-n
 
 Moved Data Availability from Celestia to Ethereum, made L2Reth the only L2
 client, and changed the L1 Interface storage format. Nodes on v0.2.x follow the
-archived [v0.3.0 upgrade guide](docs/testnet/history/upgrade-v0.3.0.md).
+archived [v0.3.0 upgrade guide](docs/history/upgrade-v0.3.0.md).

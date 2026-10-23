@@ -6,7 +6,7 @@
 > `.env.testnet`: where it says to pull the new code, check out commit
 > `9df76ed` (the last release in that layout) instead. After completing it,
 > update to the current release and follow the
-> [changelog](../../../CHANGELOG.md) to move `.env.testnet` to `testnet/.env`.
+> [changelog](../../CHANGELOG.md) to move `.env.testnet` to `testnet/.env`.
 
 Use this guide **after v0.3.0 is merged into `main`**. It upgrades the old
 v0.2.x package, whether it used L2Geth or older L2Reth. Allow a maintenance
@@ -190,7 +190,7 @@ uses fresh L1/L2 directories and does not run Celestia or Geth.
 
 To sync L2Reth from genesis instead, skip the restore command in step 3 and
 start with the same fresh directories. For snapshot requirements and recovery,
-see the [snapshot guide](../../snapshots.md).
+see the [snapshot guide](../snapshots.md).
 
 If the upgrade fails, stop the new stack with
 `docker compose --env-file .env.testnet down`, inspect logs, and retain your

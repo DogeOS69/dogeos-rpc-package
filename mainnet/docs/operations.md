@@ -1,18 +1,18 @@
 # Operations
 
-Configuration, security, and maintenance for a running stack. Run every
-command inside the network's directory (`testnet/` or `mainnet/`); Docker
-Compose and the scripts read `.env` there. Examples use testnet.
+Configuration, security, and maintenance for a mainnet stack. Mainnet is not
+released yet (see [README.md](../README.md)). Run every command inside the
+`mainnet/` directory; Docker Compose and the scripts read `.env` there.
 
 ## Configuration
 
-`.env` in the network directory is the only file you edit. Create it from
-`env.example` in the same directory; that template lists every setting with
-its default. Keep it private (`chmod 600 .env`) and in your configuration
-backups. Everything else in the network directory (`docker-compose.yml`,
-`config/`, `scripts/`) is maintained by this package.
+`mainnet/.env` is the only file you edit. Create it from `env.example` in the
+same directory; that template lists every setting with its default. Keep it
+private (`chmod 600 .env`) and in your configuration backups. Everything else
+in `mainnet/` (`docker-compose.yml`, `config/`, `scripts/`, `docs/`) is
+maintained by this package.
 
-Testnet and mainnet share nothing. Run one network per host; their default
+Mainnet shares nothing with testnet. Run one network per host; their default
 internal ports overlap.
 
 `docker compose restart` does not reload settings. After changing `.env`, apply
@@ -24,51 +24,26 @@ docker compose up -d
 
 Compose recreates only the services whose configuration changed.
 
-<details>
-<summary>Existing testnet nodes with <code>.env.testnet</code></summary>
-
-Earlier releases kept the settings in `.env.testnet` in the repository root
-and ran Compose there. Move the file once; the containers, the Dogecoin
-volume, and `DATA_ROOT` stay the same:
-
-```bash
-mv .env.testnet testnet/.env
-cd testnet
-docker compose up -d
-```
-
-A `.env` in the repository root left by very old releases is no longer used
-and can be removed.
-
-</details>
-
 ### Dogecoin RPC Credentials
 
 `DOGECOIN_RPC_USER` and `DOGECOIN_RPC_PASSWORD` are passed to `dogecoin-node`
 and `l1-interface` as Docker secrets; do not put them in `dogecoin.conf`.
-Supported characters are letters, digits, and `._~:@%+=,-`. Testnet keeps the
-earlier package's public defaults (`doge`/`password`) for compatibility;
-mainnet requires a password before the first start. Changing them recreates
-both services, and every external consumer of the Dogecoin RPC must update.
+Supported characters are letters, digits, and `._~:@%+=,-`. The template
+leaves the password empty, and Dogecoin refuses to start until it is set.
+Changing them recreates both services, and every external consumer of the
+Dogecoin RPC must update.
 
 ### Custom Ethereum RPC
 
-Testnet uses `https://ethereum-sepolia-rpc.publicnode.com` by default. To use
-another provider, set in `.env`:
+Whether mainnet ships a default Ethereum RPC is not decided yet (see
+[README.md](../README.md)). To use your own provider, set in `.env`:
 
 ```bash
-DOGEOS_ETHEREUM_RPC_URL=https://your-sepolia-execution-rpc
+DOGEOS_ETHEREUM_RPC_URL=https://your-ethereum-execution-rpc
 ```
 
-The provider must support Sepolia (chain ID `11155111`) and execution methods
-including `eth_getBlockByHash`. Apply it with `docker compose up -d`.
-
-Earlier releases set overrides in `envs/testnet/l1-interface.local.env` in the
-repository root. On testnet that file is still read but deprecated: move its values to `.env`
-(`DOGEOS_L1_INTERFACE_ETHEREUM_DA__L1_RPC_URL` becomes `DOGEOS_ETHEREUM_RPC_URL`,
-`DOGEOS_L1_INTERFACE_DOGECOIN_RPC__URL`/`__USER`/`__PASS` become
-`DOGEOS_EXTERNAL_DOGECOIN_RPC_URL`/`_USER`/`_PASSWORD`) and delete it. Settings in
-`.env` win.
+The provider must support Ethereum mainnet (chain ID `1`) and execution
+methods including `eth_getBlockByHash`. Apply it with `docker compose up -d`.
 
 <details>
 <summary>Advanced: use an external Dogecoin RPC</summary>
@@ -110,8 +85,8 @@ The package is built for RPC providers that serve L2Reth through their own
 gateway or load balancer. Only these ports need to be internet-reachable:
 
 - L2Reth HTTP/WebSocket, through your gateway
-- Dogecoin P2P: `44556` on testnet, `22556` on mainnet
-- L2Reth P2P: `${L2_P2P_PORT}` TCP and UDP
+- Dogecoin P2P: `22556`
+- L2Reth P2P: `${L2_P2P_PORT}` (default `40303`), TCP and UDP
 
 Keep Dogecoin RPC and the L1 Interface ports private with `INTERNAL_BIND_ADDR`,
 host or cloud firewalls, or a private network. RPC authentication is not a
@@ -134,9 +109,8 @@ L2RETH_EXTRA_ARGS=--rpc.max-tracing-requests 8
 To serve without them, set `L2RETH_HTTP_API` and `L2RETH_WS_API` to
 `eth,net,web3`. `L2RETH_EXTRA_ARGS` accepts other `rollup-node` flags, such as
 `--rpc.gascap` or `--rpc-cache.*`, separated by spaces. Do not repeat a flag
-already set by the network's `scripts/l2reth_entrypoint.sh`; `rollup-node`
-exits on duplicates. Recreate
-`l2reth-node` after changing these values.
+already set by `scripts/l2reth_entrypoint.sh`; `rollup-node` exits on
+duplicates. Apply changes with `docker compose up -d`.
 
 ### Load Balancer Health
 
@@ -148,18 +122,16 @@ backends, and remove a node that falls more than a few blocks behind.
 
 | Endpoint | Address | Exposure |
 |----------|---------|----------|
-| L2Reth HTTP RPC | `http://<host>:${L2_HTTP_PORT}` | Public, behind your gateway |
-| L2Reth WebSocket | `ws://<host>:${L2_WS_PORT}` | Public, behind your gateway |
+| L2Reth HTTP RPC | `http://<host>:${L2_HTTP_PORT}` (default `18545`) | Public, behind your gateway |
+| L2Reth WebSocket | `ws://<host>:${L2_WS_PORT}` (default `18546`) | Public, behind your gateway |
 | L2Reth metrics | `http://127.0.0.1:${L2_METRICS_PORT}/` (default `6060`) | Prometheus; this host only |
-| Dogecoin RPC | `http://localhost:${DOGECOIN_RPC_PORT}` | Internal |
+| Dogecoin RPC | `http://localhost:${DOGECOIN_RPC_PORT}` (default `22555`) | Internal |
 | L1 Interface RPC | `http://localhost:8547` | Internal (L1 client for L2Reth) |
 | L1 Interface health | `http://localhost:9090/health`, `/api/v1/health/ready` | Internal |
 
-Default ports per network are listed in each network's `env.example`;
-set them in `.env` to change the host ports.
-Internal ports follow `INTERNAL_BIND_ADDR`: mainnet sets `127.0.0.1`; testnet
-leaves it unset, which keeps publishing them on all interfaces as earlier
-releases did. Set it to `127.0.0.1` unless another host needs these ports.
+Set the port variables in `.env` to change the host ports (defaults are listed
+in `env.example`). Internal ports follow `INTERNAL_BIND_ADDR`, which defaults
+to `127.0.0.1`; set another address only if another host needs these ports.
 
 ## Maintenance
 
@@ -185,7 +157,7 @@ curl --fail http://localhost:9090/api/v1/health/ready
 curl --fail \
   -H 'content-type: application/json' \
   --data '{"jsonrpc":"2.0","method":"net_peerCount","params":[],"id":1}' \
-  http://localhost:8545
+  http://localhost:18545
 ```
 
 `docker compose ps` shows `l1-interface` as `healthy` when
@@ -206,8 +178,7 @@ scripts follow this rule; see [Snapshots and Recovery](snapshots.md).
 docker compose down
 ```
 
-Shutdown keeps all chain data. Do not use `down -v` if you want to keep a
-Dogecoin Docker volume.
+Shutdown keeps all chain data; it lives under `DATA_ROOT`.
 
 ## Troubleshooting
 
@@ -220,8 +191,8 @@ Dogecoin Docker volume.
 - **L1 Interface health returns HTTP 503:** `historical_sync=in_progress` is
   expected during startup. Follow the logs until `/health` returns HTTP 200.
 - **Ethereum RPC returns plan or unsupported-chain errors:** the provider must
-  permit Sepolia and `eth_getBlockByHash`. Update
-  `DOGEOS_L1_INTERFACE_ETHEREUM_DA__L1_RPC_URL` and recreate `l1-interface`.
+  permit Ethereum mainnet and `eth_getBlockByHash`. Set `DOGEOS_ETHEREUM_RPC_URL` in
+  `.env` to a provider that does and run `docker compose up -d`.
 - **L2Reth stays at `Waiting for L1 interface`:** the entrypoint waits for an
   `eth_chainId` response, which L1 Interface serves only after its startup
   sync. Check L1 Interface health and logs.
@@ -247,10 +218,8 @@ Dogecoin Docker volume.
 |---------|----------|
 | L2Reth | `${DATA_ROOT}/l2reth` |
 | L1 Interface | `${DATA_ROOT}/l1-interface` |
-| Dogecoin (testnet) | Docker volume `DOGECOIN_VOLUME_NAME`, in Docker's data root |
-| Dogecoin (mainnet) | `${DATA_ROOT}/dogecoin` |
+| Dogecoin | `${DATA_ROOT}/dogecoin` |
 | Snapshot downloads | `${DATA_ROOT}/.snapshot-cache` |
 
-Keep `DATA_ROOT` on a mounted data disk outside the repository. Where Dogecoin
-keeps its data is part of each network's `docker-compose.yml`, not an operator
-setting.
+Keep `DATA_ROOT` on a mounted data disk outside the repository; all three
+services store their data there.

@@ -5,17 +5,17 @@ usage() {
   cat <<'USAGE'
 Reset the bind-mounted L1 Interface and L2Reth data directories.
 
-Usage:
-  scripts/reset-chain-data.sh [options] [env-file]
+Usage (in the mainnet directory):
+  ./scripts/reset-chain-data.sh [options] [env-file]
 
-The env file defaults to .env in the repository root.
+The env file defaults to .env in the mainnet directory.
 
 Examples:
   # Recommended: move existing data to timestamped backup directories.
-  scripts/reset-chain-data.sh
+  ./scripts/reset-chain-data.sh
 
   # Irreversibly delete existing data instead of keeping backups.
-  scripts/reset-chain-data.sh --delete --yes
+  ./scripts/reset-chain-data.sh --delete --yes
 
 Options:
   --delete  Permanently delete the existing l1-interface and l2reth data.
@@ -26,7 +26,7 @@ Options:
             Show this help.
 
 This script stops the Compose project before resetting data. It does not touch
-Dogecoin data (a Docker volume or DATA_ROOT/dogecoin) or DATA_ROOT/.snapshot-cache.
+Dogecoin data (DATA_ROOT/dogecoin) or DATA_ROOT/.snapshot-cache.
 USAGE
 }
 

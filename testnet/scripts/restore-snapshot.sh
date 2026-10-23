@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Published snapshots are listed in a per-network index on S3, so a new
 # snapshot needs only an S3 upload, not a package release. See
-# docs/snapshot-publishing.md for the index format.
+# docs/snapshot-publishing.md in this directory for the index format.
 NETWORK=testnet
 DEFAULT_INDEX_BASE="https://dogeos-rpc-snapshots.s3.us-west-2.amazonaws.com"
 EXTRACT_IMAGE="alpine:3.20"
@@ -12,21 +12,20 @@ SIGNATURE_NAMESPACE="dogeos-snapshot-index"
 
 usage() {
   cat <<'USAGE'
-Restore a published Dogecoin, L1 Interface, or L2Reth snapshot.
+Restore a published testnet Dogecoin, L1 Interface, or L2Reth snapshot.
 
-Usage:
-  scripts/restore-snapshot.sh [options] <dogecoin|l1-interface|l2reth> [env-file]
-  scripts/restore-snapshot.sh --list [env-file]
+Usage (in the testnet directory):
+  ./scripts/restore-snapshot.sh [options] <dogecoin|l1-interface|l2reth> [env-file]
+  ./scripts/restore-snapshot.sh --list [env-file]
 
-The env file defaults to .env in the repository root.
+The env file defaults to .env in the testnet directory.
 
 Examples:
-  scripts/restore-snapshot.sh --list
-  scripts/restore-snapshot.sh --no-start dogecoin
-  scripts/restore-snapshot.sh l2reth
-  scripts/restore-snapshot.sh l2reth .env.testnet
+  ./scripts/restore-snapshot.sh --list
+  ./scripts/restore-snapshot.sh --no-start dogecoin
+  ./scripts/restore-snapshot.sh l2reth
 
-The newest snapshot compatible with the network's image is used.
+The newest snapshot compatible with the image in docker-compose.yml is used.
 
 Services depend on each other as Dogecoin -> L1 Interface -> L2Reth. Before
 the restored data is activated, the component and every service that depends

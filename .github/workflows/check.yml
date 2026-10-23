@@ -11,7 +11,11 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        network: [testnet, mainnet]
     steps:
       - uses: actions/checkout@v4
-      - name: Repository checks
-        run: ./scripts/check.sh
+      - name: ${{ matrix.network }} checks
+        run: ./${{ matrix.network }}/scripts/check.sh

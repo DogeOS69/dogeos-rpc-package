@@ -1,17 +1,18 @@
 # Snapshot Publishing
 
-This is the contract between the snapshot publishing pipeline and
-`scripts/restore-snapshot.sh`. Publishing a new snapshot is an S3 upload and an
-index update; it does not need a package release.
+This is the contract between the testnet snapshot publishing pipeline and
+`testnet/scripts/restore-snapshot.sh`. Publishing a new snapshot is an S3
+upload and an index update; it does not need a package release.
 
 A package release is needed only to change the index URL, the archive layout
-rules enforced by the script, or the signer list (`<network>/snapshots/allowed_signers`).
+rules enforced by the script, or the signer list
+(`testnet/snapshots/allowed_signers`).
 
 ## S3 Layout
 
 ```text
 s3://dogeos-rpc-snapshots/
-  <network>/                         # testnet, mainnet
+  testnet/
     index.json                       # the only object that is overwritten
     index.json.sig                   # only once signing is enabled
     dogecoin/<archive>.tar.gz
@@ -26,7 +27,7 @@ s3://dogeos-rpc-snapshots/
   name, for example `dogeos-l2reth-testnet-<UTC timestamp>.tar.gz`.
 - Serve `index.json` with `Content-Type: application/json` and
   `Cache-Control: no-cache` so a CDN or proxy does not keep an old index.
-- The restore script reads `https://dogeos-rpc-snapshots.s3.us-west-2.amazonaws.com/<network>/index.json`.
+- The restore script reads `https://dogeos-rpc-snapshots.s3.us-west-2.amazonaws.com/testnet/index.json`.
 
 ## Index Format (schema version 1)
 
@@ -52,24 +53,25 @@ Each entry:
 | `height` | no | Block height of the data (Dogecoin, L1 Interface synthetic L1, or L2), shown by `--list`. |
 | `dogecoin_height` | no | `l1-interface` only: Dogecoin height the data was indexed against. |
 | `l1_height` | no | `l2reth` only: L1 Interface block the data was derived against. |
-| `compatible_images` | yes | Image references that can open this data, written exactly as in the network's `docker-compose.yml` (for example `dogeos69/rollup-node:v0.3.0-beta.1c`). |
+| `compatible_images` | yes | Image references that can open this data, written exactly as in `testnet/docker-compose.yml` (for example `dogeos69/rollup-node:v0.3.0-beta.1c`). |
 | `archive.url` | yes | HTTPS URL of a `.tar.gz` archive. |
 | `archive.sha256` | yes | Lowercase hex SHA-256 of the archive. |
 | `archive.size_bytes` | no | Archive size; used for the free-space check. |
 | `archive.uncompressed_bytes` | no | Extracted size; used for the free-space check. |
 | `manifest_url` | no | Human-readable manifest; printed when the snapshot is selected. |
 
-A component with no entries can be omitted. Clients ignore unknown fields, so fields can be added without a schema change.
+A component with no entries can be omitted. Clients ignore unknown fields, so
+fields can be added without a schema change.
 Change `schema_version` only for an incompatible change; older scripts then
 refuse the index instead of misreading it.
 
 ## Image Compatibility
 
 The script restores only a snapshot whose `compatible_images` contains the
-image that network uses (`<network>/docker-compose.yml`). Testnet and mainnet
-can run different versions, and each network has its own index. Before
-releasing a package that changes a network's `dogecoin-node`, `l1-interface`,
-or `l2reth-node` image, update that network's index:
+image in `testnet/docker-compose.yml`. Mainnet has its own index and may run
+other versions. Before releasing a package that changes testnet's
+`dogecoin-node`, `l1-interface`, or `l2reth-node` image, update the testnet
+index:
 
 - If the new image opens existing data unchanged, add the new image reference
   to the `compatible_images` of the current entries.
@@ -125,10 +127,8 @@ historical artifact when present. Take it after a clean shutdown of L1
 Interface so SQLite has no pending write-ahead log. It must not contain
 `*.env`, `*.toml`, or `*.conf` files.
 
-**dogecoin** — a single `dogecoin/` root containing the network data
-directory: `dogecoin/testnet3/{blocks,chainstate}` on testnet and
-`dogecoin/{blocks,chainstate}` on mainnet, each with its LevelDB `CURRENT`
-file. It must not contain wallets, `*.conf`, `.cookie`, `peers.dat`,
+**dogecoin** — a single `dogecoin/` root containing
+`dogecoin/testnet3/{blocks,chainstate}`, each with its LevelDB `CURRENT` file. It must not contain wallets, `*.conf`, `.cookie`, `peers.dat`,
 `banlist.dat`, or `.lock`.
 
 No archive may contain absolute paths or `..` components.
@@ -142,7 +142,8 @@ No archive may contain absolute paths or `..` components.
 4. Build the new index: add the entry, keep the newest entries per component
    (3 is recommended), and set `published_at`.
 5. Upload `index.json` (and `index.json.sig` first, once signing is enabled).
-6. Run `./scripts/restore-snapshot.sh --list` against the published index.
+6. Run `./scripts/restore-snapshot.sh --list` in `testnet/` against the
+   published index.
 7. Delete archives no longer listed after a grace period of a few days, so a
    restore that started from the previous index can finish. An S3 lifecycle
    rule on the archive prefixes can do this.
@@ -162,11 +163,11 @@ publishing pipeline can write to the bucket:
 ## Optional: Signed Index
 
 The script verifies `index.json.sig` whenever the package contains
-`<network>/snapshots/allowed_signers`. To enable signing:
+`testnet/snapshots/allowed_signers`. To enable signing:
 
 1. Create an Ed25519 key for the pipeline; keep the private key in the
    pipeline's secret store.
-2. Release a package containing `<network>/snapshots/allowed_signers` with the line
+2. Release a package containing `testnet/snapshots/allowed_signers` with the line
    `dogeos-snapshots <public key>`. Several lines allow key rotation.
 3. Sign every index before uploading it:
 
@@ -182,7 +183,7 @@ signature is already in place when operators update.
 ## Initial Testnet Index
 
 The index for the snapshots already published before this mechanism existed.
-Upload it as `testnet/index.json` before releasing the package that reads it:
+It was uploaded as `testnet/index.json`; later indexes replace it:
 
 ```json
 {

@@ -12,14 +12,15 @@ uses Reth's local IPC admin API, resolves the enode hostname to a reachable IPv4
 address, removes any old endpoint with the same node ID, adds the new endpoint,
 and waits briefly for a P2P connection.
 
-Usage:
+Usage (in the testnet directory):
   sudo ./scripts/add-l2reth-peer.sh [ENODE]
 
 The current l2-reth-bootnode-0 public enode is used when ENODE is omitted. You can
 also set NEW_ENODE instead of passing an argument.
 
 Optional environment variables:
-  L2RETH_CONTAINER       Docker container name (default: l2reth-node)
+  L2RETH_CONTAINER       Docker container name or ID (default: this
+                         directory's l2reth-node container, from docker compose)
   L2RETH_IPC_PATH        IPC path inside the container (default: /tmp/reth.ipc)
   PEER_CONNECT_TIMEOUT   TCP probe timeout in seconds (default: 3)
   PEER_VERIFY_TIMEOUT    P2P verification timeout in seconds (default: 30)
@@ -36,7 +37,6 @@ if (( $# > 1 )); then
   exit 2
 fi
 
-container="${L2RETH_CONTAINER:-l2reth-node}"
 container_ipc="${L2RETH_IPC_PATH:-/tmp/reth.ipc}"
 requested_enode="${1:-${NEW_ENODE:-$DEFAULT_ENODE}}"
 connect_timeout="${PEER_CONNECT_TIMEOUT:-3}"
@@ -44,6 +44,14 @@ verify_timeout="${PEER_VERIFY_TIMEOUT:-30}"
 
 command -v docker >/dev/null 2>&1 || {
   echo "ERROR: docker is required" >&2
+  exit 1
+}
+
+# Compose names the container <project>-l2reth-node-1; ask Compose for it.
+NETWORK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+container="${L2RETH_CONTAINER:-$(docker compose --project-directory "$NETWORK_DIR" ps -q l2reth-node 2>/dev/null || true)}"
+[ -n "$container" ] || {
+  echo "ERROR: no running l2reth-node container for $NETWORK_DIR; set L2RETH_CONTAINER" >&2
   exit 1
 }
 
@@ -241,6 +249,6 @@ PY
 
 cat <<'EOF'
 
-NOTE: this is a runtime update. Also update L2GETH_PEER_LIST/L2RETH_PEER_LIST
-on disk so that a future container restart does not restore the obsolete peer.
+NOTE: this is a runtime update. A container restart restores the peers in
+config/l2reth.env, which package updates maintain.
 EOF
