@@ -33,6 +33,15 @@ read_secret() {
   printf '%s' "$secret_value"
 }
 
+# Snapshot paths are a package contract, not operator overrides. Fail before
+# creating data if a legacy env file or custom Compose config changes them.
+[ "${DOGEOS_L1_INTERFACE_DATABASE_URL:-}" = sqlite:///data/l1-interface.sqlite ] ||
+  fail "DATABASE_URL must be sqlite:///data/l1-interface.sqlite; remove custom data paths"
+[ "${DOGEOS_L1_INTERFACE_REPLAY_READ__SQLITE_PATH:-}" = /data/replay.sqlite ] ||
+  fail "REPLAY_READ__SQLITE_PATH must be /data/replay.sqlite; remove custom data paths"
+[ "${DOGEOS_L1_INTERFACE_EVENT_PLANE_ARTIFACT_PATH:-}" = /data/l1-interface-historical-artifact.sqlite ] ||
+  fail "testnet EVENT_PLANE_ARTIFACT_PATH must be /data/l1-interface-historical-artifact.sqlite"
+
 mkdir -p "$DATA_DIR"
 [ -w "$DATA_DIR" ] || fail "L1 Interface data directory is not writable: $DATA_DIR (check DATA_ROOT and host ownership)"
 

@@ -42,9 +42,13 @@ ordering, L1 reorg handling) was checked against these versions.
 | Disk | 300 GB SSD | 500 GB NVMe SSD |
 
 Default memory limits are tuned for a 64 GB host: `dogecoin-node` 24 GB,
-`l2reth-node` 8 GB, `l1-interface` 2 GB. Adjust them in `.env` with
-`DOGECOIN_MEM_LIMIT`, `L2RETH_MEM_LIMIT`, and `L1_INTERFACE_MEM_LIMIT`. Swap is
-disabled, so a service that exceeds its limit can be OOM-killed.
+`l2reth-node` 16 GB, `l1-interface` 2 GB. Set `L2RETH_MEM_LIMIT` in `.env`
+according to your machine's memory and RPC workload; 16 GB is a default cap,
+not a reservation or a value suitable for every host. Leave memory for the
+other services and the operating system. In particular, lower the limits on
+a 32 GB host: the default service caps total 42 GB. Dogecoin and L1 Interface
+limits are adjustable with `DOGECOIN_MEM_LIMIT` and `L1_INTERFACE_MEM_LIMIT`.
+Swap is disabled, so a service that exceeds its limit can be OOM-killed.
 
 Docker Compose 2.24 or later is required.
 
@@ -78,17 +82,23 @@ another provider, see [Custom Ethereum RPC](docs/operations.md#custom-ethereum-r
 
 ### 3. Restore Snapshots (Recommended for New Nodes)
 
-Snapshots are published to S3. Restore Dogecoin first, then L2Reth, without
-starting services yet:
+Snapshots are published independently to S3. Restore Dogecoin first, then
+L1 Interface when a compatible snapshot exists, then L2Reth, without starting
+services yet:
 
 ```bash
 ./scripts/restore-snapshot.sh --list
 ./scripts/restore-snapshot.sh --no-start dogecoin
+# If --list shows a compatible L1 Interface snapshot:
+./scripts/restore-snapshot.sh --no-start l1-interface
 ./scripts/restore-snapshot.sh --no-start l2reth
 ```
 
-Skip the Dogecoin restore for a node that already has Dogecoin data. The
-script verifies each archive and picks the newest snapshot compatible with the
+Skip the Dogecoin restore for a node that already has Dogecoin data. If no
+compatible L1 snapshot exists, skip that restore command; startup uses the
+fixed testnet history bootstrap. L1 snapshot restore requires Python 3 with
+SQLite support and preserves the fixed `/data` layout. Download or validation
+failures are errors, not reasons to silently reset data. The script verifies each archive and picks the newest snapshot compatible with the
 images in `docker-compose.yml`. See [Snapshots and Recovery](docs/snapshots.md).
 
 ### 4. Start Services
@@ -97,8 +107,11 @@ images in `docker-compose.yml`. See [Snapshots and Recovery](docs/snapshots.md).
 docker compose up -d
 ```
 
-On first start, L1 Interface downloads the testnet history bootstrap data and
-catches up before serving L2Reth. Let Dogecoin load its block index and all
+Without an L1 snapshot, first start downloads the fixed testnet history
+bootstrap. With an L1 snapshot, the existing replay DB is preserved and the
+historical artifact is verified. L1 Interface catches up before serving L2Reth.
+For mixed-age snapshots, follow the
+[staged startup checks](docs/snapshots.md#with-a-compatible-snapshot). Let Dogecoin load its block index and all
 services finish syncing before sending RPC traffic.
 
 ### 5. Verify Services
@@ -141,4 +154,5 @@ start with the archived [v0.3.0 upgrade guide](docs/history/upgrade-v0.3.0.md).
 - [Changelog](CHANGELOG.md)
 
 Changes to this directory should pass `./scripts/check.sh` (shellcheck,
-Compose configuration, documentation links); CI runs it on every pull request.
+Compose configuration, documentation links); It also checks the fixed L1 data layout and runs offline snapshot/restore
+tests. CI runs it on every pull request.

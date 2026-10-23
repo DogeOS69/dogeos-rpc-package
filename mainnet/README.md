@@ -29,6 +29,13 @@ Before release, also:
   operators must set `DOGEOS_ETHEREUM_RPC_URL`.
 - Publish a bootnode for `scripts/add-l2reth-peer.sh`, which has no default
   enode yet.
+- Define and test L1 Interface startup without a runtime snapshot: select a
+  mainnet image supporting explicit fresh-genesis replay initialization, or
+  supply a validated genesis seed DB. The current `v0.3.0-beta.3d` placeholder
+  requires an existing replay DB. Never reuse testnet bootstrap data.
+- Keep L1 Interface paths fixed at `/data/l1-interface.sqlite`,
+  `/data/replay.sqlite`, and `/data/replay.artifacts/`; see
+  [Fixed Data Layout](docs/snapshots.md#fixed-data-layout).
 - Publish `mainnet/index.json` in the snapshot bucket
   ([snapshot publishing](docs/snapshot-publishing.md)).
 
@@ -45,11 +52,14 @@ Memory per service (`docker-compose.yml` defaults, adjustable in `.env`):
 | Service | Typical use | Limit | Notes |
 |---------|-------------|-------|-------|
 | `dogecoin-node` | about 3–4 GB (4 GB reserved) | 8 GB | Block index for every block (~1.6 GB at 6.5M blocks), dbcache 450 MB, mempool up to 300 MB; the limit covers startup and catch-up peaks |
-| `l2reth-node` | grows with RPC traffic | 8 GB | Tracing calls use the most |
+| `l2reth-node` | grows with RPC traffic | 16 GB | Set `L2RETH_MEM_LIMIT` in `.env` to suit your machine and RPC workload; tracing calls use the most |
 | `l1-interface` | small; more during startup | 2 GB | |
 
-A service that exceeds its limit is OOM-killed (swap is disabled), so keep the
-limits above the typical use and leave memory for the host.
+Set `L2RETH_MEM_LIMIT` in `.env` according to your machine's available memory
+and RPC workload. The 16 GB default is a cap, not a reservation. Leave memory
+for Dogecoin, L1 Interface, the operating system, and other services. On a
+16 GB host, lower the limits before starting: the default service caps total
+26 GB. A service that exceeds its limit can be OOM-killed (swap is disabled).
 
 Disk: the Dogecoin mainnet chain alone is about 170 GiB of blocks (October
 2026), roughly 200–250 GB with undo data, chain state, and the transaction
@@ -67,10 +77,19 @@ cd mainnet
 if [ ! -e .env ]; then cp env.example .env; fi
 # REQUIRED: set DATA_ROOT and DOGECOIN_RPC_PASSWORD
 chmod 600 .env
+./scripts/restore-snapshot.sh --list
 ./scripts/restore-snapshot.sh --no-start dogecoin
+# If --list shows a compatible L1 Interface snapshot:
+./scripts/restore-snapshot.sh --no-start l1-interface
 ./scripts/restore-snapshot.sh --no-start l2reth
 docker compose up -d
 ```
+
+L1 snapshot restore requires Python 3 with SQLite support. If no compatible
+L1 snapshot exists, use the mainnet genesis initialization procedure selected
+at release; that procedure is not available in the current placeholder stack.
+See [Snapshots and Recovery](docs/snapshots.md#l1-interface) for fixed data
+paths and staged startup checks when combining snapshots.
 
 Compared with testnet:
 
@@ -97,4 +116,5 @@ Compared with testnet:
 
 Changes to this directory should pass `./scripts/check.sh` (shellcheck,
 Compose configuration with the missing files stubbed, documentation links);
-CI runs it on every pull request.
+It also checks the fixed L1 data layout and runs offline snapshot/restore
+tests. CI runs it on every pull request.

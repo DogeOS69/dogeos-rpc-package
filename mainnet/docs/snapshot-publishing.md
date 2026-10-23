@@ -90,10 +90,10 @@ combine data of different ages:
 
 - **Downstream older than upstream** is the normal case: the restored service
   catches up.
-- **Downstream newer than upstream** is safe but slow to settle. L1 Interface
-  restarts until Dogecoin reaches the height it indexed; L2Reth retries until
-  L1 Interface reaches the L1 block it derived from. The restore script warns
-  when it can see this.
+- **Downstream newer than upstream** requires upstream catch-up. Start services
+  in dependency order and verify the required checkpoints before starting the
+  downstream service. The restore script can warn about height differences;
+  it does not enforce checkpoint compatibility.
 - **Upstream moving backwards under a running downstream** is the case to
   avoid: rollup-node treats a lower L1 Interface head as an L1 reorg and
   unwinds L2 state. The restore script therefore stops the component and every
@@ -108,30 +108,84 @@ second case. Upper bounds are enough:
   before the L1 Interface snapshot.
 
 When one pipeline run publishes several components, snapshot them in the
-order **L2Reth, then L1 Interface, then Dogecoin**. Each later snapshot is at
-least as advanced as the one before it, so a set taken together never has a
-downstream component ahead of its upstream. Components may also be published
-on their own schedules, for example L2Reth weekly and Dogecoin monthly.
+order **L2Reth, then L1 Interface, then Dogecoin**. Freeze each component before
+capturing it, and verify dependency heights and hashes afterwards. Capture
+order alone does not prove canonical compatibility if a chain reorganization
+or source mismatch occurs. Components may also be published on their own
+schedules, for example L2Reth weekly and Dogecoin monthly.
 
 ## Archive Layout
 
-The script rejects archives that do not match these rules.
+Publishers must enforce the following archive rules. The restore script checks
+member paths, required database files, and specific forbidden names; it is not
+a complete validator of these rules. In particular, the L2Reth checks match
+`genesis/` and `lost+found/` directory entries but do not reject their children
+when the archive omits those directory entries. Publishers must exclude the
+entire directory trees, even if the script accepts an archive.
 
 **l2reth** — a single `l2reth/` root containing `db/mdbx.dat`, `db/scroll.db`,
 and `static_files/`. It must not contain `jwt.hex`, `reth.toml`, `genesis/`,
 `protocol_context.json`, `lost+found`, node keys, or keystores.
 
-**l1-interface** — a single `l1-interface/` root containing
-`l1-interface.sqlite` and `replay.sqlite`, plus `replay.artifacts/` and the
-historical artifact when present. Take it after a clean shutdown of L1
-Interface so SQLite has no pending write-ahead log. It must not contain
-`*.env`, `*.toml`, or `*.conf` files.
+**l1-interface** — one `l1-interface/` root with this fixed layout:
+
+```text
+l1-interface/
+  l1-interface.sqlite
+  replay.sqlite
+  replay.artifacts/
+    eth_da_artifacts.sqlite
+    eth_da_artifacts/
+    ...
+  l1-interface-historical-artifact.sqlite  # required when configured
+```
+
+Take all files from one stopped L1 Interface instance. Preserve the complete
+`replay.artifacts/` tree, including empty DA artifact directories. Normalize
+source deployment paths into this layout before packaging. Do not store host
+absolute paths or another nested `l1-interface/` root. Testnet requires the
+historical artifact matching the package's bootstrap checksum; mainnet only
+requires it if its release configuration explicitly uses one.
+
+Checkpoint every mutable SQLite database after all writers have stopped,
+including the metadata DB inside `replay.artifacts/`. Checkpoint/close must
+succeed; never delete an outstanding WAL to make the archive pass. Published
+archives must not contain `-wal`, `-shm`, or `-journal` sidecars, configuration,
+credentials, keys, links, special files, or duplicate members. The optional
+`replay.sqlite.bootstrap-source.json` provenance file may be included.
+
+The restore validates the resolved data mount and runtime paths, checks the
+archive structure, then runs SQLite `quick_check` on the staged databases
+and verifies the testnet historical artifact checksum before stopping services.
+It does not validate every replay reference or protocol state. The publisher
+must restore/start the full archive with the declared compatible image and
+network configuration, check readiness and replay progress, and exercise
+historical RPC and DA artifact reads before publishing it.
 
 **dogecoin** — a single `dogecoin/` root containing
-`dogecoin/{blocks,chainstate}`, each with its LevelDB `CURRENT` file. It must not contain wallets, `*.conf`, `.cookie`, `peers.dat`,
+`dogecoin/blocks/` and `dogecoin/chainstate/`. The required LevelDB
+files are `dogecoin/blocks/index/CURRENT` and
+`dogecoin/chainstate/CURRENT`. It must not contain wallets, `*.conf`, `.cookie`, `peers.dat`,
 `banlist.dat`, or `.lock`.
 
 No archive may contain absolute paths or `..` components.
+
+
+### L1 Interface Publication Metadata
+
+For each new L1 Interface entry, supply `height` (synthetic L1 height),
+`dogecoin_height`, `archive.size_bytes`, `archive.uncompressed_bytes`, and a
+`manifest_url`, even though the generic index schema allows these fields to be
+omitted for older snapshots. The manifest must record the image and source
+revision, network/protocol identity, genesis/protocol-context checksums,
+Dogecoin and synthetic L1 checkpoint heights and hashes, replay progress and
+state hash, historical-bootstrap identity when applicable, and the results of
+checkpoint, database-integrity, and restore/start validation. Publish manifests
+beside archives; configuration and credentials never go inside the data archive.
+
+Components may be published on separate schedules. Do not require matching
+snapshot dates or change Compose images when selecting a snapshot. There is
+no image-set or snapshot-set selection mechanism in the package.
 
 ## Publishing Steps
 

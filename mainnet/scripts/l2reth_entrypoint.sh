@@ -32,22 +32,25 @@ if [ -n "$PEER_LIST" ]; then
 fi
 
 L1_ENDPOINT="${L2RETH_L1_ENDPOINT:-http://l1-interface:8545}"
+L1_READY_URL="${L2RETH_L1_READY_URL:-http://l1-interface:9090/api/v1/health/ready}"
 BLOB_S3_URL="${L2RETH_BLOB_S3_URL:?L2RETH_BLOB_S3_URL must be set (DA blob archive URL)}"
 
 # Must match the cluster's --network-id (NOT the chain id): the eth Status
 # handshake compares network ids and silently drops peers on mismatch.
 NETWORK_ID="${L2RETH_NETWORK_ID:?L2RETH_NETWORK_ID must be set (cluster p2p network id)}"
 
-# Wait for the L1 interface RPC before starting the node. Waiting here instead
-# of in a compose init container keeps the dependency daemon-managed, so
-# startup survives the compose client (e.g. SSH session) going away.
-echo "Waiting for L1 interface at $L1_ENDPOINT"
+# Wait for both RPC availability and replay/database readiness on every start.
+# Keeping this in the entrypoint also covers daemon restarts without Compose.
+# Readiness is not proof that replay has reached a particular chain checkpoint.
+echo "Waiting for L1 interface RPC and readiness"
 until curl -fsS --max-time 2 -H "content-type: application/json" \
     --data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' \
-    "$L1_ENDPOINT" >/dev/null 2>&1; do
+    "$L1_ENDPOINT" >/dev/null 2>&1 && \
+    READY_STATUS=$(curl -fsS --max-time 2 -o /dev/null -w '%{http_code}' \
+      "$L1_READY_URL" 2>/dev/null) && [ "$READY_STATUS" = 200 ]; do
   sleep 5
 done
-echo "L1 interface is ready"
+echo "L1 interface RPC is available and readiness returned HTTP 200"
 
 # The unquoted flag lists below are split on whitespace only; never glob them.
 # The rollup-node flags depend on its version; review them when the mainnet

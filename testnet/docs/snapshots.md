@@ -18,16 +18,19 @@ package update. `scripts/restore-snapshot.sh`:
    `--snapshot-id`.
 2. Checks free disk space, then downloads or resumes the archive under
    `${DATA_ROOT}/.snapshot-cache/<component>` and verifies its SHA-256.
-3. Rejects unsafe archive paths and files that must not be in a snapshot
-   (keys, wallets, configuration, credentials).
+3. Checks archive member paths, required database files, and known forbidden
+   filenames. These checks do not enforce every publishing rule; see
+   [Archive Layout](snapshot-publishing.md#archive-layout).
 4. Extracts into a staging directory, stops the affected services, and
    activates the data. Previous data is kept as a timestamped backup when
    `--force` replaces it.
 5. Starts the stack, unless `--no-start` is given.
 
-The script needs `curl`, `docker`, `sha256sum`, GNU `tar`, and `jq`; without
-`jq` it runs the `ghcr.io/jqlang/jq` image. Archives contain chain data only:
-genesis, configuration, credentials, and peers always come from this package.
+Run the script on a Linux host with Bash, Docker Compose, `curl`, GNU `tar`,
+and GNU coreutils (`sha256sum`, `readlink`, `stat`, and `df`). It uses local
+`jq` when available, otherwise the `ghcr.io/jqlang/jq` image. Published archives
+must contain chain data only. The package supplies genesis, configuration, and
+peer settings; operator credentials come from `.env`.
 
 List the published snapshots, their heights, and whether they match your
 images:
@@ -35,6 +38,26 @@ images:
 ```bash
 ./scripts/restore-snapshot.sh --list
 ```
+
+## Independent Snapshots and Missing Components
+
+Dogecoin, L1 Interface, and L2Reth snapshots may be published independently;
+matching timestamps or a three-component bundle are not required. The script
+selects a compatible snapshot for the requested component only. It does not
+select or change service images: the network's Compose file pins those images.
+`compatible_images` describes a component's database compatibility, not proof
+that an arbitrary combination of three service versions works together.
+
+For a new node, a missing Dogecoin snapshot means syncing from Dogecoin peers
+with the package's unpruned, `txindex=1` configuration. A missing L2Reth snapshot
+means starting from the package genesis and syncing with the configured peers
+and L1/DA sources after upstream initialization. The L1 Interface fallback is
+network-specific, as described below. Existing nodes retain their current data.
+
+Only a successfully fetched index with no compatible entry is an availability
+case. Network, checksum, layout, or compatibility errors must be resolved;
+do not treat a failed restore as permission to erase data or initialize anew.
+No snapshot grouping or automatic image-combination selection is implemented.
 
 ## Restore Order and Service Dependencies
 
@@ -55,9 +78,10 @@ Services depend on each other as **Dogecoin → L1 Interface → L2Reth**.
 - For a new node, restore **Dogecoin, then L1 Interface (when published),
   then L2Reth**, with `--no-start`, and start the stack once at the end.
 - Snapshots of different components may have different ages. A component
-  whose snapshot is newer than its upstream service waits or restarts until
-  the upstream catches up; its data is not affected. The script prints a
-  warning when it can see this.
+  whose snapshot is newer than its upstream needs the upstream to catch up.
+  Use the staged startup below and check recorded checkpoints before starting
+  downstream services. The script reports height differences when metadata and
+  running upstream RPC are available; it does not enforce checkpoint gates.
 
 ## L2Reth
 
@@ -69,9 +93,10 @@ start the stack:
 ```
 
 The archive holds Reth databases and static files under one `l2reth/` root. It
-excludes genesis, `protocol_context.json`, `jwt.hex`, node keys, keystores, and
-`reth.toml`; those come from this package. The first startup may perform
-database recovery; let it finish before checking sync progress.
+must exclude genesis, `protocol_context.json`, `jwt.hex`, node keys, keystores,
+and `reth.toml`. The package supplies chain configuration, not node keys or
+wallets; a chain snapshot does not restore node identity. The first startup
+may perform database recovery; let it finish before checking sync progress.
 
 The script refuses to replace a non-empty data directory unless `--force` is
 given. With `--force`, the old directory is kept next to it, for example
@@ -84,7 +109,12 @@ Use `--no-start` to restore without starting services, then start them with
 <details>
 <summary>Advanced: use a mirror or alternate cache</summary>
 
-`--index-url` (or `SNAPSHOT_INDEX_URL`) points the script at a mirrored index.
+`--index-url` points the script at a mirrored index. Alternatively, export
+`SNAPSHOT_INDEX_URL` in the shell before running the script. Snapshot-specific
+variables (`SNAPSHOT_INDEX_URL`, `SNAPSHOT_CACHE_DIR`, and the legacy
+`L2RETH_SNAPSHOT_*` variables) are read from the process environment, **not
+from `.env`**. Use command-line flags for a one-off override.
+
 To bypass the index, supply both the archive URL and its SHA-256; no image
 compatibility check is made in this mode:
 
@@ -175,15 +205,104 @@ block and transaction indexes.
 
 ## L1 Interface
 
-When L1 Interface snapshots are published, restore them like
-L2Reth; the script stops `l2reth-node` and `l1-interface` first:
+L1 Interface is a separately published component, restored with the same
+script as Dogecoin and L2Reth. It does not require the three snapshots to be
+published together. `--list` shows available entries; an explicit restore
+fails if none matches the pinned L1 Interface image. A failed download or
+checksum check never silently falls back to bootstrap.
 
-```bash
-./scripts/restore-snapshot.sh l1-interface
+### Fixed Data Layout
+
+Only `DATA_ROOT` is configurable. The host directory
+`${DATA_ROOT}/l1-interface` is mounted read-write at `/data`. Database filenames
+and paths inside the container are fixed by the package:
+
+```text
+l1-interface/                               # single archive root
+  l1-interface.sqlite                      # /data/l1-interface.sqlite
+  replay.sqlite                            # /data/replay.sqlite
+  replay.artifacts/                        # /data/replay.artifacts/
+    eth_da_artifacts.sqlite
+    eth_da_artifacts/                       # include even when empty
+    ...                                    # all other replay artifacts
+  l1-interface-historical-artifact.sqlite   # required when configured
 ```
 
-Do not restore a pre-v0.3.0 L1 Interface database; its storage format changed
-in v0.3.0.
+Restore activates the archive root as `${DATA_ROOT}/l1-interface`, without
+adding a second `l1-interface/` directory. Configuration and genesis stay in
+`config/`; they are not snapshot contents. Do not override database paths in
+service env files or add nested mounts under `/data`. Startup rejects custom
+database paths; restore also checks the resolved Compose mounts and paths
+before downloading. An existing deployment with custom paths must reconcile
+its data layout before using these operations; the package does not move it
+automatically.
+
+The databases and artifacts are one unit: never combine files from different
+snapshots. The restore requires Python 3 with SQLite support. It checks archive
+layout, rejects links, special files, duplicate members and SQLite sidecars,
+and runs read-only SQLite `quick_check` in staging before stopping services.
+Publishers must checkpoint all databases before archiving; deleting WAL files
+is not a substitute. Protocol compatibility and the completeness of database
+artifact references also require the publisher's restore/start test with the
+compatible image; these are not proved by `quick_check`.
+
+### With a Compatible Snapshot
+
+For a new node, restore Dogecoin first if desired, then L1 Interface, then
+L2Reth. Keep services stopped while restoring:
+
+```bash
+./scripts/restore-snapshot.sh --list
+# Run only when --list shows a compatible L1 Interface snapshot.
+./scripts/restore-snapshot.sh --no-start l1-interface
+```
+
+For an existing node, the script refuses a non-empty L1 directory unless
+`--force` is supplied. It validates the staged data, stops L2Reth and L1
+Interface, then preserves the old directory as a timestamped backup and
+activates the entire new directory. Dogecoin data is unchanged. Keep the
+backup until startup and syncing are verified.
+
+Start Dogecoin first and let it catch up, then L1 Interface. Check
+`/api/v1/health/ready` and its logs. Before starting an existing or restored
+L2Reth, ensure L1 Interface has reached the upstream checkpoint required by
+that L2 data; compare checkpoint hashes when provided. A lower upstream
+height calls for catch-up, while a hash mismatch needs investigation. A health
+response alone does not establish checkpoint compatibility.
+
+```bash
+docker compose up -d dogecoin-node
+# Wait for Dogecoin RPC warmup and the required chain checkpoint.
+docker compose up -d l1-interface
+# Wait for readiness and the required L1 checkpoint before continuing.
+curl --fail http://localhost:9090/api/v1/health/ready
+docker compose up -d l2reth-node
+```
+
+These are staged operator checks, not an automatic checkpoint gate in the
+restore script. Without `--no-start`, the existing script starts the stack
+immediately after restore. Use `--no-start` when combining snapshots or
+replacing upstream data of an existing L2 node.
+
+### Without a Compatible Snapshot
+
+A fresh testnet node uses the fixed historical bootstrap in
+`l1-interface-init-fetch-sqlite`: the pre-upgrade historical artifact and an
+initial replay DB. This bootstrap is a versioned initialization prerequisite,
+not a periodic runtime snapshot. Start Dogecoin and then L1 Interface as above;
+the initializer downloads and verifies the pinned bootstrap, and L1 Interface
+builds its index and catches up from Dogecoin and Ethereum DA.
+
+After a runtime snapshot restore, the initializer preserves the existing
+`replay.sqlite`. The restored historical artifact must match the package's
+pinned bootstrap SHA-256; the restore checks it before activation. An existing
+`l1-interface.sqlite` without `replay.sqlite` is an incomplete data set: the
+initializer refuses to insert a fresh bootstrap DB into it. Restore a complete
+L1 snapshot or deliberately rebuild using the procedure below.
+
+Never enable fresh-genesis initialization for this upgraded testnet or reuse
+a pre-v0.3.0 L1 Interface database. Existing healthy data should simply continue
+syncing; absence of a published snapshot is not a reason to reset it.
 
 ### Rebuild from the Bootstrap Data
 

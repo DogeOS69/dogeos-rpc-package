@@ -5,6 +5,29 @@ changelog in `mainnet/`.
 
 ## Unreleased
 
+L2Reth now waits for L1 RPC availability and HTTP 200 from
+`/api/v1/health/ready` on every start, including daemon restarts. If using a
+custom L1 endpoint, also set `L2RETH_L1_READY_URL` in `config/l2reth.env`.
+Restart an existing L2Reth container with
+`docker compose up -d --force-recreate l2reth-node` to apply this startup check;
+this briefly interrupts L2 RPC.
+
+L1 Interface snapshots now require the complete fixed `/data` layout: both
+service databases, `replay.artifacts/` (including its DA metadata DB and file
+directory), and the historical artifact when configured. Restore validates
+paths, archive structure, SQLite integrity, and the testnet historical checksum
+before stopping services. Old custom database-path overrides are rejected;
+reconcile such deployments before upgrading. Components can be published
+independently; service images remain pinned by Compose. See
+[Snapshots and Recovery](docs/snapshots.md#l1-interface) for snapshot and
+no-snapshot initialization paths.
+
+L2Reth now defaults to a 16 GB memory cap (`L2RETH_MEM_LIMIT=16g`). Review
+this setting in `.env` for your host's memory and RPC workload, leaving room
+for the other services and the OS. An existing explicit override is preserved.
+Apply it with `docker compose up -d l2reth-node` in this network directory;
+this recreates L2Reth when its limit changes and briefly interrupts L2 RPC.
+
 ### Testnet: what to do
 
 Testnet now lives in the `testnet/` directory and runs from there. Move your

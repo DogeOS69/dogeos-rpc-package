@@ -66,8 +66,8 @@ services:
     # 70 when the L1 signer rotates and must be restarted to pick it up.
     restart: unless-stopped
     mem_reservation: 1g
-    mem_limit: ${L2RETH_MEM_LIMIT:-8g}
-    memswap_limit: ${L2RETH_MEM_LIMIT:-8g}
+    mem_limit: ${L2RETH_MEM_LIMIT:-16g}
+    memswap_limit: ${L2RETH_MEM_LIMIT:-16g}
     oom_score_adj: -100
     env_file:
       - ./config/l2reth.env
@@ -212,6 +212,13 @@ services:
 
           printf '%s' "$$checksum"
         }
+
+        # An existing index DB without its replay DB is an incomplete data set,
+        # not a fresh node. Do not silently combine it with bootstrap state.
+        if [ -e /data/l1-interface.sqlite ] && [ ! -f "$$DOGEOS_L1_INTERFACE_REPLAY_READ__SQLITE_PATH" ]; then
+          echo "Incomplete L1 data: replay.sqlite is missing. Restore the complete L1 snapshot or use the documented rebuild procedure." >&2
+          exit 1
+        fi
 
         # --- Task 1: Artifact Download ---
         DEST_PATH="$$DOGEOS_L1_INTERFACE_EVENT_PLANE_ARTIFACT_PATH"

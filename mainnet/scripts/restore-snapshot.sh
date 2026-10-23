@@ -166,6 +166,15 @@ DATA_ROOT="$(compose_json | config_data_root)"
 [ -n "${DATA_ROOT:-}" ] || fail "cannot determine DATA_ROOT from the Compose configuration"
 echo "Using env file: $ENV_FILE_ABS (NETWORK=$NETWORK, DATA_ROOT=$DATA_ROOT)"
 
+# Validate the resolved mount and env (including legacy overrides) before
+# downloading anything. The result pins the testnet historical artifact hash.
+L1_HISTORICAL=none
+if [ "$COMPONENT" = l1-interface ]; then
+  require_command python3
+  L1_HISTORICAL="$(compose_json | python3 "$NETWORK_DIR/scripts/validate-l1-snapshot.py" \
+    config --network "$NETWORK")" || fail "L1 Interface data layout does not match this package"
+fi
+
 # Data must not live anywhere inside the repository checkout.
 REPO_ROOT_ABS="$(readlink -m "$NETWORK_DIR/..")"
 
@@ -402,6 +411,8 @@ case "$COMPONENT" in
     ;;
   l1-interface)
     TARGET_DIR="$DATA_ROOT_ABS/l1-interface"
+    [ ! -L "$TARGET_DIR" ] || fail "refusing to replace a symlink: $TARGET_DIR"
+    [ ! -e "$TARGET_DIR" ] || [ -d "$TARGET_DIR" ] || fail "not a directory: $TARGET_DIR"
     ARCHIVE_ROOT="l1-interface"
     STRIP_COMPONENTS=0
     ;;
@@ -566,6 +577,8 @@ case "$COMPONENT" in
     REQUIRED_FILES="db/mdbx.dat db/scroll.db"
     ;;
   l1-interface)
+    python3 "$NETWORK_DIR/scripts/validate-l1-snapshot.py" archive "$ARCHIVE_PATH" \
+      --network "$NETWORK" --historical "$L1_HISTORICAL" || fail "invalid L1 Interface snapshot layout"
     if grep -Eq '(^|/)[^/]*\.(env|toml|conf)$' "$LISTING_PATH"; then
       fail "snapshot contains a configuration or environment file"
     fi
@@ -613,6 +626,11 @@ fi
 for f in $REQUIRED_FILES; do
   [ -f "$EXTRACTED/$f" ] || fail "extracted snapshot is missing $f"
 done
+
+if [ "$COMPONENT" = l1-interface ]; then
+  python3 "$NETWORK_DIR/scripts/validate-l1-snapshot.py" extracted "$EXTRACTED" \
+    --network "$NETWORK" --historical "$L1_HISTORICAL" || fail "invalid L1 Interface snapshot data"
+fi
 
 stop_services
 

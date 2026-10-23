@@ -41,7 +41,8 @@ git ls-files -z -co --exclude-standard "$NETWORK" | tar --null -T - -cf - | tar 
 for f in docker-compose.yml env.example README.md CHANGELOG.md \
     scripts/dogecoin_entrypoint.sh scripts/l1-interface_entrypoint.sh \
     scripts/l2reth_entrypoint.sh scripts/restore-snapshot.sh \
-    scripts/reset-chain-data.sh scripts/lib/env.sh; do
+    scripts/reset-chain-data.sh scripts/lib/env.sh scripts/validate-l1-snapshot.py \
+    tests/test_l1_snapshot.py tests/test_l2reth_startup.py; do
   [ -e "$copy/$f" ] || failed "$NETWORK/$f is missing"
 done
 for f in dogecoin.conf l2reth.env l2reth-genesis.json protocol_context.json l1-interface.env; do
@@ -51,6 +52,8 @@ sed -e "s|^DATA_ROOT=.*|DATA_ROOT=$WORK_DIR/data|" \
     -e "s|^DOGECOIN_RPC_PASSWORD=\$|DOGECOIN_RPC_PASSWORD=check|" \
     "$copy/env.example" >"$copy/.env"
 if config="$(cd "$copy" && docker compose config --format json)"; then
+  printf '%s' "$config" | python3 "$NETWORK/scripts/validate-l1-snapshot.py" \
+    config --network "$NETWORK" >/dev/null || failed "L1 Interface fixed data layout"
   printf '%s' "$config" | python3 -c '
 import json, sys
 network = sys.argv[1]
@@ -76,6 +79,9 @@ if problems:
 else
   failed "docker compose config"
 fi
+
+step "Snapshot restore and L2Reth startup tests"
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$NETWORK/tests" -v || failed "Offline tests"
 
 step "Markdown links"
 python3 - "$NETWORK" <<'EOF' || failed "Markdown links"

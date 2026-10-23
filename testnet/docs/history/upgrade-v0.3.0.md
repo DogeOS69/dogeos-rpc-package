@@ -3,8 +3,8 @@
 > [!NOTE]
 > Archived guide for nodes still on the v0.2.x package. It uses the file
 > layout of the v0.3.0 release, which ran from the repository root with
-> `.env.testnet`: where it says to pull the new code, check out commit
-> `9df76ed` (the last release in that layout) instead. After completing it,
+> `.env.testnet`. Step 2 checks out commit `9df76ed`, the last release in
+> that layout. After completing this guide,
 > update to the current release and follow the
 > [changelog](../../CHANGELOG.md) to move `.env.testnet` to `testnet/.env`.
 
@@ -42,11 +42,11 @@ must stay in place.
 
 ## 2. Update the Code and Prepare the Env File
 
-Pull the merged release:
+Check out the archived release used by this guide:
 
 ```bash
-git switch main
-git pull --ff-only origin main
+git fetch origin
+git switch --detach 9df76ed
 ```
 
 If Git reports local changes or conflicts, preserve and reconcile your custom
@@ -91,7 +91,7 @@ docker volume inspect dogeos-rpc-package_dogecoin_data
 
 ```bash
 docker compose --env-file .env.testnet pull
-./scripts/restore-snapshot.sh --no-start l2reth .env.testnet
+./scripts/restore-l2reth-snapshot.sh --no-start .env.testnet
 ```
 
 The script downloads, verifies, and extracts the snapshot into the new directory.

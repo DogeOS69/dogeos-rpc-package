@@ -71,8 +71,8 @@ services:
     # 70 when the L1 signer rotates and must be restarted to pick it up.
     restart: unless-stopped
     mem_reservation: 1g
-    mem_limit: ${L2RETH_MEM_LIMIT:-8g}
-    memswap_limit: ${L2RETH_MEM_LIMIT:-8g}
+    mem_limit: ${L2RETH_MEM_LIMIT:-16g}
+    memswap_limit: ${L2RETH_MEM_LIMIT:-16g}
     oom_score_adj: -100
     env_file:
       - ./config/l2reth.env

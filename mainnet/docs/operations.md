@@ -6,9 +6,11 @@ released yet (see [README.md](../README.md)). Run every command inside the
 
 ## Configuration
 
-`mainnet/.env` is the only file you edit. Create it from `env.example` in the
-same directory; that template lists every setting with its default. Keep it
-private (`chmod 600 .env`) and in your configuration backups. Everything else
+Keep persistent service settings in `mainnet/.env`, created from
+`env.example` in the same directory. The template lists service settings and
+their defaults. Snapshot download options use command-line flags or exported
+shell variables, as described in [Snapshots and Recovery](snapshots.md). Keep
+`.env` private (`chmod 600 .env`) and in your configuration backups. Everything else
 in `mainnet/` (`docker-compose.yml`, `config/`, `scripts/`, `docs/`) is
 maintained by this package.
 
@@ -24,14 +26,45 @@ docker compose up -d
 
 Compose recreates only the services whose configuration changed.
 
+### L1 Interface Data Paths
+
+`DATA_ROOT` selects the host disk; L1 Interface always uses
+`${DATA_ROOT}/l1-interface` mounted at `/data`. Its database paths are fixed:
+`/data/l1-interface.sqlite`, `/data/replay.sqlite`, and the derived
+`/data/replay.artifacts/` tree. The historical artifact, when configured, is
+`/data/l1-interface-historical-artifact.sqlite`. Custom database paths are
+rejected at startup and snapshot restore checks the resolved mounts too.
+Remove path overrides from legacy env files only after reconciling the data
+with this layout; no automatic migration is performed. See
+[Fixed Data Layout](snapshots.md#fixed-data-layout).
+
+### L2Reth Memory Limit
+
+`L2RETH_MEM_LIMIT` defaults to `16g` (16 GB). Set it in `.env` according to
+your machine's available memory and RPC workload, especially tracing traffic.
+Leave memory for Dogecoin, L1 Interface, the operating system, and other
+services; smaller hosts need lower limits. This is a cap, not a reservation.
+Swap is disabled for the container, so exceeding the cap can cause an OOM kill.
+Apply changes with `docker compose up -d l2reth-node`.
+
 ### Dogecoin RPC Credentials
 
 `DOGECOIN_RPC_USER` and `DOGECOIN_RPC_PASSWORD` are passed to `dogecoin-node`
 and `l1-interface` as Docker secrets; do not put them in `dogecoin.conf`.
 Supported characters are letters, digits, and `._~:@%+=,-`. The template
 leaves the password empty, and Dogecoin refuses to start until it is set.
-Changing them recreates both services, and every external consumer of the
-Dogecoin RPC must update.
+Changing secret values alone does not change the Compose service configuration
+hash, so `docker compose up -d` may keep the existing containers and credentials.
+After updating `.env`, explicitly recreate both consumers during a maintenance
+window, stopping L2Reth while its upstream services restart:
+
+```bash
+docker compose stop l2reth-node l1-interface dogecoin-node
+docker compose up -d --force-recreate dogecoin-node l1-interface
+docker compose up -d l2reth-node
+```
+
+Every external consumer of the Dogecoin RPC must also update its credentials.
 
 ### Custom Ethereum RPC
 
@@ -163,6 +196,16 @@ curl --fail \
 `docker compose ps` shows `l1-interface` as `healthy` when
 `/api/v1/health/ready` succeeds.
 
+On every container start or restart, L2Reth waits for both L1 JSON-RPC
+availability and HTTP 200 from that readiness endpoint before launching
+`rollup-node`. The default readiness URL inside the Compose network is
+`http://l1-interface:9090/api/v1/health/ready`. If using a different L1
+Interface endpoint, set `L2RETH_L1_READY_URL` alongside `L2RETH_L1_ENDPOINT`
+in `config/l2reth.env` so both checks target the same instance. These checks
+cover startup RPC availability and local database/replay health; they do not
+prove Dogecoin has finished initial sync or replay has reached a specific
+chain checkpoint.
+
 ### Changing Data
 
 Services depend on each other as Dogecoin → L1 Interface → L2Reth. Before
@@ -194,8 +237,10 @@ Shutdown keeps all chain data; it lives under `DATA_ROOT`.
   permit Ethereum mainnet and `eth_getBlockByHash`. Set `DOGEOS_ETHEREUM_RPC_URL` in
   `.env` to a provider that does and run `docker compose up -d`.
 - **L2Reth stays at `Waiting for L1 interface`:** the entrypoint waits for an
-  `eth_chainId` response, which L1 Interface serves only after its startup
-  sync. Check L1 Interface health and logs.
+  `eth_chainId` HTTP success and HTTP 200 from `/api/v1/health/ready` in the
+  same retry cycle. Connection failures, timeouts, and other readiness status
+  codes keep L2Reth waiting; checks repeat every 5 seconds. Check L1 Interface
+  health and logs.
 - **L2Reth logs repeated `failed to fetch ... block` errors:** its data is
   ahead of L1 Interface, for example after restoring a newer L2Reth snapshot.
   It continues once L1 Interface catches up.
@@ -209,8 +254,10 @@ Shutdown keeps all chain data; it lives under `DATA_ROOT`.
   peers.
 - **An env edit has no effect:** `docker compose restart` keeps the old
   environment; use `up -d --force-recreate` for the affected service.
-- **Snapshot checksum fails:** do not bypass the check. The script keeps the
-  bad archive with an `.invalid-<timestamp>` suffix and downloads a fresh copy.
+- **Snapshot checksum fails:** the script exits without extracting the newly
+  downloaded archive. Run the restore command again: on that next run it moves
+  the bad cached archive to an `.invalid-<timestamp>` filename and downloads a
+  fresh copy. Do not bypass the check.
 
 ## Data Storage
 
