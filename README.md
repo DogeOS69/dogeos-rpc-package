@@ -53,11 +53,20 @@ sequencer signer rotates on L1, the node logs
 L1. Docker clears the exit code once the container runs again, so the log line
 is the record of a rotation restart.
 
-The same policy brings a running L2Reth back after a host or Docker restart; a
-container stopped with `docker compose stop` or `down` stays down. An existing
-container keeps its old restart policy until it is recreated with
-`docker compose --env-file .env.testnet up -d --no-deps l2reth-node`;
-`docker compose restart` does not apply it.
+The node reads the signer from L1 Interface about every 12 seconds and exits
+only after three reads in a row return the same new signer, roughly 25 to 40
+seconds after L1 Interface first returns it. Failed reads never cause an exit:
+while L1 Interface is unreachable, L2Reth keeps running with the old signer and
+logs a warning after every 25 failed reads in a row. The check starts from its
+first successful read after startup, so a rotation that lands between the
+node's startup and that read is missed; restarting L2Reth picks it up.
+
+The same policy brings a running L2Reth back after a host or Docker restart. A
+container stopped with `docker compose stop` stays stopped, and
+`docker compose down` removes it. An existing container keeps its old restart
+policy until it is recreated with
+`docker compose --env-file .env.testnet up -d --no-deps l2reth-node`, which
+briefly interrupts L2 RPC; `docker compose restart` does not apply it.
 
 ## Hardware Requirements
 
@@ -113,6 +122,17 @@ any custom names; see the [upgrade guide](upgrade_v0.3.0.md).
 on your mounted data disk, outside the repository. Verify the disk mount
 before starting; otherwise chain data can fill the host's root disk. For
 example, use `findmnt -T /data` if your disk is mounted at `/data`.
+
+Docker starts L2Reth and L1 Interface again when the host boots
+(`restart: unless-stopped`), so the data disk must be mounted before Docker
+starts; otherwise they can start on an empty directory on the root disk. Mount
+the disk at boot (for example through `/etc/fstab`) and make Docker wait for it
+with `sudo systemctl edit docker.service`, using your disk's mount point:
+
+```ini
+[Unit]
+RequiresMountsFor=/data
+```
 
 The restore script and Compose create their data directories as needed.
 `DATA_ROOT` controls L2Reth and L1 Interface storage; Dogecoin continues to use
