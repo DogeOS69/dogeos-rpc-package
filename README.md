@@ -46,11 +46,14 @@ L2Reth and L1 Interface store their data under the `DATA_ROOT` you configure.
 The package includes the testnet network settings and peer addresses.
 
 L2Reth runs as a follower with `--consensus.exit-on-signer-rotation`. When the
-sequencer signer rotates on L1, the node shuts down with exit code 70, Docker
-restarts it (`restart: unless-stopped`), and the restarted node reads the new
-signer from L1. The same policy brings L2Reth back after a host or Docker
-restart. An existing container keeps its old restart policy until it is
-recreated with `docker compose --env-file .env.testnet up -d l2reth-node`;
+sequencer signer rotates on L1, the node logs `authorized signer rotated on L1`
+and shuts down with exit code 70, Docker restarts it
+(`restart: unless-stopped`), and the restarted node reads the new signer from
+L1. Docker clears the exit code once the container runs again, so that log line
+is the record of a rotation restart. The same policy brings L2Reth back after a
+host or Docker restart. An existing container keeps its old restart policy
+until it is recreated with
+`docker compose --env-file .env.testnet up -d --no-deps l2reth-node`;
 `docker compose restart` does not apply it.
 
 ## Hardware Requirements
