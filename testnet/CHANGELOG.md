@@ -5,6 +5,12 @@ changelog in `mainnet/`.
 
 ## Unreleased
 
+The deployment guide now separates fresh sync, grouped restore, startup progress
+and RPC verification. `snapshot-group.py list` fetches pinned manifests and
+shows components, heights, sizes and compatible images. With `.env` present
+(or `--env-file`), it checks local identity/image/upstream compatibility without
+starting services or downloading archives; otherwise it reports `NOT CHECKED`.
+
 Snapshot groups now use a schema-2 catalog and immutable manifests with explicit
 missing components, archive checksums, release identity and dependency
 checkpoints. Use `python3 scripts/snapshot-group.py list`, then `restore GROUP_ID`.
@@ -22,9 +28,16 @@ members. See [Snapshots and Recovery](docs/snapshots.md).
 L2Reth now waits for L1 RPC availability and HTTP 200 from
 `/api/v1/health/ready` on every start, including daemon restarts. If using a
 custom L1 endpoint, also set `L2RETH_L1_READY_URL` in `config/l2reth.env`.
-Restart an existing L2Reth container with
-`docker compose up -d --force-recreate l2reth-node` to apply this startup check;
-this briefly interrupts L2 RPC.
+Apply this entrypoint change during a maintenance window:
+
+```bash
+docker compose stop l2reth-node l1-interface dogecoin-node
+docker compose create --force-recreate l2reth-node
+python3 scripts/snapshot-group.py start
+```
+
+`create` refreshes the container without starting it; the helper then performs
+upstream checks. L2 RPC remains unavailable until startup and catch-up finish.
 
 L1 Interface snapshots now require the complete fixed `/data` layout: both
 service databases, `replay.artifacts/` (including its DA metadata DB and file
@@ -39,8 +52,8 @@ no-snapshot initialization paths.
 L2Reth now defaults to a 16 GB memory cap (`L2RETH_MEM_LIMIT=16g`). Review
 this setting in `.env` for your host's memory and RPC workload, leaving room
 for the other services and the OS. An existing explicit override is preserved.
-Apply it with `docker compose up -d l2reth-node` in this network directory;
-this recreates L2Reth when its limit changes and briefly interrupts L2 RPC.
+Apply it with `python3 scripts/snapshot-group.py start` during a maintenance
+window. This applies changed limits and stops L1/L2 while upstream checks run.
 
 ### Testnet: what to do
 
@@ -52,22 +65,24 @@ RPC credentials stay the same, and no data is migrated:
 git pull
 mv .env.testnet testnet/.env
 cd testnet
-docker compose up -d
+python3 scripts/snapshot-group.py start
 ```
 
 Run all later commands inside `testnet/`. **Update anything that runs Compose
 from the repository root** — cron jobs, systemd units, deploy or monitoring
 scripts: after the pull, `docker compose --env-file .env.testnet ...` there
 fails with "no configuration file provided". Change them to run in `testnet/`
-without `--env-file` (for example `cd /path/to/repo/testnet && docker compose
-up -d`).
+without `--env-file`. Startup jobs should run
+`cd /path/to/repo/testnet && python3 scripts/snapshot-group.py start`, allowing
+the foreground process enough time to finish upstream synchronization. Do not
+schedule it as a periodic health check: it stops L1/L2 on every invocation.
 
 Compose recognizes the existing
 containers (same project name) and recreates them once for the new log
 rotation, restart policy, configuration file locations, and healthcheck.
 Chain data is kept. Dogecoin reloads its block index, which takes several
-minutes; L1 Interface retries until it is ready, and L2 RPC is briefly
-unavailable. Verify with [Verify Services](README.md#5-verify-services).
+minutes or longer; the helper waits before starting L1 and L2. L2 RPC is
+unavailable throughout this maintenance and any subsequent catch-up. Verify with [Verify Services](README.md#5-verify-services).
 
 A `.env` in the repository root left by a pre-v0.3.0 release is no longer used
 and can be removed.
@@ -87,8 +102,11 @@ Recommended follow-ups:
 
 - Set `INTERNAL_BIND_ADDR=127.0.0.1` unless another host needs the Dogecoin
   RPC or L1 Interface ports.
-- Snapshots are restored with `./scripts/restore-snapshot.sh <component>`
-  inside `testnet/`; `scripts/restore-l2reth-snapshot.sh` is gone.
+- Restore a selected group with `python3 scripts/snapshot-group.py restore GROUP_ID --no-start`,
+  then run `python3 scripts/snapshot-group.py start`. The component script
+  `restore-snapshot.sh` is only for the explicit legacy/direct-archive workflows
+  in [Snapshots and Recovery](docs/snapshots.md#legacy-component-restore);
+  `scripts/restore-l2reth-snapshot.sh` is gone.
 - Documentation and the changelog are now in `testnet/` as well; the root
   directory only has a short README.
 
@@ -106,12 +124,10 @@ Recommended follow-ups:
   `docker-compose.yml`, and the Dogecoin RPC host port no longer has to match
   `dogecoin.conf`. `DOGECOIN_P2P_PORT` is no longer used: P2P stays on the
   port Dogecoin advertises. `NETWORK` is no longer needed.
-- **Snapshots.** `testnet/scripts/restore-snapshot.sh` restores Dogecoin, L1
-  Interface, and L2Reth snapshots listed in a per-network index on S3, so new
-  snapshots need no package release. It selects the newest snapshot compatible
-  with testnet's images, stops the restored service and every service that
-  depends on it before activating data, and warns when a snapshot is ahead of
-  its upstream service. See [Snapshots and Recovery](docs/snapshots.md).
+- **Snapshots.** `scripts/snapshot-group.py` selects one schema-2 group, pins
+  its component archives, checks compatibility and restores with dependency
+  checkpoints. Use it for current deployments. The component script remains
+  an internal restore mechanism and a documented legacy recovery tool.
 - **L2Reth RPC options** for RPC providers: `L2RETH_HTTP_API`,
   `L2RETH_WS_API`, and `L2RETH_EXTRA_ARGS`; Prometheus metrics on
   `127.0.0.1:${L2_METRICS_PORT}` (default `6060`).
@@ -127,8 +143,9 @@ Recommended follow-ups:
   (`L2GETH_PEER_LIST` is still accepted).
 
 The entries below predate the `testnet/` directory: their commands run in the
-repository root with `--env-file .env.testnet`. On the current layout, run the
-same `docker compose` commands in `testnet/` without `--env-file`.
+repository root with `--env-file .env.testnet`. These are historical release instructions, not the current startup/recovery
+procedure. On the current layout use the Unreleased instructions above and
+[Snapshots and Recovery](docs/snapshots.md).
 
 ## Testnet: L2Reth v0.3.0-beta.1c (Galileo, Galileo V2, and Tsuki)
 

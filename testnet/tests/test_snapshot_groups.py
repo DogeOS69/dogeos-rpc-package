@@ -1,6 +1,8 @@
 """Group pinning, missing components, startup ordering and failure boundaries."""
 import copy
+from contextlib import redirect_stdout
 import importlib.util
+import io
 import json
 import os
 import tarfile
@@ -71,6 +73,74 @@ class GroupTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.path = Path(tmp.name)
         self.stack = FakeStack(self.path)
+
+    def test_list_fetches_pinned_manifests_without_archives_or_stack_changes(self):
+        group = manifest()
+        group["components"]["dogecoin"] = None
+        body = json.dumps(group)
+        index = {"schema_version": 2, "network": ROOT.name,
+                 "published_at": group["published_at"], "groups": [
+                     {"id": "one", "published_at": group["published_at"], "manifest": {
+                         "url": "https://example.invalid/one.json",
+                         "sha256": groups.hashlib.sha256(body.encode()).hexdigest()}}]}
+        urls = []
+        def download(url, path):
+            urls.append(url)
+            value = index if url.endswith("index.json") else group
+            path.write_text(json.dumps(value))
+            return value
+        output = io.StringIO()
+        with patch.object(groups, "download_json", download), redirect_stdout(output):
+            groups.load_group("https://example.invalid/index.json", None, self.path, self.stack)
+        self.assertEqual(urls, ["https://example.invalid/index.json", "https://example.invalid/one.json"])
+        self.assertEqual(self.stack.calls, [])
+        self.assertFalse(self.stack.state.exists())
+        for text in ("Compatibility: MATCH", "dogecoin: absent", "l2reth: height=10",
+                     "captured=2026-10-23T01:00:00Z", "Total: download=200 B extracted=400 B",
+                     "requires l1-interface: height=19", "compatible images: image:1"):
+            self.assertIn(text, output.getvalue())
+        index["groups"][0]["manifest"]["sha256"] = "0" * 64
+        with patch.object(groups, "download_json", download), self.assertRaisesRegex(ValueError, "checksum"):
+            groups.load_group("https://example.invalid/index.json", None, self.path, self.stack)
+
+    def test_list_reports_unknown_and_incompatible_configuration(self):
+        group = manifest()
+        output = io.StringIO()
+        with redirect_stdout(output):
+            groups.print_group(group)
+        self.assertIn("Compatibility: NOT CHECKED", output.getvalue())
+        for reason in ("image", "identity", "external"):
+            with self.subTest(reason=reason):
+                item = copy.deepcopy(group)
+                if reason == "image":
+                    item["components"]["l2reth"]["compatible_images"] = ["image:2"]
+                elif reason == "identity":
+                    item["identity"]["genesis_sha256"] = "0" * 64
+                else:
+                    self.stack.external_doge = "http://external:1234"
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    groups.print_group(item, self.stack)
+                self.assertIn("Compatibility: INCOMPATIBLE", output.getvalue())
+                self.assertNotIn("Compatibility: MATCH", output.getvalue())
+
+    def test_list_cli_checks_local_config_only_when_env_supplied_or_present(self):
+        with patch.object(groups, "ROOT", self.path), patch.object(groups, "load_group") as load, \
+                patch.object(groups, "Stack", return_value=self.stack) as stack, \
+                patch.object(groups.sys, "argv", ["snapshot-group.py", "list"]):
+            groups.main()
+            stack.assert_not_called()
+            self.assertIsNone(load.call_args.args[3])
+            (self.path / ".env").touch()
+            groups.main()
+            stack.assert_called_once_with(None)
+            self.assertIs(load.call_args.args[3], self.stack)
+        with patch.object(groups, "load_group") as load, \
+                patch.object(groups, "Stack", return_value=self.stack) as stack, \
+                patch.object(groups.sys, "argv", ["snapshot-group.py", "list", "--env-file", "custom.env"]):
+            groups.main()
+            stack.assert_called_once_with("custom.env")
+            self.assertIs(load.call_args.args[3], self.stack)
 
     def test_full_partial_and_empty_groups(self):
         group = manifest()

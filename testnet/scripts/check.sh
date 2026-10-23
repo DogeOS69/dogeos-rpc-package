@@ -42,9 +42,9 @@ for f in docker-compose.yml env.example README.md CHANGELOG.md \
     scripts/dogecoin_entrypoint.sh scripts/l1-interface_entrypoint.sh \
     scripts/l2reth_entrypoint.sh scripts/restore-snapshot.sh \
     scripts/reset-chain-data.sh scripts/lib/env.sh scripts/validate-l1-snapshot.py \
-    scripts/snapshot-group.py scripts/validate-data-archive.py \
+    scripts/snapshot-group.py scripts/validate-data-archive.py scripts/verify-rpc.py \
     tests/test_l1_snapshot.py tests/test_l2reth_startup.py \
-    tests/test_snapshot_groups.py tests/test_data_archive.py docs/group-manifest.example.json; do
+    tests/test_snapshot_groups.py tests/test_data_archive.py tests/test_verify_rpc.py docs/group-manifest.example.json; do
   [ -e "$copy/$f" ] || failed "$NETWORK/$f is missing"
 done
 for f in dogecoin.conf l2reth.env l2reth-genesis.json protocol_context.json l1-interface.env; do

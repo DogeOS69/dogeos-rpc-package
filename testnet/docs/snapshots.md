@@ -17,6 +17,19 @@ python3 scripts/snapshot-group.py restore GROUP_ID --no-start
 python3 scripts/snapshot-group.py start
 ```
 
+`list` fetches the catalog and its checksum-verified group manifests, but no
+component archives. It shows present/absent components, capture times,
+component checkpoint heights, archive sizes and compatible images. Heights
+belong to each service's own chain (L1 Interface uses its synthetic chain).
+With `.env` (or `--env-file PATH`), it also checks the resolved package identity,
+images and upstream configuration: `MATCH` or `INCOMPATIBLE` with a reason.
+Without `.env`, it reports `NOT CHECKED`; configure the node and list again
+before choosing. Invalid local configuration is an error. Listing never starts
+or stops services or changes their data. `MATCH` does not check existing data,
+free space or runtime readiness; restore and startup still enforce their checks.
+Totals are archive metadata, not a complete disk-space estimate: allow room for
+retained backups, caches and chain growth on each relevant filesystem.
+
 `latest` resolves one group once. It does not select a separate latest snapshot
 for each service. The chosen manifest is checked against the catalog checksum,
 then against the package genesis/protocol-context files and configured images.

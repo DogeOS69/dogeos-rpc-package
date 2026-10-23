@@ -151,7 +151,49 @@ def download_json(url, path):
     return json.loads(path.read_text())
 
 
-def load_group(index_url, group_id, directory):
+def fetch_manifest(selected, directory):
+    group_path = directory / "group.json"
+    group = download_json(selected["manifest"]["url"], group_path)
+    require(sha(group_path) == selected["manifest"]["sha256"], "group manifest checksum mismatch")
+    validate_manifest(group, NETWORK)
+    require(group["group_id"] == selected["id"] and group["published_at"] == selected["published_at"],
+            "group descriptor does not match manifest")
+    return group
+
+
+def size_label(value):
+    return f"{value:,} B" if value < 1024 ** 2 else f"{value / 1024 ** 3:.3f} GiB"
+
+
+def print_group(group, stack=None):
+    print(f"\n{group['group_id']}  published={group['published_at']}")
+    if stack is None:
+        print("  Compatibility: NOT CHECKED (create .env, then run list again)")
+    else:
+        try:
+            stack.preflight(group)
+        except ValueError as error:
+            print("  Compatibility: INCOMPATIBLE - " + str(error))
+        else:
+            print("  Compatibility: MATCH (release identity, images and upstream configuration)")
+    download_size = extracted_size = 0
+    for name in COMPONENTS:
+        entry = group["components"][name]
+        if entry is None:
+            print(f"  {name}: absent; keep eligible local data or initialize/sync")
+            continue
+        archive = entry["archive"]
+        download_size += archive["size_bytes"]
+        extracted_size += archive["uncompressed_bytes"]
+        print(f"  {name}: height={entry['checkpoint']['height']} captured={entry['captured_at']}")
+        print(f"    download={size_label(archive['size_bytes'])} extracted={size_label(archive['uncompressed_bytes'])}")
+        print("    compatible images: " + ", ".join(entry["compatible_images"]))
+        for upstream, point in entry["requires"].items():
+            print(f"    requires {upstream}: height={point['height']} hash={point['hash']}")
+    print(f"  Total: download={size_label(download_size)} extracted={size_label(extracted_size)}")
+
+
+def load_group(index_url, group_id, directory, stack=None):
     path = directory / "index.json"
     index = download_json(index_url, path)
     signers = ROOT / "snapshots/allowed_signers"
@@ -163,19 +205,20 @@ def load_group(index_url, group_id, directory):
                             "-n", "dogeos-snapshot-index", "-s", str(path) + ".sig"], stdin=stream, check=True)
     groups = validate_index(index, NETWORK)
     if group_id is None:
-        for item in sorted(groups, key=lambda x: timestamp(x["published_at"]), reverse=True):
-            print(item["id"], item["published_at"], item["manifest"]["sha256"])
+        manifests = [fetch_manifest(item, directory) for item in
+                     sorted(groups, key=lambda x: timestamp(x["published_at"]), reverse=True)]
+        if not manifests:
+            print("No snapshot groups published; use start for a node without snapshots.")
+        for group in manifests:
+            print_group(group, stack)
+        if manifests:
+            print("\nHeights belong to each component's chain (L1 Interface uses its synthetic chain).")
+            print("MATCH does not check existing data, free disk space or live node readiness; restore checks still apply.")
         return None
     candidates = groups if group_id == "latest" else [item for item in groups if item["id"] == group_id]
     require(candidates, "no such group; use start for a node without snapshots")
     selected = max(candidates, key=lambda x: timestamp(x["published_at"]))
-    group_path = directory / "group.json"
-    group = download_json(selected["manifest"]["url"], group_path)
-    require(sha(group_path) == selected["manifest"]["sha256"], "group manifest checksum mismatch")
-    validate_manifest(group, NETWORK)
-    require(group["group_id"] == selected["id"] and group["published_at"] == selected["published_at"],
-            "group descriptor does not match manifest")
-    return group
+    return fetch_manifest(selected, directory)
 
 
 class Stack:
@@ -479,8 +522,12 @@ def main():
         print("Snapshot metadata valid")
         return
     if args.action == "list":
+        # Listing only reads configuration and metadata; it never creates a
+        # data directory, locks the stack, stops containers or downloads archives.
+        env_file = Path(args.env_file or ROOT / ".env")
+        stack = Stack(args.env_file) if args.env_file or env_file.exists() else None
         with tempfile.TemporaryDirectory() as tmp:
-            load_group(args.index_url, None, Path(tmp))
+            load_group(args.index_url, None, Path(tmp), stack)
         return
     stack = Stack(args.env_file)
     stack.data.mkdir(parents=True, exist_ok=True)

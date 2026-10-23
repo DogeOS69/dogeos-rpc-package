@@ -5,6 +5,12 @@ changelog in `testnet/`.
 
 ## Unreleased
 
+The deployment guide now separates fresh sync, grouped restore, startup progress
+and RPC verification. `snapshot-group.py list` fetches pinned manifests and
+shows components, heights, sizes and compatible images. With `.env` present
+(or `--env-file`), it checks local identity/image/upstream compatibility without
+starting services or downloading archives; otherwise it reports `NOT CHECKED`.
+
 Snapshot groups now use a schema-2 catalog and immutable manifests with explicit
 missing components, archive checksums, release identity and dependency
 checkpoints. Use `python3 scripts/snapshot-group.py list`, then `restore GROUP_ID`.
@@ -22,9 +28,16 @@ members. See [Snapshots and Recovery](docs/snapshots.md).
 L2Reth now waits for L1 RPC availability and HTTP 200 from
 `/api/v1/health/ready` on every start, including daemon restarts. If using a
 custom L1 endpoint, also set `L2RETH_L1_READY_URL` in `config/l2reth.env`.
-After mainnet is released, restart an existing L2Reth container with
-`docker compose up -d --force-recreate l2reth-node` to apply this startup check;
-this briefly interrupts L2 RPC.
+After mainnet is released, apply this entrypoint change during a maintenance window:
+
+```bash
+docker compose stop l2reth-node l1-interface dogecoin-node
+docker compose create --force-recreate l2reth-node
+python3 scripts/snapshot-group.py start
+```
+
+`create` refreshes the container without starting it; the helper then performs
+upstream checks. L2 RPC remains unavailable until startup and catch-up finish.
 
 L1 Interface snapshots now require the complete fixed `/data` layout: both
 service databases, `replay.artifacts/` (including its DA metadata DB and file
@@ -39,8 +52,8 @@ L2Reth now defaults to a 16 GB memory cap (`L2RETH_MEM_LIMIT=16g`). Review
 this setting in `.env` for your host's memory and RPC workload, leaving room
 for the other services and the OS. An existing explicit override is preserved.
 After mainnet is released, apply limit changes with
-`docker compose up -d l2reth-node` in this network directory. This recreates
-L2Reth when its limit changes and briefly interrupts L2 RPC.
+`python3 scripts/snapshot-group.py start` during a maintenance window.
+This applies changed limits and stops L1/L2 while upstream checks run.
 
 Mainnet is not released; see [README.md](README.md) for what is still
 missing. The prepared layout:
@@ -56,5 +69,7 @@ missing. The prepared layout:
 - Dogecoin memory: 8 GB limit and 4 GB reservation by default (testnet uses
   24 GB), sized for mainnet's block count.
 - No pre-v0.3.0 history bootstrap download.
-- Snapshot restore through `scripts/restore-snapshot.sh` from the
-  `mainnet/index.json` index, once published.
+- Snapshot restore through `scripts/snapshot-group.py restore GROUP_ID --no-start`
+  from the schema-2 `mainnet/index.json` catalog, once published; then use
+  `scripts/snapshot-group.py start`. The component script is reserved for
+  internal restore and explicit legacy/direct-archive workflows.

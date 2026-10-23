@@ -49,7 +49,7 @@ your machine's available memory and RPC workload, especially tracing traffic.
 Leave memory for Dogecoin, L1 Interface, the operating system, and other
 services; smaller hosts need lower limits. This is a cap, not a reservation.
 Swap is disabled for the container, so exceeding the cap can cause an OOM kill.
-Apply changes with `docker compose up -d l2reth-node`.
+Apply changes with `python3 scripts/snapshot-group.py start` in a maintenance window.
 
 ### Dogecoin RPC Credentials
 
@@ -64,11 +64,13 @@ window, stopping L2Reth while its upstream services restart:
 
 ```bash
 docker compose stop l2reth-node l1-interface dogecoin-node
-docker compose up -d --force-recreate dogecoin-node l1-interface
-docker compose up -d l2reth-node
+docker compose create --force-recreate dogecoin-node l1-interface
+python3 scripts/snapshot-group.py start
 ```
 
-Every external consumer of the Dogecoin RPC must also update its credentials.
+`create` refreshes the stopped consumers without starting them; the helper
+then starts them in dependency order. Every external consumer of the Dogecoin
+RPC must also update its credentials.
 
 ### Custom Ethereum RPC
 
@@ -99,19 +101,18 @@ DOGEOS_EXTERNAL_DOGECOIN_RPC_PASSWORD=...
 Then stop L2Reth while L1 Interface switches, and stop the bundled node:
 
 ```bash
-docker compose stop l2reth-node dogecoin-node
-docker compose up -d --force-recreate l1-interface
-docker compose up -d l2reth-node
+docker compose stop l2reth-node l1-interface dogecoin-node
+docker compose create --force-recreate l1-interface
+python3 scripts/snapshot-group.py start
 ```
 
-Targeted startup does not start the bundled Dogecoin node; its data is kept
+The helper checks the external Dogecoin RPC and does not start the bundled node; its data is kept
 for switching back. To return to it, remove the three settings and run:
 
 ```bash
-docker compose stop l2reth-node
-docker compose up -d dogecoin-node
-docker compose up -d --force-recreate l1-interface
-docker compose up -d l2reth-node
+docker compose stop l2reth-node l1-interface dogecoin-node
+docker compose create --force-recreate l1-interface
+python3 scripts/snapshot-group.py start
 ```
 
 </details>
@@ -150,6 +151,9 @@ already set by `scripts/l2reth_entrypoint.sh`; `rollup-node` exits on
 duplicates. Apply changes with `python3 scripts/snapshot-group.py start`.
 
 ### Load Balancer Health
+
+Before adding a node to the serving pool, follow [Verify Your RPC Node](verify-node.md)
+to compare network identity, head lag and a shared block hash.
 
 `eth_syncing` alone is not enough to decide whether to route traffic to a
 node. Compare its `eth_blockNumber` with a reference node or your other
@@ -210,6 +214,86 @@ cover startup RPC availability and local database/replay health; they do not
 prove Dogecoin has finished initial sync or replay has reached a specific
 chain checkpoint.
 
+### Check Synchronization Progress
+
+Run these read-only checks in a second terminal in this network's directory.
+Repeat them after 30–60 seconds and compare values. Do not re-run `start` to
+check status: it stops L1/L2 before checking upstream services.
+
+**1. Dogecoin:**
+
+```bash
+docker compose exec -T dogecoin-node /dogecoin/bin/dogecoin-cli \
+  -conf=/run/dogeos/dogecoin.conf -datadir=/data getblockchaininfo \
+  | jq '{blocks, headers, initialblockdownload, verificationprogress}'
+docker compose exec -T dogecoin-node /dogecoin/bin/dogecoin-cli \
+  -conf=/run/dogeos/dogecoin.conf -datadir=/data getconnectioncount
+```
+
+- Increasing `blocks` means block processing is progressing; compare it with
+  `headers`. `verificationprogress` is an estimate between 0 and 1, not an ETA
+  or the startup gate.
+- The helper waits until `initialblockdownload=false` and `blocks >= headers`,
+  then checks any saved snapshot checkpoints. L1 being stopped until then is
+  expected.
+- RPC error `-28` / `Loading block index` means the RPC is warming up. Check
+  `docker compose logs --tail=100 dogecoin-node` for index-loading progress.
+- A flat height with `initialblockdownload=true` needs investigation if it
+  persists: check peer count, repeated network/disk errors and container
+  restarts. A flat tip after catch-up may simply mean no new block arrived.
+
+If configured to use an external Dogecoin node, inspect those same RPC methods
+on that node instead; the bundled container may intentionally be stopped.
+
+**2. L1 historical indexing and replay:**
+
+```bash
+# Keep HTTP 503 bodies visible during startup; these commands intentionally
+# omit --fail. Adjust localhost if you changed INTERNAL_BIND_ADDR.
+curl --silent --show-error --max-time 10 \
+  --write-out '\nHTTP %{http_code}\n' http://localhost:9090/health
+curl --silent --show-error --max-time 10 \
+  --write-out '\nHTTP %{http_code}\n' http://localhost:9090/api/v1/health/ready
+docker compose logs --tail=200 l1-interface
+```
+
+`/health` reports HTTP 503 with `historical_sync=in_progress` until indexing
+finishes, then HTTP 200 with `historical_sync=completed`. It **does not expose
+a percentage or indexed block height**. In the logs, compare successive
+`Processing block range START - END` messages; advancing ranges show work
+progressing. `Dogecoin historical sync completed ... (final block: ...)`
+marks the end of the historical phase. The API/readiness routes may not yet
+be available while historical indexing runs; a connection failure at that
+stage is not by itself evidence of a crash.
+
+After historical sync, `/api/v1/health/ready` should return HTTP 200 with
+`ready=true`. If it reports `ready=false`, inspect `critical_components`:
+`database` describes database health and `replay_read_model` includes its
+message/details. When present, increasing `validated_up_to` indicates replay
+validation progress; compare it with `discovered_up_to`. These are replay
+positions, not Dogecoin heights. A `stop_reason` or a repeated database/replay
+error needs investigation; do not delete data or bypass readiness.
+
+**3. L2 catch-up:** after L1 is ready and the helper starts L2Reth, use
+[Verify Your RPC Node](verify-node.md) to compare its decimal head height with
+the reference. L2 remaining stopped during either upstream phase is expected.
+
+| Observation | Interpretation / next action |
+|-------------|------------------------------|
+| Increasing Dogecoin height or L1 processed ranges/replay positions | Keep waiting; the upstream is doing work |
+| Dogecoin RPC warming up, with index-loading logs | Wait for loading; it is not downloading blocks yet |
+| One unchanged sample without errors | Not enough to diagnose a stall; sample again and check whether the upstream tip moved |
+| Repeated errors, growing restart count or no processing progress over several observations while behind | Inspect logs, peers, disk space and RPC access; see Troubleshooting below |
+| Helper reports checkpoint hash mismatch | It has stopped for a consistency failure, not normal lag; investigate before restarting downstream |
+
+`docker compose ps -a` shows stopped/restarting containers. To inspect restart
+counts without modifying anything:
+
+```bash
+docker compose ps -aq | xargs -r docker inspect \
+  --format '{{.Name}} status={{.State.Status}} restarts={{.RestartCount}}'
+```
+
 ### Changing Data
 
 Services depend on each other as Dogecoin → L1 Interface → L2Reth. Before
@@ -257,7 +341,9 @@ Shutdown keeps all chain data; it lives under `DATA_ROOT`.
   port is reachable over TCP and UDP, and `L2RETH_NETWORK_ID` matches the
   peers.
 - **An env edit has no effect:** `docker compose restart` keeps the old
-  environment; use `up -d --force-recreate` for the affected service.
+  environment; apply changes with `python3 scripts/snapshot-group.py start`
+  in a maintenance window. For changed secret contents, follow
+  [Dogecoin RPC Credentials](#dogecoin-rpc-credentials).
 - **Snapshot checksum fails:** the script exits without extracting the newly
   downloaded archive. Run the restore command again: on that next run it moves
   the bad cached archive to an `.invalid-<timestamp>` filename and downloads a
