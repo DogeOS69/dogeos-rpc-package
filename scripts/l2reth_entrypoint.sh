@@ -33,11 +33,14 @@ BLOB_S3_URL="${L2RETH_BLOB_S3_URL:?L2RETH_BLOB_S3_URL must be set (DA blob archi
 # handshake compares network ids and silently drops peers on mismatch.
 NETWORK_ID="${L2RETH_NETWORK_ID:?L2RETH_NETWORK_ID must be set (cluster p2p network id)}"
 
-# Per-network settings come from envs/<network>/l2reth.env.
-MAX_L1_MESSAGES="${L2RETH_MAX_L1_MESSAGES:?L2RETH_MAX_L1_MESSAGES must be set (max L1 messages per block)}"
+# Per-network settings come from envs/<network>/l2reth.env. The defaults are
+# the values this script used to hard-code, so a container created before
+# these settings existed still starts when Docker restarts it with this
+# script and its old environment.
+MAX_L1_MESSAGES="${L2RETH_MAX_L1_MESSAGES:-51}"
 # The legacy geth header transform is only for the one-way testnet geth-to-Reth
-# crossover. rollup-node rejects it on mainnet, so it defaults off.
-LEGACY_GETH_HEADER_TRANSFORM="${L2RETH_LEGACY_GETH_HEADER_TRANSFORM:-false}"
+# crossover. Mainnet sets it to false.
+LEGACY_GETH_HEADER_TRANSFORM="${L2RETH_LEGACY_GETH_HEADER_TRANSFORM:-true}"
 
 # Optional: forward eth_sendRawTransaction to the sequencer RPC.
 SEQUENCER_FLAGS=""

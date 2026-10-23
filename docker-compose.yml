@@ -25,6 +25,10 @@ services:
       - "-datadir=/data"
       - "-printtoconsole"
   l2reth-node:
+    # Testnet stays on v0.3.0-beta.1c until its genesis schedules
+    # tsukiFeeParamsTime: later images without it apply the Tsuki base fee
+    # parameters to past testnet blocks and stop syncing. Mainnet sets
+    # L2RETH_IMAGE_TAG in its env file.
     image: dogeos69/rollup-node:${L2RETH_IMAGE_TAG:-v0.3.0-beta.1c}
     restart: unless-stopped
     # Reth's own shutdown can take about 10 seconds, Docker's default, so a busy
@@ -36,6 +40,8 @@ services:
     oom_score_adj: -100
     env_file:
       - ./envs/${NETWORK}/l2reth.env
+      - path: ./envs/${NETWORK}/l2reth.local.env
+        required: false
     volumes:
       - ./configs/${NETWORK}/l2reth-genesis.json:/l2reth/genesis/genesis.json:ro
       - ./scripts/l2reth_entrypoint.sh:/entrypoint.sh:ro
