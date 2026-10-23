@@ -86,7 +86,7 @@ gateway or load balancer. Only these ports need to be internet-reachable:
 
 - L2Reth HTTP/WebSocket, through your gateway
 - Dogecoin P2P: `22556`
-- L2Reth P2P: `${L2_P2P_PORT}` (default `40303`), TCP and UDP
+- L2Reth P2P: `${L2_P2P_PORT}` (default `30303`), TCP and UDP
 
 Keep Dogecoin RPC and the L1 Interface ports private with `INTERNAL_BIND_ADDR`,
 host or cloud firewalls, or a private network. RPC authentication is not a
@@ -122,8 +122,8 @@ backends, and remove a node that falls more than a few blocks behind.
 
 | Endpoint | Address | Exposure |
 |----------|---------|----------|
-| L2Reth HTTP RPC | `http://<host>:${L2_HTTP_PORT}` (default `18545`) | Public, behind your gateway |
-| L2Reth WebSocket | `ws://<host>:${L2_WS_PORT}` (default `18546`) | Public, behind your gateway |
+| L2Reth HTTP RPC | `http://<host>:${L2_HTTP_PORT}` (default `8545`) | Public, behind your gateway |
+| L2Reth WebSocket | `ws://<host>:${L2_WS_PORT}` (default `8546`) | Public, behind your gateway |
 | L2Reth metrics | `http://127.0.0.1:${L2_METRICS_PORT}/` (default `6060`) | Prometheus; this host only |
 | Dogecoin RPC | `http://localhost:${DOGECOIN_RPC_PORT}` (default `22555`) | Internal |
 | L1 Interface RPC | `http://localhost:8547` | Internal (L1 client for L2Reth) |
@@ -157,7 +157,7 @@ curl --fail http://localhost:9090/api/v1/health/ready
 curl --fail \
   -H 'content-type: application/json' \
   --data '{"jsonrpc":"2.0","method":"net_peerCount","params":[],"id":1}' \
-  http://localhost:18545
+  http://localhost:8545
 ```
 
 `docker compose ps` shows `l1-interface` as `healthy` when

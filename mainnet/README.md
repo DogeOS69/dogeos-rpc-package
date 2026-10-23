@@ -80,8 +80,10 @@ Compared with testnet:
 - Dogecoin data lives in `${DATA_ROOT}/dogecoin`.
 - The Dogecoin RPC and L1 Interface ports are published on `127.0.0.1` by
   default, and the RPC password has no default.
-- Default host ports differ: L2Reth HTTP `18545`, WebSocket `18546`, P2P
-  `40303`; Dogecoin P2P `22556`, RPC `22555`.
+- Default host ports: L2Reth HTTP `8545`, WebSocket `8546`, P2P
+  `30303`; Dogecoin P2P `22556`, RPC `22555`.
+- Mainnet and testnet are intended to run on separate hosts. If you run both
+  on one host, configure host ports yourself to avoid conflicts.
 
 ## Documentation
 

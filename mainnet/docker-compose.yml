@@ -94,10 +94,10 @@ services:
         bind:
           create_host_path: true
     ports:
-      - ${L2_HTTP_PORT:-18545}:8545
-      - ${L2_WS_PORT:-18546}:8546
-      - ${L2_P2P_PORT:-40303}:30303/tcp
-      - ${L2_P2P_PORT:-40303}:30303/udp
+      - ${L2_HTTP_PORT:-8545}:8545
+      - ${L2_WS_PORT:-8546}:8546
+      - ${L2_P2P_PORT:-30303}:30303/tcp
+      - ${L2_P2P_PORT:-30303}:30303/udp
       - 127.0.0.1:${L2_METRICS_PORT:-6060}:6060
     depends_on:
       l1-interface:
