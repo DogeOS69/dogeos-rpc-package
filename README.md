@@ -271,10 +271,12 @@ per host (see [Data Storage](#data-storage)).
    `.env.mainnet` and the mainnet L2 HTTP port (`18545` by default).
 
 L2Reth runs with `--consensus.exit-on-signer-rotation` on mainnet too, and the
-restart behaviour under [Services](#services) applies. Use `.env.mainnet` in
-place of `.env.testnet` in the commands under Services and
-[Maintenance](#maintenance). A new mainnet container already has
-`restart: unless-stopped`, so it needs no recreate.
+restart behaviour under [Services](#services) applies; a new mainnet container
+already has `restart: unless-stopped`, so it needs no recreate. The commands
+under Services and [Maintenance](#maintenance) are written for testnet. On
+mainnet, use `.env.mainnet` instead of `.env.testnet`, the L2 HTTP port `18545`
+instead of `8545`, and an Ethereum mainnet RPC (chain ID `1`) instead of
+Sepolia.
 
 ## Service Endpoints
 
