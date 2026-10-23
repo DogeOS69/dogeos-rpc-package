@@ -294,7 +294,7 @@ COMPOSE=(docker compose --env-file "$ENV_FILE_ABS")
 
 echo "Stopping l2reth-node before activating the restored data..."
 "${COMPOSE[@]}" stop l2reth-node ||
-  fail "could not stop l2reth-node; make sure Docker is running, then rerun"
+  fail "could not stop l2reth-node (see the error above); $TARGET_DIR was not changed and the extracted snapshot remains at $STAGING_DIR"
 
 BACKUP_DIR=""
 if [ -d "$TARGET_DIR" ]; then
