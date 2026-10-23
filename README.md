@@ -31,6 +31,16 @@ For historical v0.2.x deployments, follow
 That migration requires stopping the old stack with its old Compose file and
 completing the documented data and configuration steps.
 
+After every `git pull`, compare your env file with `.env.example.testnet` or
+`.env.example.mainnet` and copy any new settings into it. Image tags and
+bootstrap download URLs have no defaults, so until they are set
+`docker compose` stops with `<NAME> must be set; copy it from
+.env.example.<network>`. This release adds `L2RETH_IMAGE_TAG`,
+`L1_INTERFACE_IMAGE_TAG`, `L1_INTERFACE_ARTIFACT_URL`, and
+`L1_INTERFACE_REPLAY_DB_URL`. Then run
+`docker compose --env-file <your env file> up -d`, which recreates any service
+whose settings changed.
+
 The Quick Start below is for a new installation.
 
 ## Services
@@ -241,8 +251,8 @@ complete stack per host (see [Data Storage](#data-storage)).
    and `L1_INTERFACE_REPLAY_DB_URL`. If you already run a v0.3.0 mainnet
    Dogecoin node from this package, keep your `.env.mainnet`, project name, and
    Dogecoin volume, and add the "Image Tags and Bootstrap Artifacts" settings
-   from the template. Without them, Compose falls back to the testnet image and
-   bootstrap downloads. A v0.2.x mainnet deployment (configured in `.env`) must
+   from the template; `docker compose` stops with "must be set" until they are
+   there. A v0.2.x mainnet deployment (configured in `.env`) must
    first stop its old services with the old Compose file, as in
    [step 1 of the upgrade guide](upgrade_v0.3.0.md#1-stop-the-old-services),
    before pulling this version. Then create `.env.mainnet` from the template
@@ -268,16 +278,8 @@ complete stack per host (see [Data Storage](#data-storage)).
 
    ```bash
    docker compose --env-file .env.mainnet config --quiet
-   docker compose --env-file .env.mainnet config | grep -E 'image: dogeos69/|_URL:'
    docker compose --env-file .env.mainnet up -d
    ```
-
-   Before `up`, confirm that the output shows `rollup-node:v0.3.0-beta.2` and
-   your onboarding L1 Interface image tag and download URLs, not the testnet
-   ones. If a testnet replay database was already downloaded, remove
-   `replay.sqlite` and `replay.sqlite.bootstrap-source.json` from
-   `${DATA_ROOT}/l1-interface` first: an existing replay database is never
-   replaced.
 
    No mainnet snapshots are published, so L2Reth syncs from genesis. Verify the
    services as in [Quick Start step 5](#5-verify-services), using
