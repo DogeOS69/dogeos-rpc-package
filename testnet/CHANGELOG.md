@@ -18,7 +18,14 @@ cd testnet
 docker compose up -d
 ```
 
-Run all later commands inside `testnet/`. Compose recognizes the existing
+Run all later commands inside `testnet/`. **Update anything that runs Compose
+from the repository root** — cron jobs, systemd units, deploy or monitoring
+scripts: after the pull, `docker compose --env-file .env.testnet ...` there
+fails with "no configuration file provided". Change them to run in `testnet/`
+without `--env-file` (for example `cd /path/to/repo/testnet && docker compose
+up -d`).
+
+Compose recognizes the existing
 containers (same project name) and recreates them once for the new log
 rotation, restart policy, configuration file locations, and healthcheck.
 Chain data is kept. Dogecoin reloads its block index, which takes several
@@ -81,6 +88,10 @@ Recommended follow-ups:
   unused `L2RETH_VALID_SIGNER`, and unnecessary permission changes in the L1
   Interface bootstrap. The peer list is now `L2RETH_PEER_LIST`
   (`L2GETH_PEER_LIST` is still accepted).
+
+The entries below predate the `testnet/` directory: their commands run in the
+repository root with `--env-file .env.testnet`. On the current layout, run the
+same `docker compose` commands in `testnet/` without `--env-file`.
 
 ## Testnet: L2Reth v0.3.0-beta.1c (Galileo, Galileo V2, and Tsuki)
 

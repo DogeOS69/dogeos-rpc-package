@@ -21,7 +21,8 @@ failed() { echo "FAILED: $*" >&2; failures=$((failures + 1)); }
 
 step "shellcheck"
 scripts=()
-while IFS= read -r f; do scripts+=("$f"); done < <(git ls-files "$NETWORK/*.sh")
+# Tracked and new (untracked, not ignored) files, so new work is checked too.
+while IFS= read -r f; do scripts+=("$f"); done < <(git ls-files -co --exclude-standard "$NETWORK/*.sh")
 if command -v shellcheck >/dev/null 2>&1; then
   shellcheck -S warning -x "${scripts[@]}" || failed "shellcheck"
 else
@@ -30,30 +31,22 @@ else
 fi
 
 # Resolve the Compose configuration the way an operator runs it: env.example
-# copied to .env, plain `docker compose` in this directory. Configuration files
-# not shipped yet (see README.md) are stubbed in a temporary copy so the rest
-# is still checked; the repository is not modified.
+# copied to .env, plain `docker compose` in this directory, in a temporary copy
+# so the repository is not modified. Testnet ships every configuration file,
+# so a missing one is an error.
 step "docker compose config"
 copy="$WORK_DIR/$NETWORK"
 mkdir -p "$copy"
-git ls-files -z "$NETWORK" | tar --null -T - -cf - | tar -xf - -C "$WORK_DIR"
+git ls-files -z -co --exclude-standard "$NETWORK" | tar --null -T - -cf - | tar -xf - -C "$WORK_DIR"
 for f in docker-compose.yml env.example README.md CHANGELOG.md \
     scripts/dogecoin_entrypoint.sh scripts/l1-interface_entrypoint.sh \
     scripts/l2reth_entrypoint.sh scripts/restore-snapshot.sh \
     scripts/reset-chain-data.sh scripts/lib/env.sh; do
   [ -e "$copy/$f" ] || failed "$NETWORK/$f is missing"
 done
-stubbed=""
 for f in dogecoin.conf l2reth.env l2reth-genesis.json protocol_context.json l1-interface.env; do
-  if [ ! -e "$copy/config/$f" ]; then
-    case "$f" in
-      *.json) echo '{}' >"$copy/config/$f" ;;
-      *) : >"$copy/config/$f" ;;
-    esac
-    stubbed="$stubbed $f"
-  fi
+  [ -e "$copy/config/$f" ] || failed "$NETWORK/config/$f is missing"
 done
-[ -z "$stubbed" ] || echo "stubbed (not shipped yet):$stubbed"
 sed -e "s|^DATA_ROOT=.*|DATA_ROOT=$WORK_DIR/data|" \
     -e "s|^DOGECOIN_RPC_PASSWORD=\$|DOGECOIN_RPC_PASSWORD=check|" \
     "$copy/env.example" >"$copy/.env"
@@ -88,7 +81,8 @@ step "Markdown links"
 python3 - "$NETWORK" <<'EOF' || failed "Markdown links"
 import os, re, subprocess, sys
 network = sys.argv[1]
-files = subprocess.run(["git", "ls-files", f"{network}/*.md"], capture_output=True, text=True, check=True).stdout.split()
+files = subprocess.run(["git", "ls-files", "-co", "--exclude-standard", f"{network}/*.md"],
+                       capture_output=True, text=True, check=True).stdout.split()
 
 def anchors(path):
     found = set()

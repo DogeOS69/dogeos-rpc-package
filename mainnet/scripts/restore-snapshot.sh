@@ -6,7 +6,6 @@ set -euo pipefail
 # docs/snapshot-publishing.md in this directory for the index format.
 NETWORK=mainnet
 DEFAULT_INDEX_BASE="https://dogeos-rpc-snapshots.s3.us-west-2.amazonaws.com"
-EXTRACT_IMAGE="alpine:3.20"
 SIGNER_IDENTITY="dogeos-snapshots"
 SIGNATURE_NAMESPACE="dogeos-snapshot-index"
 
@@ -35,9 +34,8 @@ backwards. Starting the stack afterwards lets each service catch up.
 Options:
   --list                  List published snapshots and exit.
   --snapshot-id ID        Restore this snapshot instead of the newest one.
-  --force                 Replace non-empty bind-mounted data. The old
-                          directory is moved to a timestamped backup.
-                          Docker volumes are never replaced.
+  --force                 Replace non-empty data. The old directory is moved
+                          to a timestamped backup.
   --no-start              Restore without starting services.
   --index-url URL         Override the snapshot index URL.
   --snapshot-url URL      Skip the index and use this archive. Requires
@@ -171,11 +169,10 @@ echo "Using env file: $ENV_FILE_ABS (NETWORK=$NETWORK, DATA_ROOT=$DATA_ROOT)"
 # Data must not live anywhere inside the repository checkout.
 REPO_ROOT_ABS="$(readlink -m "$NETWORK_DIR/..")"
 
-# How to repeat a Compose command (in this directory) for this env file.
-if [ "$ENV_FILE_ABS" = "$NETWORK_DIR/.env" ]; then
-  COMPOSE_HINT="docker compose"
-else
-  COMPOSE_HINT="docker compose --env-file $(printf '%q' "$ENV_FILE_ABS")"
+# How to repeat a Compose command for this env file, from any directory.
+COMPOSE_HINT="cd $(printf '%q' "$NETWORK_DIR") && docker compose"
+if [ "$ENV_FILE_ABS" != "$NETWORK_DIR/.env" ]; then
+  COMPOSE_HINT="$COMPOSE_HINT --env-file $(printf '%q' "$ENV_FILE_ABS")"
 fi
 
 # --- Snapshot index ---------------------------------------------------------
@@ -185,7 +182,6 @@ TMP_DIR="$(mktemp -d)"
 STAGING_DIR=""
 PENDING_BACKUP=""
 PENDING_TARGET=""
-CREATED_VOLUME=""
 cleanup() {
   rm -rf "$TMP_DIR"
   # Interrupted between moving the current data aside and activating the
@@ -198,12 +194,6 @@ cleanup() {
   if [ -n "$STAGING_DIR" ] && [ -d "$STAGING_DIR" ]; then
     echo "Removing incomplete staging directory: $STAGING_DIR" >&2
     rm -rf "$STAGING_DIR"
-  fi
-  # Only a volume this run created and did not finish filling.
-  if [ -n "$CREATED_VOLUME" ]; then
-    echo "Removing incomplete Docker volume: $CREATED_VOLUME" >&2
-    docker volume rm "$CREATED_VOLUME" >/dev/null 2>&1 ||
-      echo "Could not remove it; remove it with: docker volume rm $CREATED_VOLUME" >&2
   fi
 }
 trap cleanup EXIT
@@ -401,11 +391,9 @@ esac
 
 # --- Restore target ---------------------------------------------------------
 
-# L2Reth and L1 Interface data are directories under DATA_ROOT. Dogecoin data is
-# whatever the network's compose file mounts at /data: a Docker volume
-# (testnet) or a directory (mainnet).
+# All three services keep their data in directories; Dogecoin's is whatever
+# docker-compose.yml bind-mounts at /data (DATA_ROOT/dogecoin).
 TARGET_DIR=""
-TARGET_VOLUME=""
 case "$COMPONENT" in
   l2reth)
     TARGET_DIR="$DATA_ROOT_ABS/l2reth"
@@ -420,27 +408,15 @@ case "$COMPONENT" in
   dogecoin)
     ARCHIVE_ROOT="dogecoin"
     STRIP_COMPONENTS=1
-    IFS=$'\x1f' read -r DATA_TYPE DATA_SOURCE < <(compose_json | jqx -r '
-      (.services["dogecoin-node"].volumes // [] | map(select(.target == "/data")) | first) as $m
-      | if $m == null then "" else
-          [$m.type, (if $m.type == "volume" then (.volumes[$m.source].name // $m.source) else $m.source end)]
-          | join("\u001f") end')
-    case "$DATA_TYPE" in
-      volume) TARGET_VOLUME="$DATA_SOURCE" ;;
-      bind) TARGET_DIR="$(check_data_path "Dogecoin data directory" "$DATA_SOURCE" "$REPO_ROOT_ABS")" ;;
-      *) fail "cannot determine where dogecoin-node keeps its data" ;;
-    esac
-    COMPOSE_PROJECT="$(compose_json | jqx -r '.name')"
+    DATA_SOURCE="$(compose_json | jqx -r '
+      .services["dogecoin-node"].volumes // [] | map(select(.target == "/data" and .type == "bind"))
+      | first | .source // ""')"
+    [ -n "$DATA_SOURCE" ] || fail "dogecoin-node has no bind-mounted /data directory"
+    TARGET_DIR="$(check_data_path "Dogecoin data directory" "$DATA_SOURCE" "$REPO_ROOT_ABS")"
     ;;
 esac
 
-if [ -n "$TARGET_VOLUME" ]; then
-  docker info >/dev/null 2>&1 || fail "cannot reach the Docker daemon"
-  if docker volume inspect "$TARGET_VOLUME" >/dev/null 2>&1; then
-    fail "Docker volume $TARGET_VOLUME already exists. Keep it, set a new, unused
-DOGECOIN_VOLUME_NAME in $ENV_FILE_ABS to restore into, and rerun."
-  fi
-elif [ -d "$TARGET_DIR" ] &&
+if [ -d "$TARGET_DIR" ] &&
      find "$TARGET_DIR" -mindepth 1 -maxdepth 1 -print -quit | grep -q . &&
      [ "$FORCE" != true ]; then
   fail "$TARGET_DIR is not empty; rerun with --force to keep it as a backup and restore the snapshot"
@@ -448,11 +424,9 @@ fi
 
 mkdir -p "$DATA_ROOT_ABS"
 [ -w "$DATA_ROOT_ABS" ] || fail "DATA_ROOT is not writable by the current user: $DATA_ROOT_ABS"
-if [ -n "$TARGET_DIR" ]; then
-  TARGET_PARENT="$(dirname "$TARGET_DIR")"
-  mkdir -p "$TARGET_PARENT"
-  [ -w "$TARGET_PARENT" ] || fail "not writable by the current user: $TARGET_PARENT"
-fi
+TARGET_PARENT="$(dirname "$TARGET_DIR")"
+mkdir -p "$TARGET_PARENT"
+[ -w "$TARGET_PARENT" ] || fail "not writable by the current user: $TARGET_PARENT"
 
 CACHE_DIR="${CACHE_DIR:-$DATA_ROOT_ABS/.snapshot-cache}"
 case "$CACHE_DIR" in
@@ -533,9 +507,6 @@ if [ "$SKIP_SPACE_CHECK" != true ] && [ -n "$SIZE_BYTES" ]; then
   fi
   if [ -z "$UNCOMPRESSED_BYTES" ]; then
     echo "Note: the index does not list the extracted size; only the download size was checked."
-  fi
-  if [ -n "$TARGET_VOLUME" ]; then
-    echo "Note: check that Docker's data root has room for $(human_size "${UNCOMPRESSED_BYTES:-0}") of extracted Dogecoin data."
   fi
 fi
 
@@ -626,106 +597,65 @@ stop_services() {
     fail "could not stop $STOPPED_SERVICES; the restored data was not activated"
 }
 
-if [ -n "$TARGET_VOLUME" ]; then
-  if docker volume inspect "$TARGET_VOLUME" >/dev/null 2>&1; then
-    fail "Docker volume $TARGET_VOLUME was created during the download; stop and inspect it"
-  fi
-  echo "Creating Docker volume $TARGET_VOLUME and extracting the snapshot..."
-  docker volume create \
-    --label "com.docker.compose.project=$COMPOSE_PROJECT" \
-    --label "com.docker.compose.volume=dogecoin_data" \
-    "$TARGET_VOLUME" >/dev/null
-  CREATED_VOLUME="$TARGET_VOLUME"
-  if ! docker run --rm --network none \
-      --mount "type=volume,source=$TARGET_VOLUME,target=/data" \
-      --mount "type=bind,source=$CACHE_DIR,target=/snapshot,readonly" \
-      -e ARCHIVE_NAME="$ARCHIVE_NAME" -e REQUIRED_FILES="$REQUIRED_FILES" \
-      "$EXTRACT_IMAGE" sh -eu -c '
-        test -z "$(ls -A /data)" || { echo "volume is not empty" >&2; exit 1; }
-        tar -xzf "/snapshot/$ARCHIVE_NAME" --strip-components=1 -C /data
-        for f in $REQUIRED_FILES; do test -f "/data/$f"; done
-      '; then
-    fail "extraction into $TARGET_VOLUME failed; the partial volume is removed"
-  fi
-  CREATED_VOLUME=""
-  echo
-  echo "Dogecoin snapshot restored to Docker volume: $TARGET_VOLUME"
+STAGING_DIR="$TARGET_PARENT/.$COMPONENT-snapshot-restore-$$"
+[ ! -e "$STAGING_DIR" ] || fail "staging directory already exists: $STAGING_DIR"
+mkdir "$STAGING_DIR"
+
+echo "Extracting snapshot to staging directory:"
+echo "  $STAGING_DIR"
+tar --extract --gzip --file "$ARCHIVE_PATH" --directory "$STAGING_DIR" \
+  --no-same-owner --strip-components="$STRIP_COMPONENTS"
+if [ "$STRIP_COMPONENTS" -eq 0 ]; then
+  EXTRACTED="$STAGING_DIR/$ARCHIVE_ROOT"
 else
-  STAGING_DIR="$TARGET_PARENT/.$COMPONENT-snapshot-restore-$$"
-  [ ! -e "$STAGING_DIR" ] || fail "staging directory already exists: $STAGING_DIR"
-  mkdir "$STAGING_DIR"
+  EXTRACTED="$STAGING_DIR"
+fi
+for f in $REQUIRED_FILES; do
+  [ -f "$EXTRACTED/$f" ] || fail "extracted snapshot is missing $f"
+done
 
-  echo "Extracting snapshot to staging directory:"
-  echo "  $STAGING_DIR"
-  tar --extract --gzip --file "$ARCHIVE_PATH" --directory "$STAGING_DIR" \
-    --no-same-owner --strip-components="$STRIP_COMPONENTS"
-  if [ "$STRIP_COMPONENTS" -eq 0 ]; then
-    EXTRACTED="$STAGING_DIR/$ARCHIVE_ROOT"
+stop_services
+
+BACKUP_DIR=""
+if [ -d "$TARGET_DIR" ]; then
+  if find "$TARGET_DIR" -mindepth 1 -maxdepth 1 -print -quit | grep -q .; then
+    BACKUP_DIR="$TARGET_DIR.backup-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+    [ ! -e "$BACKUP_DIR" ] || fail "backup destination already exists: $BACKUP_DIR"
+    PENDING_TARGET="$TARGET_DIR"
+    PENDING_BACKUP="$BACKUP_DIR"
+    mv "$TARGET_DIR" "$BACKUP_DIR"
   else
-    EXTRACTED="$STAGING_DIR"
+    rmdir "$TARGET_DIR"
   fi
-  for f in $REQUIRED_FILES; do
-    [ -f "$EXTRACTED/$f" ] || fail "extracted snapshot is missing $f"
-  done
+fi
 
-  stop_services
+if [ "$STRIP_COMPONENTS" -eq 0 ]; then
+  mv "$EXTRACTED" "$TARGET_DIR"
+  rmdir "$STAGING_DIR"
+else
+  mv "$STAGING_DIR" "$TARGET_DIR"
+fi
+STAGING_DIR=""
+PENDING_BACKUP=""
 
-  BACKUP_DIR=""
-  if [ -d "$TARGET_DIR" ]; then
-    if find "$TARGET_DIR" -mindepth 1 -maxdepth 1 -print -quit | grep -q .; then
-      BACKUP_DIR="$TARGET_DIR.backup-$(date -u +%Y%m%dT%H%M%SZ)-$$"
-      [ ! -e "$BACKUP_DIR" ] || fail "backup destination already exists: $BACKUP_DIR"
-      PENDING_TARGET="$TARGET_DIR"
-      PENDING_BACKUP="$BACKUP_DIR"
-      mv "$TARGET_DIR" "$BACKUP_DIR"
-    else
-      rmdir "$TARGET_DIR"
-    fi
-  fi
-
-  if [ "$STRIP_COMPONENTS" -eq 0 ]; then
-    mv "$EXTRACTED" "$TARGET_DIR"
-    rmdir "$STAGING_DIR"
-  else
-    mv "$STAGING_DIR" "$TARGET_DIR"
-  fi
-  STAGING_DIR=""
-  PENDING_BACKUP=""
-
-  echo
-  echo "$COMPONENT snapshot restored to:"
-  echo "  $TARGET_DIR"
-  if [ -n "$BACKUP_DIR" ]; then
-    echo "Previous data was preserved at:"
-    echo "  $BACKUP_DIR"
-  fi
+echo
+echo "$COMPONENT snapshot restored to:"
+echo "  $TARGET_DIR"
+if [ -n "$BACKUP_DIR" ]; then
+  echo "Previous data was preserved at:"
+  echo "  $BACKUP_DIR"
 fi
 
 if [ "$START_AFTER_RESTORE" = true ]; then
   echo
-  if [ -n "$TARGET_VOLUME" ]; then
-    stop_services
-  fi
   echo "Starting the $NETWORK stack..."
-  if [ -n "$TARGET_VOLUME" ]; then
-    # The service still names the same volume key, so Compose would otherwise
-    # keep an existing container attached to the previous volume.
-    "${COMPOSE[@]}" up -d --force-recreate dogecoin-node
-  fi
   "${COMPOSE[@]}" up -d
   echo
   "${COMPOSE[@]}" ps
 else
   echo
-  if [ -n "$TARGET_VOLUME" ]; then
-    echo "Restore complete; running services were not touched. Switch to the new"
-    echo "volume by stopping the services that depend on Dogecoin first:"
-    echo "  $COMPOSE_HINT stop $(services_to_stop dogecoin)"
-    echo "  $COMPOSE_HINT up -d --force-recreate dogecoin-node"
-  else
-    echo "Restore complete. Stopped services: $STOPPED_SERVICES"
-    echo "Start the stack later with:"
-  fi
+  echo "Restore complete. Stopped services: $STOPPED_SERVICES"
+  echo "Start the stack later with:"
   echo "  $COMPOSE_HINT up -d"
 fi
 

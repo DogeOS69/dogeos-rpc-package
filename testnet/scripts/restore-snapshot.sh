@@ -171,11 +171,10 @@ echo "Using env file: $ENV_FILE_ABS (NETWORK=$NETWORK, DATA_ROOT=$DATA_ROOT)"
 # Data must not live anywhere inside the repository checkout.
 REPO_ROOT_ABS="$(readlink -m "$NETWORK_DIR/..")"
 
-# How to repeat a Compose command (in this directory) for this env file.
-if [ "$ENV_FILE_ABS" = "$NETWORK_DIR/.env" ]; then
-  COMPOSE_HINT="docker compose"
-else
-  COMPOSE_HINT="docker compose --env-file $(printf '%q' "$ENV_FILE_ABS")"
+# How to repeat a Compose command for this env file, from any directory.
+COMPOSE_HINT="cd $(printf '%q' "$NETWORK_DIR") && docker compose"
+if [ "$ENV_FILE_ABS" != "$NETWORK_DIR/.env" ]; then
+  COMPOSE_HINT="$COMPOSE_HINT --env-file $(printf '%q' "$ENV_FILE_ABS")"
 fi
 
 # --- Snapshot index ---------------------------------------------------------
