@@ -2,7 +2,8 @@
 
 Use this guide **after v0.3.0 is merged into `main`**. It upgrades the old
 v0.2.x package, whether it used L2Geth or older L2Reth. Allow a maintenance
-window; the complete mainnet stack is not supported by this release.
+window. This guide is for testnet only; for mainnet, see "Mainnet Follower" in
+[README.md](README.md#mainnet-follower).
 
 **Stop the old services before `git pull`, using the old Compose file.** The
 new version removes Geth and Celestia services; follow the order below.
