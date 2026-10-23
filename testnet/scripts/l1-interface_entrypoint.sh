@@ -37,8 +37,8 @@ mkdir -p "$DATA_DIR"
 [ -w "$DATA_DIR" ] || fail "L1 Interface data directory is not writable: $DATA_DIR (check DATA_ROOT and host ownership)"
 
 # Operator overrides from .env (passed by docker-compose.yml). When set, they
-# win over the network's l1-interface.env and the deprecated
-# envs/<network>/l1-interface.local.env.
+# win over config/l1-interface.env and the deprecated
+# envs/testnet/l1-interface.local.env of earlier releases.
 if [ -n "${DOGEOS_RPC_PACKAGE_ETHEREUM_RPC_URL:-}" ]; then
   DOGEOS_L1_INTERFACE_ETHEREUM_DA__L1_RPC_URL=$DOGEOS_RPC_PACKAGE_ETHEREUM_RPC_URL
   export DOGEOS_L1_INTERFACE_ETHEREUM_DA__L1_RPC_URL

@@ -17,14 +17,10 @@ export RUST_LOG=sqlx=off,info
 # that filter methods in their own gateway.
 HTTP_API="${L2RETH_HTTP_API:-eth,net,web3,debug,trace}"
 WS_API="${L2RETH_WS_API:-eth,net,web3,debug,trace}"
-# Version-specific flags come from networks/<network>/compose.yml, including
-# --consensus.exit-on-signer-rotation (exit code 70 when the L1 signer rotates;
-# the restart policy starts the node again with the new signer).
-NETWORK_ARGS="${L2RETH_NETWORK_ARGS:?L2RETH_NETWORK_ARGS must be set by networks/<network>/compose.yml}"
 # Operator flags, split on whitespace (no quoting). Do not repeat a flag set
-# here or in L2RETH_NETWORK_ARGS; rollup-node rejects duplicates.
+# below; rollup-node rejects duplicates.
 EXTRA_ARGS="${L2RETH_EXTRA_ARGS:-}"
-# Parse the trusted peer list from networks/<network>/l2reth.env.
+# Parse the trusted peer list from config/l2reth.env.
 # L2GETH_PEER_LIST is the name used by earlier releases and is still accepted.
 PEER_LIST="${L2RETH_PEER_LIST:-${L2GETH_PEER_LIST:-}}"
 PEER_FLAGS=""
@@ -54,6 +50,8 @@ done
 echo "L1 interface is ready"
 
 # The unquoted flag lists below are split on whitespace only; never glob them.
+# --consensus.exit-on-signer-rotation exits with code 70 when the L1 signer
+# rotates; the restart policy starts the node again with the new signer.
 set -f
 exec rollup-node node \
   --chain /l2reth/genesis/genesis.json \
@@ -67,5 +65,15 @@ exec rollup-node node \
   $PEER_FLAGS \
   --l1.url "$L1_ENDPOINT" \
   --blob.s3_url "$BLOB_S3_URL" \
-  $NETWORK_ARGS \
+  --network.scroll-wire=true \
+  --network.bridge=true \
+  --network.legacy-geth-header-transform true \
+  --txpool.pending-max-count=1000 \
+  --builder.gaslimit=30000000 \
+  --sequencer.max-l1-messages 51 \
+  --engine.sync-at-startup false \
+  --consensus.exit-on-signer-rotation \
+  --l1.query-range 100 \
+  --l1.liveness-threshold 2147483647 \
+  --l1.liveness-check-interval 3600 \
   $EXTRA_ARGS

@@ -4,6 +4,7 @@ set -euo pipefail
 # Published snapshots are listed in a per-network index on S3, so a new
 # snapshot needs only an S3 upload, not a package release. See
 # docs/snapshot-publishing.md for the index format.
+NETWORK=testnet
 DEFAULT_INDEX_BASE="https://dogeos-rpc-snapshots.s3.us-west-2.amazonaws.com"
 EXTRACT_IMAGE="alpine:3.20"
 SIGNER_IDENTITY="dogeos-snapshots"
@@ -129,10 +130,10 @@ if [ "$LIST" = true ] && [ -n "$COMPONENT" ] && [ -z "$ENV_FILE" ]; then
   COMPONENT=""
 fi
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-# shellcheck source=scripts/lib/env.sh
-. "$REPO_ROOT/scripts/lib/env.sh"
-ENV_FILE_ABS="$(resolve_env_file "$ENV_FILE" "$REPO_ROOT")"
+NETWORK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+# shellcheck source=testnet/scripts/lib/env.sh
+. "$NETWORK_DIR/scripts/lib/env.sh"
+ENV_FILE_ABS="$(resolve_env_file "$ENV_FILE" "$NETWORK_DIR")"
 if [ "$LIST" = false ]; then
   case "$COMPONENT" in
     dogecoin|l1-interface|l2reth) ;;
@@ -156,26 +157,23 @@ require_command docker
 require_command sha256sum
 require_command tar
 
-COMPOSE=(docker compose -f "$REPO_ROOT/docker-compose.yml" --project-directory "$REPO_ROOT" --env-file "$ENV_FILE_ABS")
+COMPOSE=(docker compose -f "$NETWORK_DIR/docker-compose.yml" --project-directory "$NETWORK_DIR" --env-file "$ENV_FILE_ABS")
 
-# NETWORK and DATA_ROOT as Compose resolves them (see scripts/lib/env.sh).
-# Resolved once; callers of compose_json run in subshells.
-COMPOSE_JSON="$(compose_config_json "$ENV_FILE_ABS" "$REPO_ROOT")"
+# DATA_ROOT as Compose resolves it (see scripts/lib/env.sh). Resolved once;
+# callers of compose_json run in subshells.
+COMPOSE_JSON="$(compose_config_json "$ENV_FILE_ABS" "$NETWORK_DIR")"
 compose_json() {
   printf '%s' "$COMPOSE_JSON"
 }
-NETWORK="$(compose_json | config_network)"
 DATA_ROOT="$(compose_json | config_data_root)"
-
-[ -n "$NETWORK" ] && [ -d "$REPO_ROOT/networks/$NETWORK" ] ||
-  fail "NETWORK must name a directory under networks/, got: ${NETWORK:-unset}"
 [ -n "${DATA_ROOT:-}" ] || fail "cannot determine DATA_ROOT from the Compose configuration"
 echo "Using env file: $ENV_FILE_ABS (NETWORK=$NETWORK, DATA_ROOT=$DATA_ROOT)"
 
-REPO_ROOT_ABS="$(readlink -m "$REPO_ROOT")"
+# Data must not live anywhere inside the repository checkout.
+REPO_ROOT_ABS="$(readlink -m "$NETWORK_DIR/..")"
 
-# How to repeat a Compose command for this env file, for printed hints.
-if [ "$ENV_FILE_ABS" = "$REPO_ROOT_ABS/.env" ]; then
+# How to repeat a Compose command (in this directory) for this env file.
+if [ "$ENV_FILE_ABS" = "$NETWORK_DIR/.env" ]; then
   COMPOSE_HINT="docker compose"
 else
   COMPOSE_HINT="docker compose --env-file $(printf '%q' "$ENV_FILE_ABS")"
@@ -221,7 +219,7 @@ fetch_index() {
     fail "cannot download snapshot index: $INDEX_URL"
 
   # Signature checking turns on once the package ships a signer list.
-  local signers="$REPO_ROOT/snapshots/allowed_signers"
+  local signers="$NETWORK_DIR/snapshots/allowed_signers"
   if [ -f "$signers" ]; then
     require_command ssh-keygen
     curl -fsSL --retry 3 --retry-delay 2 -o "$INDEX_PATH.sig" "$INDEX_URL.sig" ||
@@ -606,7 +604,7 @@ case "$COMPONENT" in
     REQUIRED_FILES="l1-interface.sqlite replay.sqlite"
     ;;
   dogecoin)
-    if [ "$NETWORK" = testnet ]; then CHAIN_DIR="testnet3/"; else CHAIN_DIR=""; fi
+    CHAIN_DIR="testnet3/"
     if grep -Eq '(^|/)(wallet\.dat|wallets|[^/]*\.conf|\.cookie|peers\.dat|banlist\.dat|\.lock)(/|$)' "$LISTING_PATH"; then
       fail "snapshot contains a wallet, configuration, credential, or peer-state file"
     fi

@@ -12,22 +12,25 @@ operators. It runs three services, each depending on the one before it:
 
 | Network | Status | Details |
 |---------|--------|---------|
-| Testnet | Supported | [networks/testnet](networks/testnet/README.md) |
-| Mainnet | Not released; configuration incomplete | [networks/mainnet](networks/mainnet/README.md) |
+| Testnet | Supported | [testnet/](testnet/README.md) |
+| Mainnet | Not released; configuration incomplete | [mainnet/](mainnet/README.md) |
 
-Each network has its own directory under `networks/` with its images,
-configuration, and env template, so the networks can run different versions.
-`docker-compose.yml` holds what they share. Your settings live in one file,
-`.env` in the repository root, which also selects the network (`NETWORK`);
-Docker Compose and the scripts read it automatically, so commands need no
-extra flags. One checkout runs one network.
+Each network is a self-contained directory with its own `docker-compose.yml`,
+configuration, scripts, and env template; the two share nothing, so they can
+run different versions and change independently. **Run every command inside
+the network's directory.** Your settings live in one file, `.env` in that
+directory, which Docker Compose and the scripts read automatically.
 
 ```text
-docker-compose.yml        shared service definitions
-networks/<network>/       images, configuration, env template per network
-scripts/                  entrypoints, snapshot restore, maintenance helpers
+testnet/                  everything testnet runs
+  docker-compose.yml        services, images, ports, data layout
+  env.example               template for your testnet/.env
+  config/                   chain and service configuration (maintained here)
+  scripts/                  entrypoints, snapshot restore, reset
+mainnet/                  the same for mainnet
 docs/                     operations, snapshots, snapshot publishing, history
 CHANGELOG.md              what changed and what operators must do
+scripts/check.sh          repository checks (development and CI)
 ```
 
 ## Hardware Requirements (Testnet)
@@ -39,7 +42,7 @@ CHANGELOG.md              what changed and what operators must do
 | Disk | 300 GB SSD | 500 GB NVMe SSD |
 
 Default memory limits are tuned for a 64 GB host: `dogecoin-node` 24 GB,
-`l2reth-node` 8 GB, `l1-interface` 2 GB. Adjust them in your Compose env with
+`l2reth-node` 8 GB, `l1-interface` 2 GB. Adjust them in `.env` with
 `DOGECOIN_MEM_LIMIT`, `L2RETH_MEM_LIMIT`, and `L1_INTERFACE_MEM_LIMIT`. Swap is
 disabled, so a service that exceeds its limit can be OOM-killed.
 
@@ -47,12 +50,14 @@ Docker Compose 2.24 or later is required.
 
 ## Quick Start
 
-These steps set up a new **testnet** node. Mainnet is not released yet.
+These steps set up a new **testnet** node in the `testnet/` directory; all
+later commands run there too. Mainnet is not released yet.
 
 ### 1. Configure `.env`
 
 ```bash
-if [ ! -e .env ]; then cp networks/testnet/env.example .env; fi
+cd testnet
+if [ ! -e .env ]; then cp env.example .env; fi
 # REQUIRED: set DATA_ROOT; optional settings are listed, commented out
 chmod 600 .env
 ```
@@ -121,10 +126,10 @@ Before serving traffic, review [Network Security](docs/operations.md#network-sec
 
 Follow the [changelog](CHANGELOG.md): each entry states the affected network
 and the commands to run. Keep your `.env`, project name, Dogecoin storage, and
-RPC credentials. Nodes set up with `.env.testnet` keep working with
-`--env-file .env.testnet`; see
-[existing nodes](docs/operations.md#configuration) to switch to `.env`. Nodes still on the v0.2.x package start with the
-archived [v0.3.0 upgrade guide](docs/testnet/history/upgrade-v0.3.0.md).
+RPC credentials. Testnet nodes set up before the per-network directories
+(with `.env.testnet` in the repository root) move once, as the changelog
+describes. Nodes still on the v0.2.x package start with the archived
+[v0.3.0 upgrade guide](docs/testnet/history/upgrade-v0.3.0.md).
 
 ## Documentation
 

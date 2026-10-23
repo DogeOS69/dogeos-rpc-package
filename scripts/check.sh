@@ -25,25 +25,28 @@ else
     -S warning "${scripts[@]}" || failed "shellcheck"
 fi
 
-# Resolve the Compose configuration of every network the way a new operator
-# runs it: env.example copied to .env, plain `docker compose` without flags.
-# Files a network does not ship yet (see networks/<network>/README.md) are
-# stubbed in a temporary copy so the rest of its configuration is still
-# checked; the repository itself is not modified.
-REQUIRED_FILES="compose.yml env.example README.md dogecoin.conf l2reth.env l2reth-genesis.json protocol_context.json l1-interface.env l1-interface-bootstrap.env"
-for network_dir in networks/*/; do
-  network="$(basename "$network_dir")"
+# Each network directory is self-contained: check its own files and resolve its
+# Compose configuration the way an operator runs it (env.example copied to
+# .env in that directory, plain `docker compose`). Configuration files a
+# network does not ship yet (see <network>/README.md) are stubbed in a
+# temporary copy so the rest is still checked; the repository is not modified.
+NETWORK_FILES="docker-compose.yml env.example README.md scripts/dogecoin_entrypoint.sh scripts/l1-interface_entrypoint.sh scripts/l2reth_entrypoint.sh scripts/restore-snapshot.sh scripts/reset-chain-data.sh scripts/lib/env.sh"
+CONFIG_FILES="dogecoin.conf l2reth.env l2reth-genesis.json protocol_context.json l1-interface.env"
+for network in testnet mainnet; do
   step "docker compose config: $network"
   copy="$WORK_DIR/$network-repo"
   mkdir -p "$copy"
   git ls-files -z | tar --null -T - -cf - | tar -xf - -C "$copy"
+  dir="$copy/$network"
+  for f in $NETWORK_FILES; do
+    [ -e "$dir/$f" ] || failed "$network: $network/$f is missing"
+  done
   stubbed=""
-  for f in $REQUIRED_FILES; do
-    if [ ! -e "$copy/networks/$network/$f" ]; then
+  for f in $CONFIG_FILES; do
+    if [ ! -e "$dir/config/$f" ]; then
       case "$f" in
-        compose.yml|env.example|README.md) failed "$network: networks/$network/$f is missing"; continue 2 ;;
-        *.json) echo '{}' >"$copy/networks/$network/$f" ;;
-        *) : >"$copy/networks/$network/$f" ;;
+        *.json) echo '{}' >"$dir/config/$f" ;;
+        *) : >"$dir/config/$f" ;;
       esac
       stubbed="$stubbed $f"
     fi
@@ -51,25 +54,29 @@ for network_dir in networks/*/; do
   [ -z "$stubbed" ] || echo "stubbed (not shipped yet):$stubbed"
   sed -e "s|^DATA_ROOT=.*|DATA_ROOT=$WORK_DIR/data-$network|" \
       -e "s|^DOGECOIN_RPC_PASSWORD=\$|DOGECOIN_RPC_PASSWORD=check|" \
-      "$copy/networks/$network/env.example" >"$copy/.env"
-  grep -qx "NETWORK=$network" "$copy/.env" ||
-    failed "$network: env.example must set NETWORK=$network"
-  if config="$(cd "$copy" && docker compose config --format json)"; then
+      "$dir/env.example" >"$dir/.env"
+  if config="$(cd "$dir" && docker compose config --format json)"; then
     printf '%s' "$config" | python3 -c '
 import json, sys
 network = sys.argv[1]
 services = json.load(sys.stdin)["services"]
-expected = {"dogecoin-node", "l1-interface", "l2reth-node", "l1-interface-init-fetch-sqlite"}
-missing = expected - set(services)
-if missing:
-    sys.exit(f"{network}: missing services {sorted(missing)}")
-for name in sorted(expected):
-    image = services[name].get("image", "")
+expected = {"dogecoin-node", "l1-interface", "l2reth-node"}
+if network == "testnet":
+    expected.add("l1-interface-init-fetch-sqlite")
+problems = []
+if set(services) != expected:
+    problems.append(f"services {sorted(services)}, expected {sorted(expected)}")
+for name in sorted(set(services) & expected):
+    svc = services[name]
+    image = svc.get("image", "")
     if not image or image.endswith(":latest") or ":" not in image:
-        sys.exit(f"{network}: {name} must pin an image tag, got {image!r}")
+        problems.append(f"{name} must pin an image tag, got {image!r}")
+    entrypoint = svc.get("entrypoint")
+    if name != "l1-interface-init-fetch-sqlite" and entrypoint != ["/bin/sh", "/entrypoint.sh"]:
+        problems.append(f"{name} must run its scripts/ entrypoint, got {entrypoint}")
     print(f"  {name:32} {image}")
-if not services["l2reth-node"].get("environment", {}).get("L2RETH_NETWORK_ARGS"):
-    sys.exit(f"{network}: l2reth-node needs L2RETH_NETWORK_ARGS")
+if problems:
+    sys.exit("\n".join(f"{network}: {p}" for p in problems))
 ' "$network" || failed "$network: configuration checks"
   else
     failed "$network: docker compose config"

@@ -7,29 +7,32 @@ Mainnet is not released yet.
 
 ### Testnet: what to do
 
-No configuration changes are required. Keep your env file, project name,
-Dogecoin volume, and RPC credentials. Your existing commands keep working:
+Testnet now lives in the `testnet/` directory and runs from there. Move your
+settings file once; the containers, the Dogecoin volume, `DATA_ROOT`, and the
+RPC credentials stay the same, and no data is migrated:
 
 ```bash
 git pull
-docker compose --env-file .env.testnet up -d
+mv .env.testnet testnet/.env
+cd testnet
+docker compose up -d
 ```
 
-All containers are recreated once (new log rotation, restart policy,
-configuration file locations, and healthcheck). Chain data is kept. Dogecoin
-reloads its block index, which takes several minutes; L1 Interface retries
-until it is ready, and L2 RPC is briefly unavailable. Verify with
-[Verify Services](README.md#5-verify-services).
+Run all later commands inside `testnet/`. Compose recognizes the existing
+containers (same project name) and recreates them once for the new log
+rotation, restart policy, configuration file locations, and healthcheck.
+Chain data is kept. Dogecoin reloads its block index, which takes several
+minutes; L1 Interface retries until it is ready, and L2 RPC is briefly
+unavailable. Verify with [Verify Services](README.md#5-verify-services).
+
+A `.env` in the repository root left by a pre-v0.3.0 release is no longer used
+and can be removed.
 
 Recommended follow-ups:
 
-- **Use `.env` and drop `--env-file`.** If no `.env` exists in the repository
-  root, run `mv .env.testnet .env`; afterwards `docker compose up -d` and the
-  scripts need no env-file argument. (A `.env` left by a pre-v0.3.0 release is
-  unused; remove it first.)
-- **Move overrides into `.env`.** If you have
-  `envs/testnet/l1-interface.local.env`, move its values to `.env` and delete
-  it; the file still works but is deprecated:
+- **Move overrides into `testnet/.env`.** If you have
+  `envs/testnet/l1-interface.local.env`, move its values to `testnet/.env` and
+  delete it; the file is still read but deprecated:
 
   | Old setting in `l1-interface.local.env` | New setting in `.env` |
   |-----------------------------------------|-----------------------|
@@ -40,22 +43,23 @@ Recommended follow-ups:
 
 - Set `INTERNAL_BIND_ADDR=127.0.0.1` unless another host needs the Dogecoin
   RPC or L1 Interface ports.
-- Use `./scripts/restore-snapshot.sh` for snapshots;
-  `restore-l2reth-snapshot.sh` still works but is deprecated.
+- Snapshots are restored with `./scripts/restore-snapshot.sh <component>`
+  inside `testnet/`; `scripts/restore-l2reth-snapshot.sh` is gone.
 
 ### Changes
 
-- **Network isolation.** Each network has its own directory,
-  `networks/<network>/`, with its images, configuration, data and port layout,
-  and env template. Testnet and mainnet can run different image versions, and
-  a change to one network does not affect the other. `configs/` and `envs/`
-  are gone; `.env.example.<network>` is now `networks/<network>/env.example`.
-- **One settings file.** Operator settings live in `.env` in the repository
-  root, which Compose and the scripts read by default; the scripts' env-file
-  argument is optional. Overrides formerly in `l1-interface.local.env` are
-  `.env` settings, defaults moved into the network files, and the Dogecoin
-  RPC host port no longer has to match `dogecoin.conf`. `DOGECOIN_P2P_PORT`
-  is no longer used: P2P stays on the port Dogecoin advertises.
+- **Self-contained networks.** `testnet/` and `mainnet/` each have their own
+  `docker-compose.yml`, configuration, scripts, and env template, and share
+  nothing, so they can run different versions and change independently. The
+  root `docker-compose.yml`, `configs/`, `envs/`, and `scripts/` (except the
+  repository check) are gone. Only testnet has the one-time L1 Interface
+  history download.
+- **One settings file per network.** Operator settings live in `.env` in the
+  network directory, which Compose and the scripts read by default. Overrides
+  formerly in `l1-interface.local.env` are `.env` settings, defaults are in
+  `docker-compose.yml`, and the Dogecoin RPC host port no longer has to match
+  `dogecoin.conf`. `DOGECOIN_P2P_PORT` is no longer used: P2P stays on the
+  port Dogecoin advertises. `NETWORK` is no longer needed.
 - **Snapshots.** `scripts/restore-snapshot.sh` restores Dogecoin, L1
   Interface, and L2Reth snapshots listed in a per-network index on S3, so new
   snapshots need no package release. It selects the newest snapshot compatible
@@ -81,7 +85,7 @@ Recommended follow-ups:
 Not released. The layout is prepared: Dogecoin data under `DATA_ROOT`, internal
 ports on `127.0.0.1`, wallet disabled, an explicit RPC password, and no testnet
 bootstrap data. Missing configuration is listed in
-[networks/mainnet/README.md](networks/mainnet/README.md).
+[mainnet/README.md](mainnet/README.md).
 
 ## Testnet: L2Reth v0.3.0-beta.1c (Galileo, Galileo V2, and Tsuki)
 

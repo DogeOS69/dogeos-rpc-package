@@ -1,17 +1,19 @@
 # Operations
 
-Configuration, security, and maintenance for a running stack. Run commands
-from the repository root; Docker Compose and the scripts read `.env` there.
+Configuration, security, and maintenance for a running stack. Run every
+command inside the network's directory (`testnet/` or `mainnet/`); Docker
+Compose and the scripts read `.env` there. Examples use testnet.
 
 ## Configuration
 
-`.env` in the repository root is the only file you edit. Create it from
-`networks/<network>/env.example`; that template lists every setting with its
-default. Keep it private (`chmod 600 .env`) and in your configuration backups.
-Everything under `networks/<network>/` is maintained by this package.
+`.env` in the network directory is the only file you edit. Create it from
+`env.example` in the same directory; that template lists every setting with
+its default. Keep it private (`chmod 600 .env`) and in your configuration
+backups. Everything else in the network directory (`docker-compose.yml`,
+`config/`, `scripts/`) is maintained by this package.
 
-One checkout runs one network. To run testnet and mainnet, use two checkouts,
-each with its own `.env`, on separate hosts.
+Testnet and mainnet share nothing. Run one network per host; their default
+internal ports overlap.
 
 `docker compose restart` does not reload settings. After changing `.env`, apply
 it with:
@@ -23,19 +25,20 @@ docker compose up -d
 Compose recreates only the services whose configuration changed.
 
 <details>
-<summary>Existing nodes with <code>.env.testnet</code></summary>
+<summary>Existing testnet nodes with <code>.env.testnet</code></summary>
 
-Earlier releases used `.env.testnet` and `--env-file`. That still works: pass
-`--env-file .env.testnet` to `docker compose` and `.env.testnet` as the last
-argument of the scripts. To drop the flags, rename it once:
+Earlier releases kept the settings in `.env.testnet` in the repository root
+and ran Compose there. Move the file once; the containers, the Dogecoin
+volume, and `DATA_ROOT` stay the same:
 
 ```bash
-mv .env.testnet .env
+mv .env.testnet testnet/.env
+cd testnet
+docker compose up -d
 ```
 
-Before renaming, check that no `.env` exists yet; very old releases created a
-`.env` that is no longer used and can be removed. Compose and the scripts
-reject an env file without `DATA_ROOT`.
+A `.env` in the repository root left by very old releases is no longer used
+and can be removed.
 
 </details>
 
@@ -60,8 +63,8 @@ DOGEOS_ETHEREUM_RPC_URL=https://your-sepolia-execution-rpc
 The provider must support Sepolia (chain ID `11155111`) and execution methods
 including `eth_getBlockByHash`. Apply it with `docker compose up -d`.
 
-Earlier releases set overrides in `envs/testnet/l1-interface.local.env`. That
-file is still read but deprecated: move its values to `.env`
+Earlier releases set overrides in `envs/testnet/l1-interface.local.env` in the
+repository root. On testnet that file is still read but deprecated: move its values to `.env`
 (`DOGEOS_L1_INTERFACE_ETHEREUM_DA__L1_RPC_URL` becomes `DOGEOS_ETHEREUM_RPC_URL`,
 `DOGEOS_L1_INTERFACE_DOGECOIN_RPC__URL`/`__USER`/`__PASS` become
 `DOGEOS_EXTERNAL_DOGECOIN_RPC_URL`/`_USER`/`_PASSWORD`) and delete it. Settings in
@@ -131,8 +134,8 @@ L2RETH_EXTRA_ARGS=--rpc.max-tracing-requests 8
 To serve without them, set `L2RETH_HTTP_API` and `L2RETH_WS_API` to
 `eth,net,web3`. `L2RETH_EXTRA_ARGS` accepts other `rollup-node` flags, such as
 `--rpc.gascap` or `--rpc-cache.*`, separated by spaces. Do not repeat a flag
-already set by `scripts/l2reth_entrypoint.sh` or by `L2RETH_NETWORK_ARGS` in
-`networks/<network>/compose.yml`; `rollup-node` exits on duplicates. Recreate
+already set by the network's `scripts/l2reth_entrypoint.sh`; `rollup-node`
+exits on duplicates. Recreate
 `l2reth-node` after changing these values.
 
 ### Load Balancer Health
@@ -152,7 +155,7 @@ backends, and remove a node that falls more than a few blocks behind.
 | L1 Interface RPC | `http://localhost:8547` | Internal (L1 client for L2Reth) |
 | L1 Interface health | `http://localhost:9090/health`, `/api/v1/health/ready` | Internal |
 
-Default ports per network are listed in each `networks/<network>/env.example`;
+Default ports per network are listed in each network's `env.example`;
 set them in `.env` to change the host ports.
 Internal ports follow `INTERNAL_BIND_ADDR`: mainnet sets `127.0.0.1`; testnet
 leaves it unset, which keeps publishing them on all interfaces as earlier
@@ -249,5 +252,5 @@ Dogecoin Docker volume.
 | Snapshot downloads | `${DATA_ROOT}/.snapshot-cache` |
 
 Keep `DATA_ROOT` on a mounted data disk outside the repository. Where Dogecoin
-keeps its data is part of each network's configuration
-(`networks/<network>/compose.yml`), not an operator setting.
+keeps its data is part of each network's `docker-compose.yml`, not an operator
+setting.

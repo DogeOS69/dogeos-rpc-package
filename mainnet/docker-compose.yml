@@ -1,0 +1,170 @@
+# DogeOS RPC stack for mainnet. Self-contained: everything this network runs
+# (images, configuration, scripts) lives in this directory, and nothing is
+# shared with testnet.
+#
+# Mainnet is not released. The images below are placeholders copied from
+# testnet until the mainnet versions are chosen, and the configuration files
+# listed in README.md still have to be added.
+#
+# Run commands in this directory. Operator settings come from .env here,
+# created from env.example; Compose reads it by default.
+
+# COMPOSE_PROJECT_NAME in .env overrides it.
+name: dogeos-rpc-package-mainnet
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: ${LOG_MAX_SIZE:-100m}
+    max-file: ${LOG_MAX_FILE:-5}
+
+services:
+  dogecoin-node:
+    image: dogeos69/dogecoin:1.14.9
+    logging: *logging
+    restart: unless-stopped
+    mem_reservation: ${DOGECOIN_MEM_RESERVATION:-14g}
+    mem_limit: ${DOGECOIN_MEM_LIMIT:-24g}
+    memswap_limit: ${DOGECOIN_MEM_LIMIT:-24g}
+    oom_score_adj: -100
+    volumes:
+      - type: bind
+        source: ./config/dogecoin.conf
+        target: /etc/dogeos/dogecoin.conf
+        read_only: true
+        bind:
+          create_host_path: false
+      - ./scripts/dogecoin_entrypoint.sh:/entrypoint.sh:ro
+      # Dogecoin data under DATA_ROOT, like the other services.
+      - type: bind
+        source: ${DATA_ROOT:?DATA_ROOT must be set}/dogecoin
+        target: /data
+        bind:
+          create_host_path: true
+    secrets:
+      - dogecoin_rpc_user
+      - dogecoin_rpc_password
+    # Container ports are fixed by dogecoin.conf. P2P stays on the port
+    # dogecoind listens on and advertises; DOGECOIN_RPC_PORT only changes the
+    # RPC host port, which is published on 127.0.0.1 unless INTERNAL_BIND_ADDR
+    # says otherwise.
+    ports:
+      - 22556:22556
+      - ${INTERNAL_BIND_ADDR:-127.0.0.1}:${DOGECOIN_RPC_PORT:-22555}:22555
+    entrypoint:
+      - /bin/sh
+      - /entrypoint.sh
+    command:
+      - /dogecoin/bin/dogecoind
+      - "-conf=/run/dogeos/dogecoin.conf"
+      - "-datadir=/data"
+      - "-printtoconsole"
+
+  l2reth-node:
+    image: dogeos69/rollup-node:v0.3.0-beta.1c  # TBD for mainnet
+    logging: *logging
+    # Required by --consensus.exit-on-signer-rotation: the node exits with code
+    # 70 when the L1 signer rotates and must be restarted to pick it up.
+    restart: unless-stopped
+    mem_reservation: 1g
+    mem_limit: ${L2RETH_MEM_LIMIT:-8g}
+    memswap_limit: ${L2RETH_MEM_LIMIT:-8g}
+    oom_score_adj: -100
+    env_file:
+      - ./config/l2reth.env
+    environment:
+      L2RETH_HTTP_API: ${L2RETH_HTTP_API:-eth,net,web3,debug,trace}
+      L2RETH_WS_API: ${L2RETH_WS_API:-eth,net,web3,debug,trace}
+      L2RETH_EXTRA_ARGS: ${L2RETH_EXTRA_ARGS:-}
+    volumes:
+      - type: bind
+        source: ./config/l2reth-genesis.json
+        target: /l2reth/genesis/genesis.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - ./scripts/l2reth_entrypoint.sh:/entrypoint.sh:ro
+      - type: bind
+        source: ${DATA_ROOT:?DATA_ROOT must be set}/l2reth
+        target: /l2reth
+        bind:
+          create_host_path: true
+    ports:
+      - ${L2_HTTP_PORT:-18545}:8545
+      - ${L2_WS_PORT:-18546}:8546
+      - ${L2_P2P_PORT:-40303}:30303/tcp
+      - ${L2_P2P_PORT:-40303}:30303/udp
+      - 127.0.0.1:${L2_METRICS_PORT:-6060}:6060
+    depends_on:
+      l1-interface:
+        condition: service_started
+    entrypoint:
+      - /bin/sh
+      - /entrypoint.sh
+
+  l1-interface:
+    image: dogeos69/l1-interface:v0.3.0-beta.3d  # TBD for mainnet
+    logging: *logging
+    restart: unless-stopped
+    mem_reservation: 512m
+    mem_limit: ${L1_INTERFACE_MEM_LIMIT:-2g}
+    memswap_limit: ${L1_INTERFACE_MEM_LIMIT:-2g}
+    oom_score_adj: -100
+    env_file:
+      - ./config/l1-interface.env
+    # Optional operator overrides from .env; the entrypoint applies the ones
+    # that are set, ahead of l1-interface.env.
+    environment:
+      DOGEOS_RPC_PACKAGE_DOGECOIN_RPC_URL: http://dogecoin-node:22555
+      DOGEOS_RPC_PACKAGE_ETHEREUM_RPC_URL: ${DOGEOS_ETHEREUM_RPC_URL:-}
+      DOGEOS_RPC_PACKAGE_EXTERNAL_DOGECOIN_RPC_URL: ${DOGEOS_EXTERNAL_DOGECOIN_RPC_URL:-}
+      DOGEOS_RPC_PACKAGE_EXTERNAL_DOGECOIN_RPC_USER: ${DOGEOS_EXTERNAL_DOGECOIN_RPC_USER:-}
+      DOGEOS_RPC_PACKAGE_EXTERNAL_DOGECOIN_RPC_PASSWORD: ${DOGEOS_EXTERNAL_DOGECOIN_RPC_PASSWORD:-}
+    volumes:
+      - type: bind
+        source: ./config/l2reth-genesis.json
+        target: /app/genesis/genesis.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./config/protocol_context.json
+        target: /app/protocol_context.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - ./scripts/l1-interface_entrypoint.sh:/entrypoint.sh:ro
+      - type: bind
+        source: ${DATA_ROOT:?DATA_ROOT must be set}/l1-interface
+        target: /data
+        bind:
+          create_host_path: true
+    secrets:
+      - dogecoin_rpc_user
+      - dogecoin_rpc_password
+    entrypoint:
+      - /bin/sh
+      - /entrypoint.sh
+    ports:
+      - ${INTERNAL_BIND_ADDR:-127.0.0.1}:8547:8545
+      - ${INTERNAL_BIND_ADDR:-127.0.0.1}:5052:5052
+      - ${INTERNAL_BIND_ADDR:-127.0.0.1}:9090:9090
+    # Verify this endpoint against the mainnet L1 Interface version.
+    healthcheck:
+      test:
+        - CMD
+        - bash
+        - -c
+        - exec 3<>/dev/tcp/127.0.0.1/9090 && printf 'GET /api/v1/health/ready HTTP/1.0\r\n\r\n' >&3 && head -n 1 <&3 | grep -q ' 200 '
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      # Initial sync on a new node can take hours; failures before the first
+      # success are not counted.
+      start_period: 12h
+
+secrets:
+  dogecoin_rpc_user:
+    environment: DOGECOIN_RPC_USER
+  dogecoin_rpc_password:
+    environment: DOGECOIN_RPC_PASSWORD

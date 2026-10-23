@@ -1,11 +1,19 @@
-# Shared service definitions. Each service extends networks/${NETWORK}/compose.yml,
-# which holds everything that differs per network: images, configuration files,
-# data and port layout, and version-dependent settings. Settings here apply to
-# both networks and win over the network file, so keep network- or
-# version-specific values out of this file.
+# DogeOS RPC stack for testnet. Self-contained: everything this network runs
+# (images, configuration, scripts, bootstrap download) lives in this directory,
+# and nothing is shared with mainnet.
 #
-# Operator settings come from .env in this directory (Compose reads it by
-# default), or from the file given with --env-file.
+# Run commands in this directory. Operator settings come from .env here,
+# created from env.example; Compose reads it by default.
+#
+# Image versions (behavior documented for this network was checked against
+# these versions):
+#   dogecoin-node  Dogecoin Core 1.14.9
+#   l2reth-node    DogeOS69/dogeos-rollup-node  v0.3.0-beta.1c  d3260afe
+#   l1-interface   DogeOS L1 Interface          v0.3.0-beta.3d
+
+# Project name of earlier releases, so existing containers and the Dogecoin
+# volume are reused. COMPOSE_PROJECT_NAME in .env overrides it.
+name: dogeos-rpc-package
 
 x-logging: &logging
   driver: json-file
@@ -15,9 +23,7 @@ x-logging: &logging
 
 services:
   dogecoin-node:
-    extends:
-      file: networks/${NETWORK:?NETWORK must be set in the Compose env file}/compose.yml
-      service: dogecoin-node
+    image: dogeos69/dogecoin:1.14.9
     logging: *logging
     restart: unless-stopped
     mem_reservation: ${DOGECOIN_MEM_RESERVATION:-14g}
@@ -25,10 +31,25 @@ services:
     memswap_limit: ${DOGECOIN_MEM_LIMIT:-24g}
     oom_score_adj: -100
     volumes:
+      - type: bind
+        source: ./config/dogecoin.conf
+        target: /etc/dogeos/dogecoin.conf
+        read_only: true
+        bind:
+          create_host_path: false
       - ./scripts/dogecoin_entrypoint.sh:/entrypoint.sh:ro
+      # Docker volume kept from earlier releases.
+      - dogecoin_data:/data
     secrets:
       - dogecoin_rpc_user
       - dogecoin_rpc_password
+    # Container ports are fixed by dogecoin.conf. P2P stays on the port
+    # dogecoind listens on and advertises; DOGECOIN_RPC_PORT only changes the
+    # RPC host port. INTERNAL_BIND_ADDR is unset by default, publishing RPC on
+    # all interfaces as earlier releases did.
+    ports:
+      - 44556:44556
+      - ${INTERNAL_BIND_ADDR:+${INTERNAL_BIND_ADDR:-}:}${DOGECOIN_RPC_PORT:-44555}:44555
     entrypoint:
       - /bin/sh
       - /entrypoint.sh
@@ -37,10 +58,9 @@ services:
       - "-conf=/run/dogeos/dogecoin.conf"
       - "-datadir=/data"
       - "-printtoconsole"
+
   l2reth-node:
-    extends:
-      file: networks/${NETWORK:?NETWORK must be set in the Compose env file}/compose.yml
-      service: l2reth-node
+    image: dogeos69/rollup-node:v0.3.0-beta.1c
     logging: *logging
     # Required by --consensus.exit-on-signer-rotation: the node exits with code
     # 70 when the L1 signer rotates and must be restarted to pick it up.
@@ -49,49 +69,74 @@ services:
     mem_limit: ${L2RETH_MEM_LIMIT:-8g}
     memswap_limit: ${L2RETH_MEM_LIMIT:-8g}
     oom_score_adj: -100
+    env_file:
+      - ./config/l2reth.env
     environment:
       L2RETH_HTTP_API: ${L2RETH_HTTP_API:-eth,net,web3,debug,trace}
       L2RETH_WS_API: ${L2RETH_WS_API:-eth,net,web3,debug,trace}
       L2RETH_EXTRA_ARGS: ${L2RETH_EXTRA_ARGS:-}
     volumes:
+      - type: bind
+        source: ./config/l2reth-genesis.json
+        target: /l2reth/genesis/genesis.json
+        read_only: true
+        bind:
+          create_host_path: false
       - ./scripts/l2reth_entrypoint.sh:/entrypoint.sh:ro
       - type: bind
         source: ${DATA_ROOT:?DATA_ROOT must be set}/l2reth
         target: /l2reth
         bind:
           create_host_path: true
+    ports:
+      - ${L2_HTTP_PORT:-8545}:8545
+      - ${L2_WS_PORT:-8546}:8546
+      - ${L2_P2P_PORT:-30303}:30303/tcp
+      - ${L2_P2P_PORT:-30303}:30303/udp
+      - 127.0.0.1:${L2_METRICS_PORT:-6060}:6060
     depends_on:
       l1-interface:
         condition: service_started
     entrypoint:
       - /bin/sh
       - /entrypoint.sh
+
   l1-interface:
-    extends:
-      file: networks/${NETWORK:?NETWORK must be set in the Compose env file}/compose.yml
-      service: l1-interface
+    image: dogeos69/l1-interface:v0.3.0-beta.3d
     logging: *logging
     restart: unless-stopped
     mem_reservation: 512m
     mem_limit: ${L1_INTERFACE_MEM_LIMIT:-2g}
     memswap_limit: ${L1_INTERFACE_MEM_LIMIT:-2g}
     oom_score_adj: -100
-    # Deprecated: the operator override file of earlier releases, still read
-    # after the network's l1-interface.env. Use the .env settings below instead.
     env_file:
-      - path: ./envs/${NETWORK}/l1-interface.local.env
+      - ./config/l1-interface.env
+      # Deprecated: the operator override file of earlier releases (relative to
+      # the repository root), still read after l1-interface.env. Use the .env
+      # settings below instead.
+      - path: ../envs/testnet/l1-interface.local.env
         required: false
     # Optional operator overrides from .env; the entrypoint applies the ones
     # that are set, ahead of l1-interface.env and the deprecated file.
     environment:
+      DOGEOS_RPC_PACKAGE_DOGECOIN_RPC_URL: http://dogecoin-node:44555
       DOGEOS_RPC_PACKAGE_ETHEREUM_RPC_URL: ${DOGEOS_ETHEREUM_RPC_URL:-}
       DOGEOS_RPC_PACKAGE_EXTERNAL_DOGECOIN_RPC_URL: ${DOGEOS_EXTERNAL_DOGECOIN_RPC_URL:-}
       DOGEOS_RPC_PACKAGE_EXTERNAL_DOGECOIN_RPC_USER: ${DOGEOS_EXTERNAL_DOGECOIN_RPC_USER:-}
       DOGEOS_RPC_PACKAGE_EXTERNAL_DOGECOIN_RPC_PASSWORD: ${DOGEOS_EXTERNAL_DOGECOIN_RPC_PASSWORD:-}
-    entrypoint:
-      - /bin/sh
-      - /entrypoint.sh
     volumes:
+      - type: bind
+        source: ./config/l2reth-genesis.json
+        target: /app/genesis/genesis.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./config/protocol_context.json
+        target: /app/protocol_context.json
+        read_only: true
+        bind:
+          create_host_path: false
       - ./scripts/l1-interface_entrypoint.sh:/entrypoint.sh:ro
       - type: bind
         source: ${DATA_ROOT:?DATA_ROOT must be set}/l1-interface
@@ -101,19 +146,42 @@ services:
     secrets:
       - dogecoin_rpc_user
       - dogecoin_rpc_password
+    entrypoint:
+      - /bin/sh
+      - /entrypoint.sh
+    ports:
+      - ${INTERNAL_BIND_ADDR:+${INTERNAL_BIND_ADDR:-}:}8547:8545
+      - ${INTERNAL_BIND_ADDR:+${INTERNAL_BIND_ADDR:-}:}5052:5052
+      - ${INTERNAL_BIND_ADDR:+${INTERNAL_BIND_ADDR:-}:}9090:9090
+    # Readiness of the database and replay read model: 503 during startup,
+    # while reorg recovery is active, or after the replay pipeline stops.
+    # (The legacy /health endpoint only reports that startup finished.)
+    # Informational: L2Reth does not wait on it. The image has no curl.
+    healthcheck:
+      test:
+        - CMD
+        - bash
+        - -c
+        - exec 3<>/dev/tcp/127.0.0.1/9090 && printf 'GET /api/v1/health/ready HTTP/1.0\r\n\r\n' >&3 && head -n 1 <&3 | grep -q ' 200 '
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      # Initial sync on a new node can take hours; failures before the first
+      # success are not counted.
+      start_period: 12h
     depends_on:
       l1-interface-init-fetch-sqlite:
         condition: service_completed_successfully
+
+  # One-time bootstrap of the pre-v0.3.0 testnet history (not a periodic
+  # snapshot). Each URL basename ends with -<sha256>, which is verified.
   l1-interface-init-fetch-sqlite:
-    extends:
-      file: networks/${NETWORK:?NETWORK must be set in the Compose env file}/compose.yml
-      service: l1-interface-init-fetch-sqlite
     image: curlimages/curl:8.20.0
     logging: *logging
     restart: "no"
-    # ARTIFACT_URL and REPLAY_DB_URL come from the network's
-    # l1-interface-bootstrap.env. When both are empty, it exits immediately.
     environment:
+      ARTIFACT_URL: https://dogeos-eth-da-archive-testnet.s3.us-west-2.amazonaws.com/history/l1-interface-historical-artifact-404b44250950c18748b8595c26f6ab8f109b4873002d5be5ce0ddb0d0c30cf5a.sqlite
+      REPLAY_DB_URL: https://dogeos-eth-da-archive-testnet.s3.us-west-2.amazonaws.com/history/replay-fb8c66a7ce147e0fa8ac2166dded42247cab1debb755df37ba31452e3c275494.sqlite
       DOGEOS_L1_INTERFACE_EVENT_PLANE_ARTIFACT_PATH: /data/l1-interface-historical-artifact.sqlite
       DOGEOS_L1_INTERFACE_REPLAY_READ__SQLITE_PATH: /data/replay.sqlite
     user: "0:0"
@@ -144,17 +212,6 @@ services:
 
           printf '%s' "$$checksum"
         }
-
-        ARTIFACT_URL=$${ARTIFACT_URL:-}
-        REPLAY_DB_URL=$${REPLAY_DB_URL:-}
-        if [ -z "$$ARTIFACT_URL" ] && [ -z "$$REPLAY_DB_URL" ]; then
-          echo "No L1 Interface bootstrap data is configured for this network; skipping download."
-          exit 0
-        fi
-        if [ -z "$$ARTIFACT_URL" ] || [ -z "$$REPLAY_DB_URL" ]; then
-          echo "ARTIFACT_URL and REPLAY_DB_URL must be set together" >&2
-          exit 1
-        fi
 
         # --- Task 1: Artifact Download ---
         DEST_PATH="$$DOGEOS_L1_INTERFACE_EVENT_PLANE_ARTIFACT_PATH"
@@ -190,11 +247,10 @@ services:
         fi
 
 volumes:
-  # Used by networks that keep Dogecoin data in a Docker volume (testnet). Not
-  # created for networks that bind-mount it (mainnet). The fallback is the name
-  # Compose generated before v0.3.0.
+  # Name used by earlier releases; nodes with custom names set it in .env.
   dogecoin_data:
-    name: ${DOGECOIN_VOLUME_NAME:-${COMPOSE_PROJECT_NAME}_dogecoin_data}
+    name: ${DOGECOIN_VOLUME_NAME:-${COMPOSE_PROJECT_NAME:-dogeos-rpc-package}_dogecoin_data}
+
 secrets:
   dogecoin_rpc_user:
     environment: DOGECOIN_RPC_USER

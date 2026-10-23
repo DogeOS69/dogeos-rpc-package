@@ -1,24 +1,23 @@
 # Snapshots and Recovery
 
 How to restore published snapshots and recover service data. Run commands
-from the repository root; they use the network configured in `.env` (see
-[Quick Start](../README.md#quick-start)). Mainnet snapshots are not published
-yet ([mainnet status](../networks/mainnet/README.md)).
+inside the network's directory (`testnet/` or `mainnet/`); each network has
+its own scripts, which use its `.env` (see
+[Quick Start](../README.md#quick-start)). Examples use testnet. Mainnet
+snapshots are not published yet ([mainnet status](../mainnet/README.md)).
 
 When recovering a node, keep its `.env`, project name, Dogecoin volume name,
-and RPC credentials; do not replace `.env` with the template. A node that still
-uses `.env.testnet` passes it as the last argument of the scripts and with
-`--env-file` to `docker compose`.
+and RPC credentials; do not replace `.env` with the template.
 
 ## How Snapshots Work
 
 Snapshots are published to S3 and listed in a per-network index
 (`<network>/index.json` in the snapshot bucket), so new snapshots do not need a
-package update. `scripts/restore-snapshot.sh`:
+package update. Each network's `scripts/restore-snapshot.sh`:
 
-1. Reads the index for `NETWORK` and selects the newest snapshot whose
-   compatible images include the image in `networks/<network>/compose.yml`, or
-   the one given with `--snapshot-id`.
+1. Reads that network's index and selects the newest snapshot whose
+   compatible images include the image in the network's `docker-compose.yml`,
+   or the one given with `--snapshot-id`.
 2. Checks free disk space, then downloads or resumes the archive under
    `${DATA_ROOT}/.snapshot-cache/<component>` and verifies its SHA-256.
 3. Rejects unsafe archive paths and files that must not be in a snapshot

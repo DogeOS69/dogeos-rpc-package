@@ -68,9 +68,10 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-# shellcheck source=scripts/lib/env.sh
-. "$REPO_ROOT/scripts/lib/env.sh"
+NETWORK=testnet
+NETWORK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+# shellcheck source=testnet/scripts/lib/env.sh
+. "$NETWORK_DIR/scripts/lib/env.sh"
 
 if "$CONFIRMED" && ! "$DELETE"; then
   fail "--yes is only valid together with --delete"
@@ -83,16 +84,16 @@ fi
 require_command docker
 require_command readlink
 
-ENV_FILE_ABS="$(resolve_env_file "$ENV_FILE" "$REPO_ROOT")"
-REPO_ROOT_ABS="$(readlink -m "$REPO_ROOT")"
+ENV_FILE_ABS="$(resolve_env_file "$ENV_FILE" "$NETWORK_DIR")"
+# Data must not live anywhere inside the repository checkout.
+REPO_ROOT_ABS="$(readlink -m "$NETWORK_DIR/..")"
 
-# NETWORK and DATA_ROOT as Compose resolves them (see scripts/lib/env.sh), so
-# the directories reset are the ones the stack mounts.
-COMPOSE_JSON="$(compose_config_json "$ENV_FILE_ABS" "$REPO_ROOT_ABS")"
-NETWORK="$(printf '%s' "$COMPOSE_JSON" | config_network)"
+# DATA_ROOT as Compose resolves it (see scripts/lib/env.sh), so the directories
+# reset are the ones the stack mounts.
+COMPOSE_JSON="$(compose_config_json "$ENV_FILE_ABS" "$NETWORK_DIR")"
 DATA_ROOT="$(printf '%s' "$COMPOSE_JSON" | config_data_root)"
 [ -n "$DATA_ROOT" ] || fail "cannot determine DATA_ROOT from the Compose configuration"
-echo "Using env file: $ENV_FILE_ABS (NETWORK=${NETWORK:-unset}, DATA_ROOT=$DATA_ROOT)"
+echo "Using env file: $ENV_FILE_ABS (NETWORK=$NETWORK, DATA_ROOT=$DATA_ROOT)"
 
 DATA_ROOT_ABS="$(check_data_path DATA_ROOT "$DATA_ROOT" "$REPO_ROOT_ABS")"
 
@@ -110,8 +111,8 @@ echo
 
 echo "Stopping Compose services..."
 (
-  cd "$REPO_ROOT_ABS"
-  docker compose --project-directory "$REPO_ROOT_ABS" --env-file "$ENV_FILE_ABS" down
+  cd "$NETWORK_DIR"
+  docker compose --project-directory "$NETWORK_DIR" --env-file "$ENV_FILE_ABS" down
 )
 
 if "$DELETE"; then
@@ -140,9 +141,9 @@ mkdir -p "$L1_DIR" "$L2_DIR"
 
 echo
 echo "Reset complete. Empty data directories were created; the services remain stopped."
-echo "Next, from $REPO_ROOT_ABS, restore the published L2Reth snapshot and start"
+echo "Next, from $NETWORK_DIR, restore the published L2Reth snapshot and start"
 echo "the stack:"
-if [ "$ENV_FILE_ABS" = "$REPO_ROOT_ABS/.env" ]; then
+if [ "$ENV_FILE_ABS" = "$NETWORK_DIR/.env" ]; then
   echo "  ./scripts/restore-snapshot.sh --no-start l2reth"
   echo "  docker compose up -d"
 else

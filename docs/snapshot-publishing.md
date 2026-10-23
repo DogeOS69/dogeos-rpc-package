@@ -5,7 +5,7 @@ This is the contract between the snapshot publishing pipeline and
 index update; it does not need a package release.
 
 A package release is needed only to change the index URL, the archive layout
-rules enforced by the script, or the signer list (`snapshots/allowed_signers`).
+rules enforced by the script, or the signer list (`<network>/snapshots/allowed_signers`).
 
 ## S3 Layout
 
@@ -52,7 +52,7 @@ Each entry:
 | `height` | no | Block height of the data (Dogecoin, L1 Interface synthetic L1, or L2), shown by `--list`. |
 | `dogecoin_height` | no | `l1-interface` only: Dogecoin height the data was indexed against. |
 | `l1_height` | no | `l2reth` only: L1 Interface block the data was derived against. |
-| `compatible_images` | yes | Image references that can open this data, written exactly as in `docker-compose.yml` (for example `dogeos69/rollup-node:v0.3.0-beta.1c`). |
+| `compatible_images` | yes | Image references that can open this data, written exactly as in the network's `docker-compose.yml` (for example `dogeos69/rollup-node:v0.3.0-beta.1c`). |
 | `archive.url` | yes | HTTPS URL of a `.tar.gz` archive. |
 | `archive.sha256` | yes | Lowercase hex SHA-256 of the archive. |
 | `archive.size_bytes` | no | Archive size; used for the free-space check. |
@@ -66,7 +66,7 @@ refuse the index instead of misreading it.
 ## Image Compatibility
 
 The script restores only a snapshot whose `compatible_images` contains the
-image that network uses (`networks/<network>/compose.yml`). Testnet and mainnet
+image that network uses (`<network>/docker-compose.yml`). Testnet and mainnet
 can run different versions, and each network has its own index. Before
 releasing a package that changes a network's `dogecoin-node`, `l1-interface`,
 or `l2reth-node` image, update that network's index:
@@ -162,11 +162,11 @@ publishing pipeline can write to the bucket:
 ## Optional: Signed Index
 
 The script verifies `index.json.sig` whenever the package contains
-`snapshots/allowed_signers`. To enable signing:
+`<network>/snapshots/allowed_signers`. To enable signing:
 
 1. Create an Ed25519 key for the pipeline; keep the private key in the
    pipeline's secret store.
-2. Release a package containing `snapshots/allowed_signers` with the line
+2. Release a package containing `<network>/snapshots/allowed_signers` with the line
    `dogeos-snapshots <public key>`. Several lines allow key rotation.
 3. Sign every index before uploading it:
 

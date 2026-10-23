@@ -1,12 +1,12 @@
 # Upgrade an Existing Testnet Node to v0.3.0
 
 > [!NOTE]
-> Archived guide for nodes still on the v0.2.x package. Paths below are those
-> of the v0.3.0 release: `.env.example.testnet` is now
-> `networks/testnet/env.example`, `configs/testnet/` and `envs/testnet/` are now
-> `networks/testnet/`, and `restore-l2reth-snapshot.sh` is now
-> `restore-snapshot.sh l2reth`. Nodes already on v0.3.0 follow the
-> [changelog](../../../CHANGELOG.md) instead.
+> Archived guide for nodes still on the v0.2.x package. It uses the file
+> layout of the v0.3.0 release, which ran from the repository root with
+> `.env.testnet`: where it says to pull the new code, check out commit
+> `9df76ed` (the last release in that layout) instead. After completing it,
+> update to the current release and follow the
+> [changelog](../../../CHANGELOG.md) to move `.env.testnet` to `testnet/.env`.
 
 Use this guide **after v0.3.0 is merged into `main`**. It upgrades the old
 v0.2.x package, whether it used L2Geth or older L2Reth. Allow a maintenance

@@ -1,12 +1,11 @@
 # shellcheck shell=bash
-# Shared helpers for scripts that act on the Compose deployment. Source this
-# file; callers define fail().
+# Helpers for this network's scripts. Source this file; callers define fail().
 #
 # Settings are taken from the configuration Docker Compose resolves, never by
 # reading the env file directly: Compose syntax is not shell syntax, exported
 # shell variables take precedence over the file, and values may reference
-# other variables. The scripts therefore always act on the same NETWORK and
-# DATA_ROOT that `docker compose up` uses.
+# other variables. The scripts therefore always act on the same DATA_ROOT that
+# `docker compose up` uses.
 
 JQ_IMAGE="ghcr.io/jqlang/jq:1.7.1"
 
@@ -20,31 +19,24 @@ jqx() {
   fi
 }
 
-# resolve_env_file <arg-or-empty> <repo-root>: print the absolute env file
-# path, defaulting to .env in the repository root.
+# resolve_env_file <arg-or-empty> <network-dir>: print the absolute env file
+# path, defaulting to .env in the network directory.
 resolve_env_file() {
-  local file="$1" repo_root="$2"
+  local file="$1" network_dir="$2"
   if [ -z "$file" ]; then
-    file="$repo_root/.env"
+    file="$network_dir/.env"
     [ -f "$file" ] ||
-      fail "no env file given and $file does not exist; create it from networks/<network>/env.example"
+      fail "no env file given and $file does not exist; create it from $network_dir/env.example"
   fi
   [ -f "$file" ] || fail "env file not found: $file"
   printf '%s/%s\n' "$(cd "$(dirname "$file")" && pwd -P)" "$(basename "$file")"
 }
 
-# compose_config_json <env-file> <repo-root>: print the resolved configuration.
+# compose_config_json <env-file> <network-dir>: print the resolved configuration.
 compose_config_json() {
   docker compose -f "$2/docker-compose.yml" --project-directory "$2" \
     --env-file "$1" config --format json ||
     fail "docker compose cannot read the configuration for $1"
-}
-
-# config_network: NETWORK, from the network directory that provides
-# dogecoin.conf. Reads the configuration JSON on stdin.
-config_network() {
-  jqx -r '.services["dogecoin-node"].volumes // [] | map(select(.target == "/etc/dogeos/dogecoin.conf"))
-    | first | .source // "" | split("/") | .[-2] // ""'
 }
 
 # config_data_root: DATA_ROOT, from the L2Reth data mount. Reads the
