@@ -64,9 +64,9 @@ node's startup and that read is missed; restarting L2Reth picks it up.
 The same policy brings a running L2Reth back after a host or Docker restart. A
 container stopped with `docker compose stop` stays stopped, and
 `docker compose down` removes it. An existing container keeps its old restart
-policy until it is recreated with
+policy and shutdown time until it is recreated with
 `docker compose --env-file .env.testnet up -d --no-deps l2reth-node`, which
-briefly interrupts L2 RPC; `docker compose restart` does not apply it.
+briefly interrupts L2 RPC; `docker compose restart` does not apply them.
 
 ## Hardware Requirements
 
@@ -360,8 +360,9 @@ seconds or more, so a node that fails later than that restarts again right
 away, without end.
 
 ```bash
-# Restarts since the container was last started or recreated by hand, and
-# whether the last exit was an out-of-memory kill
+# Restarts since the container was last started by hand, recreated, or
+# started by a Docker daemon start, and whether the last exit was an
+# out-of-memory kill
 docker inspect -f '{{.RestartCount}} oom={{.State.OOMKilled}}' \
   "$(docker compose --env-file .env.testnet ps -q l2reth-node)"
 
@@ -396,8 +397,8 @@ catches a node that keeps running but stops syncing.
   stays down across reboots. Save the logs with
   `docker compose --env-file .env.testnet logs --since 2h l2reth-node > l2reth-node.log`
   and look for `fail-stopping`, `Fatal error in consensus engine`,
-  `panicked at`, or `genesis`. Do not reset or restore data until someone has
-  read them.
+  `panicked at`, or `genesis hash in the storage does not match`. Do not reset
+  or restore data until someone has read them.
 - **`net_peerCount` is `0x0`:** Confirm every enode hostname resolves, TCP/UDP
   port 30303 is reachable, and `L2RETH_NETWORK_ID` matches the remote peers.
   Configured enodes are not proof of completed devp2p handshakes.
