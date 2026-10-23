@@ -54,8 +54,9 @@ L1. Docker clears the exit code once the container runs again, so the log line
 is the record of a rotation restart.
 
 The node reads the signer from L1 Interface about every 12 seconds and exits
-only after three reads in a row return the same new signer, roughly 25 to 40
-seconds after L1 Interface first returns it. Failed reads never cause an exit:
+only after three successful reads in a row return the same new signer; failed
+reads in between are skipped. With working reads, that is roughly 25 to 40 seconds after
+L1 Interface first returns the new signer. Failed reads never cause an exit:
 while L1 Interface is unreachable, L2Reth keeps running with the old signer and
 logs a warning after every 25 failed reads in a row. The node reads its signer
 once at startup, and the check starts from its own first successful read a
@@ -354,8 +355,9 @@ docker compose --env-file .env.testnet up -d --force-recreate l1-interface
 
 ### Restart Monitoring
 
-Docker restarts L2Reth after every exit except `docker compose stop` or `down`,
-so a node that keeps failing never stays down on its own. A signer rotation
+Docker restarts L2Reth after every exit except a manual stop or kill
+(`docker compose stop`, `down` or `kill`), so a node that keeps failing never
+stays down on its own. A signer rotation
 exits with code 70 (see [Services](#services)). A running node that finishes
 shutting down after `docker compose stop` or a host shutdown exits with code 0;
 after a host shutdown, Docker starts it again at boot. Exit 137 means Docker
