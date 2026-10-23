@@ -5,6 +5,20 @@ changelog in `mainnet/`.
 
 ## Unreleased
 
+Snapshot groups now use a schema-2 catalog and immutable manifests with explicit
+missing components, archive checksums, release identity and dependency
+checkpoints. Use `python3 scripts/snapshot-group.py list`, then `restore GROUP_ID`.
+Publish a schema-2 catalog before using these commands; older component
+catalogs require the legacy script and an explicit legacy index URL.
+
+Use `python3 scripts/snapshot-group.py start` for cold startup and recovery.
+It waits for Dogecoin initial sync, L1 startup/replay readiness, and recorded
+checkpoint hashes before starting downstream services. Group restores keep an
+interruption journal and require the same group on retry. Direct component
+restore/reset refuses grouped data. L2Reth archive checks now reject forbidden
+subtrees even when tar directory headers are absent, plus links and duplicate
+members. See [Snapshots and Recovery](docs/snapshots.md).
+
 L2Reth now waits for L1 RPC availability and HTTP 200 from
 `/api/v1/health/ready` on every start, including daemon restarts. If using a
 custom L1 endpoint, also set `L2RETH_L1_READY_URL` in `config/l2reth.env`.

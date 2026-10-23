@@ -1,0 +1,84 @@
+{
+  "schema_version": 2,
+  "group_id": "20261023-0100",
+  "network": "testnet",
+  "published_at": "2026-10-23T02:00:00Z",
+  "identity": {
+    "genesis_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "protocol_context_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  },
+  "components": {
+    "dogecoin": {
+      "id": "dogecoin-20261023",
+      "captured_at": "2026-10-23T01:05:00Z",
+      "source_revision": "REPLACE_WITH_SOURCE_REVISION",
+      "compatible_images": [
+        "REPLACE_WITH_RELEASE_IMAGE"
+      ],
+      "checkpoint": {
+        "height": 100,
+        "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "requires": {},
+      "archive": {
+        "url": "https://example.invalid/testnet/dogecoin/20261023.tar.gz",
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "size_bytes": 100,
+        "uncompressed_bytes": 200
+      }
+    },
+    "l1-interface": {
+      "id": "l1-interface-20261023",
+      "captured_at": "2026-10-23T01:02:00Z",
+      "source_revision": "REPLACE_WITH_SOURCE_REVISION",
+      "compatible_images": [
+        "REPLACE_WITH_RELEASE_IMAGE"
+      ],
+      "checkpoint": {
+        "height": 20,
+        "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "requires": {
+        "dogecoin": {
+          "height": 99,
+          "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "archive": {
+        "url": "https://example.invalid/testnet/l1-interface/20261023.tar.gz",
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "size_bytes": 100,
+        "uncompressed_bytes": 200
+      },
+      "replay": {
+        "validated_up_to": 10,
+        "discovered_up_to": 10,
+        "state_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      }
+    },
+    "l2reth": {
+      "id": "l2reth-20261023",
+      "captured_at": "2026-10-23T01:00:00Z",
+      "source_revision": "REPLACE_WITH_SOURCE_REVISION",
+      "compatible_images": [
+        "REPLACE_WITH_RELEASE_IMAGE"
+      ],
+      "checkpoint": {
+        "height": 10,
+        "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "requires": {
+        "l1-interface": {
+          "height": 19,
+          "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "archive": {
+        "url": "https://example.invalid/testnet/l2reth/20261023.tar.gz",
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "size_bytes": 100,
+        "uncompressed_bytes": 200
+      }
+    }
+  }
+}

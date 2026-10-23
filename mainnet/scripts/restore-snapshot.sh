@@ -24,12 +24,15 @@ Examples:
   ./scripts/restore-snapshot.sh --no-start dogecoin
   ./scripts/restore-snapshot.sh l2reth
 
-The newest snapshot compatible with the image in docker-compose.yml is used.
+Legacy schema-1 component restore. For pinned groups use:
+  python3 scripts/snapshot-group.py list
+  python3 scripts/snapshot-group.py restore GROUP_ID
+The newest component snapshot compatible with docker-compose.yml is used.
 
 Services depend on each other as Dogecoin -> L1 Interface -> L2Reth. Before
 the restored data is activated, the component and every service that depends
 on it are stopped, so L2Reth never runs while L1 Interface data moves
-backwards. Starting the stack afterwards lets each service catch up.
+backwards. Staged startup waits for Dogecoin sync and L1 readiness.
 
 Options:
   --list                  List published snapshots and exit.
@@ -52,7 +55,7 @@ Environment overrides:
                           Earlier l2reth overrides; still honored.
 
 Requirements: bash, curl, docker, sha256sum, GNU tar, and jq (run from the
-ghcr.io/jqlang/jq image when jq is not installed).
+ghcr.io/jqlang/jq image when jq is not installed), and Python 3.
 
 Archives contain chain data only. Genesis, configuration, credentials, and
 peer settings always come from this package.
@@ -153,6 +156,7 @@ require_command curl
 require_command docker
 require_command sha256sum
 require_command tar
+require_command python3
 
 COMPOSE=(docker compose -f "$NETWORK_DIR/docker-compose.yml" --project-directory "$NETWORK_DIR" --env-file "$ENV_FILE_ABS")
 
@@ -164,10 +168,14 @@ compose_json() {
 }
 DATA_ROOT="$(compose_json | config_data_root)"
 [ -n "${DATA_ROOT:-}" ] || fail "cannot determine DATA_ROOT from the Compose configuration"
+if [ "$LIST" = false ] && [ "${DOGEOS_GROUP_RESTORE:-}" != 1 ] &&
+   [ -e "$DATA_ROOT/.snapshot-group-state.json" ]; then
+  fail "data is managed by a snapshot group; use snapshot-group.py restore to preserve dependency metadata"
+fi
 echo "Using env file: $ENV_FILE_ABS (NETWORK=$NETWORK, DATA_ROOT=$DATA_ROOT)"
 
 # Validate the resolved mount and env (including legacy overrides) before
-# downloading anything. The result pins the testnet historical artifact hash.
+# downloading anything. The result specifies the network historical-file requirement.
 L1_HISTORICAL=none
 if [ "$COMPONENT" = l1-interface ]; then
   require_command python3
@@ -303,6 +311,13 @@ UPSTREAM_HEIGHT=""
 if [ -n "$SNAPSHOT_URL" ]; then
   echo "Using the snapshot given on the command line; skipping the index and"
   echo "the image compatibility check."
+  if [ "${DOGEOS_GROUP_RESTORE:-}" = 1 ]; then
+    [ -n "${DOGEOS_GROUP_ENTRY:-}" ] || fail "group entry metadata is missing"
+    printf '%s' "$DOGEOS_GROUP_ENTRY" | jqx -e --arg url "$SNAPSHOT_URL" --arg sha "$SNAPSHOT_SHA256" \
+      '.archive.url == $url and .archive.sha256 == $sha' >/dev/null || fail "group entry does not match archive"
+    SIZE_BYTES="$(printf '%s' "$DOGEOS_GROUP_ENTRY" | jqx -r '.archive.size_bytes')"
+    UNCOMPRESSED_BYTES="$(printf '%s' "$DOGEOS_GROUP_ENTRY" | jqx -r '.archive.uncompressed_bytes')"
+  fi
 else
   fetch_index
   IMAGE="$(service_image "$COMPONENT")"
@@ -342,7 +357,7 @@ else
 fi
 
 # Warn when the snapshot is ahead of the running service it depends on. That
-# is safe, but the restored service waits or restarts until upstream catches up.
+# requires upstream catch-up; legacy metadata alone cannot prove compatibility.
 check_upstream() {
   local current="" upstream_name=""
   case "$COMPONENT" in
@@ -371,7 +386,7 @@ check_upstream() {
     dogecoin)
       if [ -n "$HEIGHT" ]; then
         echo "Note: if L1 Interface has indexed Dogecoin beyond height $HEIGHT, it restarts"
-        echo "until the restored node catches up. Its data is not affected."
+        echo "until the restored node catches up. Verify checkpoints before starting downstream."
       fi
       return 0
       ;;
@@ -382,8 +397,8 @@ check_upstream() {
     echo "snapshot ($UPSTREAM_HEIGHT)."
   elif [ "$current" -lt "$UPSTREAM_HEIGHT" ]; then
     echo "WARNING: this snapshot was built against $upstream_name height $UPSTREAM_HEIGHT,"
-    echo "but the running $upstream_name is at $current. $SERVICE will wait and retry"
-    echo "until $upstream_name catches up; this is expected and does not change data."
+    echo "but the running $upstream_name is at $current. Verify the required checkpoint"
+    echo "before starting downstream; legacy component restore does not enforce this checkpoint."
   fi
 }
 check_upstream
@@ -539,6 +554,16 @@ fi
 echo "Verifying SHA-256..."
 verify_checksum "$ARCHIVE_PATH" || fail "snapshot checksum mismatch: $ARCHIVE_PATH"
 echo "SHA-256 verified."
+if [ -n "$SIZE_BYTES" ]; then
+  [ "$(stat -c%s "$ARCHIVE_PATH")" -eq "$SIZE_BYTES" ] || fail "archive size does not match metadata"
+fi
+
+# Reject forbidden subtrees, duplicate members, links and non-regular data
+# before tar can extract anything. L1 uses its stricter fixed-layout validator.
+if [ "$COMPONENT" != l1-interface ]; then
+  python3 "$NETWORK_DIR/scripts/validate-data-archive.py" "$ARCHIVE_PATH" \
+    --component "$COMPONENT" --network "$NETWORK" || fail "invalid data archive"
+fi
 
 # --- Archive layout ---------------------------------------------------------
 
@@ -667,14 +692,14 @@ fi
 if [ "$START_AFTER_RESTORE" = true ]; then
   echo
   echo "Starting the $NETWORK stack..."
-  "${COMPOSE[@]}" up -d
+  python3 "$NETWORK_DIR/scripts/snapshot-group.py" start --env-file "$ENV_FILE_ABS"
   echo
   "${COMPOSE[@]}" ps
 else
   echo
   echo "Restore complete. Stopped services: $STOPPED_SERVICES"
   echo "Start the stack later with:"
-  echo "  $COMPOSE_HINT up -d"
+  printf '  python3 %q start --env-file %q\n' "$NETWORK_DIR/scripts/snapshot-group.py" "$ENV_FILE_ABS"
 fi
 
 echo

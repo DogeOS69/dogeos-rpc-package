@@ -42,7 +42,9 @@ for f in docker-compose.yml env.example README.md CHANGELOG.md \
     scripts/dogecoin_entrypoint.sh scripts/l1-interface_entrypoint.sh \
     scripts/l2reth_entrypoint.sh scripts/restore-snapshot.sh \
     scripts/reset-chain-data.sh scripts/lib/env.sh scripts/validate-l1-snapshot.py \
-    tests/test_l1_snapshot.py tests/test_l2reth_startup.py; do
+    scripts/snapshot-group.py scripts/validate-data-archive.py \
+    tests/test_l1_snapshot.py tests/test_l2reth_startup.py \
+    tests/test_snapshot_groups.py tests/test_data_archive.py docs/group-manifest.example.json; do
   [ -e "$copy/$f" ] || failed "$NETWORK/$f is missing"
 done
 stubbed=""
@@ -93,7 +95,10 @@ else
   failed "docker compose config"
 fi
 
-step "Snapshot restore and L2Reth startup tests"
+step "Snapshot group manifest example"
+python3 "$NETWORK/scripts/snapshot-group.py" validate "$NETWORK/docs/group-manifest.example.json" || failed "example manifest"
+
+step "Snapshot restore, groups and startup tests"
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$NETWORK/tests" -v || failed "Offline tests"
 
 step "Markdown links"

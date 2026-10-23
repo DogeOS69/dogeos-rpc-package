@@ -97,6 +97,9 @@ echo "Using env file: $ENV_FILE_ABS (NETWORK=$NETWORK, DATA_ROOT=$DATA_ROOT)"
 
 DATA_ROOT_ABS="$(check_data_path DATA_ROOT "$DATA_ROOT" "$REPO_ROOT_ABS")"
 
+[ ! -e "$DATA_ROOT_ABS/.snapshot-group-state.json" ] ||
+  fail "data is managed by a snapshot group; use snapshot-group.py restore GROUP_ID --force instead of resetting dependency metadata"
+
 L1_DIR="$DATA_ROOT_ABS/l1-interface"
 L2_DIR="$DATA_ROOT_ABS/l2reth"
 
@@ -141,12 +144,5 @@ mkdir -p "$L1_DIR" "$L2_DIR"
 
 echo
 echo "Reset complete. Empty data directories were created; the services remain stopped."
-echo "Next, from $NETWORK_DIR, restore the published L2Reth snapshot and start"
-echo "the stack:"
-if [ "$ENV_FILE_ABS" = "$NETWORK_DIR/.env" ]; then
-  echo "  ./scripts/restore-snapshot.sh --no-start l2reth"
-  echo "  docker compose up -d"
-else
-  printf '  ./scripts/restore-snapshot.sh --no-start l2reth %q\n' "$ENV_FILE_ABS"
-  printf '  docker compose --env-file %q up -d\n' "$ENV_FILE_ABS"
-fi
+echo "Next, start in dependency order (or restore a group first):"
+printf '  python3 %q start --env-file %q\n' "$NETWORK_DIR/scripts/snapshot-group.py" "$ENV_FILE_ABS"

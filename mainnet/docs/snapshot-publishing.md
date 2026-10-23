@@ -1,133 +1,148 @@
 # Snapshot Publishing
 
-This is the contract between the mainnet snapshot publishing pipeline and
-`mainnet/scripts/restore-snapshot.sh`. No mainnet index is published yet. Publishing a new snapshot is an S3
-upload and an index update; it does not need a package release.
-
-A package release is needed only to change the index URL, the archive layout
-rules enforced by the script, or the signer list
-(`mainnet/snapshots/allowed_signers`).
+This is the contract for mainnet snapshot groups and
+`scripts/snapshot-group.py`. Groups contain independently downloadable
+Dogecoin, L1 Interface and L2Reth archives; a component may explicitly be
+missing. Service images remain pinned by Compose. A group never selects or
+changes images.
 
 ## S3 Layout
 
 ```text
-s3://dogeos-rpc-snapshots/
-  mainnet/
-    index.json                       # the only object that is overwritten
-    index.json.sig                   # only once signing is enabled
-    dogecoin/<archive>.tar.gz
-    dogecoin/<archive>.manifest.json # optional, recommended
-    l1-interface/<archive>.tar.gz
-    l1-interface/<archive>.manifest.json
-    l2reth/<archive>.tar.gz
-    l2reth/<archive>.manifest.json
+s3://dogeos-rpc-snapshots/mainnet/
+  index.json                          # mutable group catalog, schema 2
+  index.json.sig                      # when index signing is enabled
+  groups/<group-id>.json               # immutable group manifest
+  dogecoin/<archive>.tar.gz            # immutable
+  l1-interface/<archive>.tar.gz        # immutable
+  l2reth/<archive>.tar.gz              # immutable
 ```
 
-- Archives and manifests are immutable. Never overwrite one; publish a new
-  name, for example `dogeos-l2reth-mainnet-<UTC timestamp>.tar.gz`.
-- Serve `index.json` with `Content-Type: application/json` and
-  `Cache-Control: no-cache` so a CDN or proxy does not keep an old index.
-- The restore script reads `https://dogeos-rpc-snapshots.s3.us-west-2.amazonaws.com/mainnet/index.json`.
+The default catalog URL is
+`https://dogeos-rpc-snapshots.s3.us-west-2.amazonaws.com/mainnet/index.json`.
+A local package does not prove that a catalog has been published. Publish
+schema 2 before directing operators to group restore. New uploads need no
+package release unless the schema, archive rules or trusted signers change.
 
-## Index Format (schema version 1)
+## Index Format (schema version 2)
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "network": "mainnet",
-  "published_at": "2026-10-20T00:00:00Z",
-  "components": {
-    "dogecoin": [ <entry>, ... ],
-    "l1-interface": [ <entry>, ... ],
-    "l2reth": [ <entry>, ... ]
-  }
+  "published_at": "2026-10-23T02:00:00Z",
+  "groups": [
+    {
+      "id": "20261023-0100",
+      "published_at": "2026-10-23T02:00:00Z",
+      "manifest": {
+        "url": "https://YOUR-BUCKET/mainnet/groups/20261023-0100.json",
+        "sha256": "REPLACE_WITH_MANIFEST_SHA256"
+      }
+    }
+  ]
 }
 ```
 
-Each entry:
+Group IDs are unique and must never be reused with different contents.
+`latest` selects the most recently published group once, without independently
+selecting newer components. An incompatible selected group is an error; the
+client does not silently switch groups or borrow components. An explicit ID
+pins the choice across commands. The descriptor pins the exact manifest bytes
+by SHA-256; the manifest pins each archive. Set `Content-Type: application/json`
+and `Cache-Control: no-cache` on the mutable catalog.
 
-| Field | Required | Meaning |
-|-------|----------|---------|
-| `id` | yes | Unique within the component. Users pass it to `--snapshot-id`. |
-| `created_at` | yes | ISO 8601 UTC time of the source data. The newest compatible entry is selected. |
-| `height` | no | Block height of the data (Dogecoin, L1 Interface synthetic L1, or L2), shown by `--list`. |
-| `dogecoin_height` | no | `l1-interface` only: Dogecoin height the data was indexed against. |
-| `l1_height` | no | `l2reth` only: L1 Interface block the data was derived against. |
-| `compatible_images` | yes | Image references that can open this data, written exactly as in `mainnet/docker-compose.yml` (for example `dogeos69/rollup-node:v0.3.0-beta.1c`). |
-| `archive.url` | yes | HTTPS URL of a `.tar.gz` archive. |
-| `archive.sha256` | yes | Lowercase hex SHA-256 of the archive. |
-| `archive.size_bytes` | no | Archive size; used for the free-space check. |
-| `archive.uncompressed_bytes` | no | Extracted size; used for the free-space check. |
-| `manifest_url` | no | Human-readable manifest; printed when the snapshot is selected. |
+Schema 1 component indexes remain readable only by the legacy
+`restore-snapshot.sh`. If existing clients need them, keep a separate
+`legacy-index.json` and use `--index-url` explicitly. Old clients reject schema
+2 instead of treating it as independent component entries. Do not add groups
+to schema 1 and assume older clients honor them.
 
-A component with no entries can be omitted. Clients ignore unknown fields, so
-fields can be added without a schema change.
-Change `schema_version` only for an incompatible change; older scripts then
-refuse the index instead of misreading it.
+## Group Manifest
+
+See the complete, syntactically valid
+[group manifest example](group-manifest.example.json). Its URLs, checksums,
+heights and image references are illustrative and must be replaced by values
+from the frozen source data.
+
+| Field | Requirement |
+|-------|-------------|
+| `schema_version` | `2` |
+| `group_id`, `network`, `published_at` | Match the catalog descriptor and network; timestamp is UTC with `Z` |
+| `identity.genesis_sha256` | SHA-256 of the exact package L2 genesis file bytes |
+| `identity.protocol_context_sha256` | SHA-256 of the exact package protocol-context file bytes |
+| `components` | All three keys: `dogecoin`, `l1-interface`, `l2reth`; use JSON `null` for no snapshot |
+
+Each non-null component requires:
+
+| Field | Requirement |
+|-------|-------------|
+| `id`, `source_revision` | Identify the artifact and the producing source revision |
+| `captured_at` | UTC time the data stopped changing, not compression/upload completion |
+| `compatible_images` | Nonempty list of exact image references that can open the data |
+| `checkpoint.height`, `checkpoint.hash` | Data tip: Dogecoin, synthetic L1, or L2 height and block hash |
+| `requires` | Dogecoin: `{}`; L1 Interface: `{"dogecoin": <checkpoint>}`; L2Reth: `{"l1-interface": <checkpoint>}` |
+| `archive.url`, `archive.sha256` | HTTPS `.tar.gz` URL and lowercase SHA-256 |
+| `archive.size_bytes`, `archive.uncompressed_bytes` | Positive download and extracted-size values for disk checks |
+| `replay` | L1 only: `validated_up_to`, `discovered_up_to`, and `state_hash` |
+
+Heights are nonnegative JSON integers. Hashes are 64 lowercase hex characters
+without `0x`. All present components inherit the group network and protocol
+identity. A standalone publication is a group with one entry and two explicit
+nulls. An all-null group is valid; operators can also use `start` without any
+snapshot catalog.
+
+The group manifest replaces optional per-component human-readable manifests
+as the machine-readable dependency contract. Keep additional provenance,
+bootstrap identity and restore-test results alongside it. The client validates
+metadata and file integrity; it cannot prove that a producer truthfully
+reported the database contents. Restore/start tests remain mandatory.
 
 ## Image Compatibility
 
-The script restores only a snapshot whose `compatible_images` contains the
-image in `mainnet/docker-compose.yml`. Testnet has its own index and may run
-other versions. Before releasing a package that changes mainnet's
-`dogecoin-node`, `l1-interface`, or `l2reth-node` image, update the mainnet
-index:
-
-- If the new image opens existing data unchanged, add the new image reference
-  to the `compatible_images` of the current entries.
-- If it needs a new database format, publish a snapshot produced by the new
-  image first.
-
-Otherwise operators of the new release see "no published snapshot is
-compatible". Keep the old image listed while operators of the previous release
-still restore snapshots.
+Before activation, every present component must list the exact image from the
+resolved Compose configuration. Genesis and protocol-context file checksums
+must also match. Archive compatibility does not establish compatibility of
+arbitrary service versions: publishers must test the whole intended stack.
+Do not change Compose images automatically to fit a snapshot.
 
 ## Component Dependencies
 
-Services depend on each other as Dogecoin -> L1 Interface -> L2Reth. Snapshots
-of different components may be published at different times, so a restore can
-combine data of different ages:
+Services depend on each other as Dogecoin -> L1 Interface -> L2Reth.
+Freeze source data in the reverse order: **L2Reth, L1 Interface, Dogecoin**.
+For example, L2Reth at 01:00, L1 Interface at 01:02 and Dogecoin at 01:05 is
+normal: the downstream nodes catch up using newer upstream data. Keep a
+component stopped until its data has been copied to an immutable capture;
+compression/upload of that copy can finish later.
 
-- **Downstream older than upstream** is the normal case: the restored service
-  catches up.
-- **Downstream newer than upstream** requires upstream catch-up. Start services
-  in dependency order and verify the required checkpoints before starting the
-  downstream service. The restore script can warn about height differences;
-  it does not enforce checkpoint compatibility.
-- **Upstream moving backwards under a running downstream** is the case to
-  avoid: rollup-node treats a lower L1 Interface head as an L1 reorg and
-  unwinds L2 state. The restore script therefore stops the component and every
-  service downstream of it before activating restored data.
+Capture checkpoint hashes from the frozen data, or from a restored clone of
+that exact capture. For an upstream requirement, use the dependency recorded
+in the frozen downstream state, or a verified upper bound sampled after the
+downstream has stopped. Sampling before stopping the downstream is not a
+reliable upper bound. Verify that checkpoints belong to the same canonical
+history. Time ordering alone is not proof of that relationship.
 
-Record `dogecoin_height` and `l1_height` so the script can warn about the
-second case. Upper bounds are enough:
-
-- `l1_height`: the L1 Interface `eth_blockNumber` the source L2Reth node was
-  following, read just before the L2Reth snapshot.
-- `dogecoin_height`: the source Dogecoin node's `getblockcount`, read just
-  before the L1 Interface snapshot.
-
-When one pipeline run publishes several components, snapshot them in the
-order **L2Reth, then L1 Interface, then Dogecoin**. Freeze each component before
-capturing it, and verify dependency heights and hashes afterwards. Capture
-order alone does not prove canonical compatibility if a chain reorganization
-or source mismatch occurs. Components may also be published on their own
-schedules, for example L2Reth weekly and Dogecoin monthly.
+Older upstream snapshots are allowed. Startup waits for their heights to
+cover downstream requirements, then verifies hashes. A known hash conflict
+at the same height is rejected; a runtime hash mismatch stops startup for
+investigation. Readiness alone is not proof of a required checkpoint.
 
 ## Archive Layout
 
-Publishers must enforce the following archive rules. The restore script checks
-member paths, required database files, and specific forbidden names; it is not
-a complete validator of these rules. In particular, the L2Reth checks match
-`genesis/` and `lost+found/` directory entries but do not reject their children
-when the archive omits those directory entries. Publishers must exclude the
-entire directory trees, even if the script accepts an archive.
+All archives contain a single component root. The validators reject absolute
+paths, parent traversal, links, special files, duplicate normalized paths and
+forbidden names before extraction. Forbidden directory trees are rejected
+even when the tar has no explicit directory headers.
 
-**l2reth** — a single `l2reth/` root containing `db/mdbx.dat`, `db/scroll.db`,
-and `static_files/`. It must not contain `jwt.hex`, `reth.toml`, `genesis/`,
-`protocol_context.json`, `lost+found`, node keys, or keystores.
+**l2reth** — `l2reth/` containing regular `db/mdbx.dat`, `db/scroll.db`, and a
+`static_files/` directory. Exclude `jwt.hex`, `reth.toml`, the entire `genesis/`
+and `lost+found/` trees, `protocol_context.json`, node keys and keystores.
 
-**l1-interface** — one `l1-interface/` root with this fixed layout:
+**dogecoin** — `dogecoin/` containing `dogecoin/blocks/` and `dogecoin/chainstate/`. Required LevelDB files are
+`dogecoin/blocks/index/CURRENT` and `dogecoin/chainstate/CURRENT`. Exclude wallets, `*.conf`, `.cookie`, `peers.dat`, `banlist.dat`
+and `.lock`. Take a consistent, unpruned database with its transaction index.
+
+**l1-interface** — fixed directory layout:
 
 ```text
 l1-interface/
@@ -135,101 +150,78 @@ l1-interface/
   replay.sqlite
   replay.artifacts/
     eth_da_artifacts.sqlite
-    eth_da_artifacts/
+    eth_da_artifacts/                  # include even if empty
     ...
-  l1-interface-historical-artifact.sqlite  # required when configured
+  l1-interface-historical-artifact.sqlite  # when configured
 ```
 
-Take all files from one stopped L1 Interface instance. Preserve the complete
-`replay.artifacts/` tree, including empty DA artifact directories. Normalize
-source deployment paths into this layout before packaging. Do not store host
-absolute paths or another nested `l1-interface/` root. Testnet requires the
-historical artifact matching the package's bootstrap checksum; mainnet only
-requires it if its release configuration explicitly uses one.
-
-Checkpoint every mutable SQLite database after all writers have stopped,
-including the metadata DB inside `replay.artifacts/`. Checkpoint/close must
-succeed; never delete an outstanding WAL to make the archive pass. Published
-archives must not contain `-wal`, `-shm`, or `-journal` sidecars, configuration,
-credentials, keys, links, special files, or duplicate members. The optional
+Take every L1 file from the same stopped instance. Preserve the full artifact
+tree. Checkpoint and close every mutable SQLite database after all writers
+stop. Never delete WAL files to make an archive pass validation. Exclude
+`-wal`, `-shm`, `-journal`, configuration, credentials and keys. The optional
 `replay.sqlite.bootstrap-source.json` provenance file may be included.
 
-The restore validates the resolved data mount and runtime paths, checks the
-archive structure, then runs SQLite `quick_check` on the staged databases
-and verifies the testnet historical artifact checksum before stopping services.
-It does not validate every replay reference or protocol state. The publisher
-must restore/start the full archive with the declared compatible image and
-network configuration, check readiness and replay progress, and exercise
-historical RPC and DA artifact reads before publishing it.
-
-**dogecoin** — a single `dogecoin/` root containing
-`dogecoin/blocks/` and `dogecoin/chainstate/`. The required LevelDB
-files are `dogecoin/blocks/index/CURRENT` and
-`dogecoin/chainstate/CURRENT`. It must not contain wallets, `*.conf`, `.cookie`, `peers.dat`,
-`banlist.dat`, or `.lock`.
-
-No archive may contain absolute paths or `..` components.
-
+Restore checks fixed runtime paths and mounts, required archive files, and
+read-only SQLite `quick_check` before activating L1 data. Mainnet requires the historical artifact only when configured; it does not apply the testnet bootstrap checksum.
+These checks do not establish semantic consistency between the databases,
+replay and DA artifacts. Test actual historical RPC and DA reads after restore.
 
 ### L1 Interface Publication Metadata
 
-For each new L1 Interface entry, supply `height` (synthetic L1 height),
-`dogecoin_height`, `archive.size_bytes`, `archive.uncompressed_bytes`, and a
-`manifest_url`, even though the generic index schema allows these fields to be
-omitted for older snapshots. The manifest must record the image and source
-revision, network/protocol identity, genesis/protocol-context checksums,
-Dogecoin and synthetic L1 checkpoint heights and hashes, replay progress and
-state hash, historical-bootstrap identity when applicable, and the results of
-checkpoint, database-integrity, and restore/start validation. Publish manifests
-beside archives; configuration and credentials never go inside the data archive.
-
-Components may be published on separate schedules. Do not require matching
-snapshot dates or change Compose images when selecting a snapshot. There is
-no image-set or snapshot-set selection mechanism in the package.
+The L1 component's `checkpoint` identifies the synthetic L1 tip and `requires`
+identifies its Dogecoin dependency. Include replay progress and state hash.
+Record bootstrap identity, source image/revision, and the results of clean
+shutdown, integrity checks and restore/start testing in publication records.
+All three component checkpoints and dependency hashes must come from the
+actual captured data; do not copy them from a previous group.
 
 ## Publishing Steps
 
-1. Produce and validate the archive (clean shutdown, checkpoint check, layout
-   rules above).
-2. Upload the archive and manifest under new names.
-3. Download the uploaded archive once and verify its SHA-256 from S3.
-4. Build the new index: add the entry, keep the newest entries per component
-   (3 is recommended), and set `published_at`.
-5. Upload `index.json` (and `index.json.sig` first, once signing is enabled).
-6. Run `./scripts/restore-snapshot.sh --list` in `mainnet/` against the
-   published index.
-7. Delete archives no longer listed after a grace period of a few days, so a
-   restore that started from the previous index can finish. An S3 lifecycle
-   rule on the archive prefixes can do this.
-
-Never delete an archive that the current index still lists.
+1. Freeze/capture L2Reth, then L1 Interface, then Dogecoin. Omitted components
+   remain explicit nulls. Checkpoint databases and validate each archive.
+2. Restore the captures with the intended images and release configuration;
+   check checkpoint hashes, readiness, continued sync, historical RPC and DA.
+3. Upload every planned archive under a new immutable name. Download and
+   verify its SHA-256 and size once from S3.
+4. Build the immutable group manifest with all metadata. Validate locally:
+   `python3 scripts/snapshot-group.py validate group.json`.
+5. Upload `groups/<group-id>.json`, then download it and compute the checksum
+   used in the catalog. Do not expose an unfinished group as a partial group.
+6. Build and validate the new catalog with
+   `python3 scripts/snapshot-group.py validate-index index.json`. Update its
+   timestamp. Publish the signature first when enabled, then the catalog last.
+   Readers racing those two writes may fail signature verification and must
+   retry; they never bypass verification.
+7. Run `python3 scripts/snapshot-group.py list` and verify the chosen group's
+   restore on a disposable node before announcing availability.
+8. Retain groups as units (at least three recent groups is a reasonable
+   default). Delete a manifest/archive only after **no retained group refers
+   to it**, plus a grace period long enough for in-flight restores. Do not use
+   per-component "keep newest three" deletion or an age-only lifecycle rule.
 
 ## Bucket Protection
 
-Without signatures, the index and archives are trusted because only the
-publishing pipeline can write to the bucket:
-
-- Grant write access only to the publishing pipeline's role; everyone else
-  reads.
-- Enable bucket versioning so an overwritten or deleted index can be restored.
-- Alert on writes from any other principal (for example with CloudTrail).
+Restrict writes to the publication pipeline, enable versioning, and audit
+unexpected writes. Without signatures this write boundary is the trust root.
+Checksums detect mismatched artifacts; they do not authenticate a maliciously
+replaced unsigned catalog.
 
 ## Optional: Signed Index
 
-The script verifies `index.json.sig` whenever the package contains
-`mainnet/snapshots/allowed_signers`. To enable signing:
+When `mainnet/snapshots/allowed_signers` exists, both index clients require
+verification using identity `dogeos-snapshots` and namespace
+`dogeos-snapshot-index`. Ship the Ed25519 public key as:
 
-1. Create an Ed25519 key for the pipeline; keep the private key in the
-   pipeline's secret store.
-2. Release a package containing `mainnet/snapshots/allowed_signers` with the line
-   `dogeos-snapshots <public key>`. Several lines allow key rotation.
-3. Sign every index before uploading it:
+```text
+dogeos-snapshots <public key>
+```
 
-   ```bash
-   ssh-keygen -Y sign -f snapshot-signing-key -n dogeos-snapshot-index index.json
-   ```
+Keep the private key in the publishing pipeline. Sign with:
 
-   This writes `index.json.sig`. Upload it immediately before `index.json`.
+```bash
+ssh-keygen -Y sign -f snapshot-signing-key -n dogeos-snapshot-index index.json
+```
 
-Start signing before releasing the package that ships the signer list, so the
-signature is already in place when operators update.
+Publish signatures before releasing a package that requires them. The signed
+catalog authenticates the manifest checksum, which authenticates archive
+checksums and checkpoint metadata.

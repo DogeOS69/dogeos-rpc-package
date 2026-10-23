@@ -82,37 +82,33 @@ another provider, see [Custom Ethereum RPC](docs/operations.md#custom-ethereum-r
 
 ### 3. Restore Snapshots (Recommended for New Nodes)
 
-Snapshots are published independently to S3. Restore Dogecoin first, then
-L1 Interface when a compatible snapshot exists, then L2Reth, without starting
-services yet:
+Snapshots are published as groups with separate component archives. A group
+may omit any component; it never silently borrows one from another group.
+The catalog must use schema 2 (see [Snapshot Publishing](docs/snapshot-publishing.md)).
 
 ```bash
-./scripts/restore-snapshot.sh --list
-./scripts/restore-snapshot.sh --no-start dogecoin
-# If --list shows a compatible L1 Interface snapshot:
-./scripts/restore-snapshot.sh --no-start l1-interface
-./scripts/restore-snapshot.sh --no-start l2reth
+python3 scripts/snapshot-group.py list
+python3 scripts/snapshot-group.py restore GROUP_ID --no-start
 ```
 
-Skip the Dogecoin restore for a node that already has Dogecoin data. If no
-compatible L1 snapshot exists, skip that restore command; startup uses the
-fixed testnet history bootstrap. L1 snapshot restore requires Python 3 with
-SQLite support and preserves the fixed `/data` layout. Download or validation
-failures are errors, not reasons to silently reset data. The script verifies each archive and picks the newest snapshot compatible with the
-images in `docker-compose.yml`. See [Snapshots and Recovery](docs/snapshots.md).
+Choose an ID printed by `list`, or explicitly use `latest`. Existing nonempty
+bind data requires `--force` and is backed up. A populated Dogecoin volume
+cannot be replaced; use a group without a Dogecoin snapshot to retain it.
+The helper checks archive checksums, fixed L1 layout, release identity and
+image compatibility. See [Snapshots and Recovery](docs/snapshots.md).
 
 ### 4. Start Services
 
 ```bash
-docker compose up -d
+python3 scripts/snapshot-group.py start
 ```
 
-Without an L1 snapshot, first start downloads the fixed testnet history
-bootstrap. With an L1 snapshot, the existing replay DB is preserved and the
-historical artifact is verified. L1 Interface catches up before serving L2Reth.
-For mixed-age snapshots, follow the
-[staged startup checks](docs/snapshots.md#with-a-compatible-snapshot). Let Dogecoin load its block index and all
-services finish syncing before sending RPC traffic.
+For a fresh node this also works without any snapshots or catalog access.
+The helper waits for Dogecoin initial sync, then L1 historical sync and replay
+readiness, and verifies saved upstream checkpoints before starting L2Reth.
+Missing L1 data uses the fixed testnet bootstrap. Missing L2 data syncs from
+the package genesis and configured peers/L1/DA sources. Keep the foreground
+startup session alive; sending RPC traffic should wait until L2 has caught up.
 
 ### 5. Verify Services
 

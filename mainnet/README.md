@@ -36,7 +36,7 @@ Before release, also:
 - Keep L1 Interface paths fixed at `/data/l1-interface.sqlite`,
   `/data/replay.sqlite`, and `/data/replay.artifacts/`; see
   [Fixed Data Layout](docs/snapshots.md#fixed-data-layout).
-- Publish `mainnet/index.json` in the snapshot bucket
+- Publish a schema-2 `mainnet/index.json` and immutable group manifests in the snapshot bucket
   ([snapshot publishing](docs/snapshot-publishing.md)).
 
 ## Hardware Requirements
@@ -77,12 +77,10 @@ cd mainnet
 if [ ! -e .env ]; then cp env.example .env; fi
 # REQUIRED: set DATA_ROOT and DOGECOIN_RPC_PASSWORD
 chmod 600 .env
-./scripts/restore-snapshot.sh --list
-./scripts/restore-snapshot.sh --no-start dogecoin
-# If --list shows a compatible L1 Interface snapshot:
-./scripts/restore-snapshot.sh --no-start l1-interface
-./scripts/restore-snapshot.sh --no-start l2reth
-docker compose up -d
+python3 scripts/snapshot-group.py list
+# Optional: choose a published group, with any absent components marked null.
+python3 scripts/snapshot-group.py restore GROUP_ID --no-start
+python3 scripts/snapshot-group.py start
 ```
 
 L1 snapshot restore requires Python 3 with SQLite support. If no compatible

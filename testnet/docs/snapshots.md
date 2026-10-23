@@ -1,381 +1,237 @@
 # Snapshots and Recovery
 
-How to restore published testnet snapshots and recover service data. Run
-commands inside the `testnet/` directory; the scripts use its `.env` (see
-[Quick Start](../README.md#quick-start)).
-
-When recovering a node, keep its `.env`, project name, Dogecoin volume name,
-and RPC credentials; do not replace `.env` with the template.
+Run commands inside `testnet/`. Keep the existing `.env`, `DATA_ROOT`, and RPC
+credentials when recovering a node. Existing testnet initialization uses the pinned history bootstrap.
 
 ## How Snapshots Work
 
-Snapshots are published to S3 and listed in the testnet index
-(`testnet/index.json` in the snapshot bucket), so new snapshots do not need a
-package update. `scripts/restore-snapshot.sh`:
-
-1. Reads the index and selects the newest snapshot whose compatible images
-   include the image in `docker-compose.yml`, or the one given with
-   `--snapshot-id`.
-2. Checks free disk space, then downloads or resumes the archive under
-   `${DATA_ROOT}/.snapshot-cache/<component>` and verifies its SHA-256.
-3. Checks archive member paths, required database files, and known forbidden
-   filenames. These checks do not enforce every publishing rule; see
-   [Archive Layout](snapshot-publishing.md#archive-layout).
-4. Extracts into a staging directory, stops the affected services, and
-   activates the data. Previous data is kept as a timestamped backup when
-   `--force` replaces it.
-5. Starts the stack, unless `--no-start` is given.
-
-Run the script on a Linux host with Bash, Docker Compose, `curl`, GNU `tar`,
-and GNU coreutils (`sha256sum`, `readlink`, `stat`, and `df`). It uses local
-`jq` when available, otherwise the `ghcr.io/jqlang/jq` image. Published archives
-must contain chain data only. The package supplies genesis, configuration, and
-peer settings; operator credentials come from `.env`.
-
-List the published snapshots, their heights, and whether they match your
-images:
+The group catalog is `testnet/index.json` in the snapshot bucket. A group
+manifest pins its component archives by SHA-256 and records network identity,
+image compatibility, data checkpoints and upstream requirements. Archives keep
+their independent component layouts; they are not nested inside one large tar.
 
 ```bash
-./scripts/restore-snapshot.sh --list
+python3 scripts/snapshot-group.py list
+# Select an ID printed by list, or explicitly use latest.
+python3 scripts/snapshot-group.py restore GROUP_ID --no-start
+python3 scripts/snapshot-group.py start
 ```
+
+`latest` resolves one group once. It does not select a separate latest snapshot
+for each service. The chosen manifest is checked against the catalog checksum,
+then against the package genesis/protocol-context files and configured images.
+Missing/incompatible groups, download failures and checksum errors are errors;
+none triggers an automatic fallback to another group or a data reset.
+
+Use `--env-file PATH` for a different env file and `--index-url HTTPS_URL` for a
+catalog mirror. `SNAPSHOT_INDEX_URL` is a process-environment override, not an
+`.env` service setting. The host needs Python 3.9+ with SQLite, Bash, Docker
+Compose, curl, GNU tar/coreutils and jq (or the pinned jq helper image).
 
 ## Independent Snapshots and Missing Components
 
-Dogecoin, L1 Interface, and L2Reth snapshots may be published independently;
-matching timestamps or a three-component bundle are not required. The script
-selects a compatible snapshot for the requested component only. It does not
-select or change service images: the network's Compose file pins those images.
-`compatible_images` describes a component's database compatibility, not proof
-that an arbitrary combination of three service versions works together.
+A group explicitly contains all three component names, each an entry or JSON
+`null`. Single-component and all-null groups are supported. Missing components
+are never fetched from another group:
 
-For a new node, a missing Dogecoin snapshot means syncing from Dogecoin peers
-with the package's unpruned, `txindex=1` configuration. A missing L2Reth snapshot
-means starting from the package genesis and syncing with the configured peers
-and L1/DA sources after upstream initialization. The L1 Interface fallback is
-network-specific, as described below. Existing nodes retain their current data.
+- Dogecoin starts from existing data or syncs from peers using the unpruned,
+  transaction-indexed configuration.
+- L1 Interface keeps known local data or uses the network initialization path
+  described below.
+- L2Reth keeps known local data or starts from package genesis, then syncs with
+  peers and the configured L1/DA sources.
 
-Only a successfully fetched index with no compatible entry is an availability
-case. Network, checksum, layout, or compatibility errors must be resolved;
-do not treat a failed restore as permission to erase data or initialize anew.
-No snapshot grouping or automatic image-combination selection is implemented.
+No snapshot is required for a fresh node. Start it without accessing a catalog:
+
+```bash
+python3 scripts/snapshot-group.py start
+```
+
+Snapshot absence does not remove requirements for genesis, protocol context,
+bootstrap history (testnet), release configuration, or reachable DA data.
+
+For a partial group on an existing node, missing components keep their local
+data. Previously recorded checkpoints remain lower bounds, not proof of the
+current dependency after a node has continued running. Therefore, if a group
+replaces upstream data while omitting a populated downstream component, restore
+refuses to guess that downstream's current dependency. Include its snapshot in
+the recovery group. An L2-only restore can retain an unchanged L1/Dogecoin;
+a fresh node can omit any or all snapshots. No data is silently deleted.
 
 ## Restore Order and Service Dependencies
 
-Services depend on each other as **Dogecoin → L1 Interface → L2Reth**.
+The group helper preflights metadata and image/identity compatibility, records
+a pending restore, stops all three services, and restores present components
+in **Dogecoin -> L1 Interface -> L2Reth** order with the component script's
+`--no-start` mode. Existing nonempty bind data requires `--force`; previous data
+is moved to timestamped backups. Existing Dogecoin Docker volumes are never
+replaced. See [Dogecoin](#dogecoin) for the testnet volume restriction.
 
-- Restoring a component stops it **and every service that depends on it**
-  before the new data is activated:
+This is not an atomic three-database transaction. A later download/validation
+failure can leave earlier components restored, with their old data in backups.
+Services stay stopped and `.snapshot-group-state.json` remains `restoring`.
+Retry the **same group ID** with `--force`; the saved manifest is reused even
+if the catalog changed, and components recorded as completed are skipped.
+`start` refuses a pending restore. Never delete the journal to bypass an
+incomplete recovery. If the process died during component activation before
+completion was recorded, inspect its staging/backup data first. In particular,
+an already-created Dogecoin volume is never overwritten automatically.
 
-  | Restore | Stopped first |
-  |---------|---------------|
-  | `dogecoin` | `l2reth-node`, `l1-interface`, `dogecoin-node` |
-  | `l1-interface` | `l2reth-node`, `l1-interface` |
-  | `l2reth` | `l2reth-node` |
+On successful restore, `start` reads the saved effective manifest and:
 
-  L2Reth must never keep running while L1 Interface data is replaced with
-  older data: rollup-node treats a lower L1 Interface head as an L1 reorg and
-  unwinds L2 state. Apply the same rule to any manual data change.
-- For a new node, restore **Dogecoin, then L1 Interface (when published),
-  then L2Reth**, with `--no-start`, and start the stack once at the end.
-- Snapshots of different components may have different ages. A component
-  whose snapshot is newer than its upstream needs the upstream to catch up.
-  Use the staged startup below and check recorded checkpoints before starting
-  downstream services. The script reports height differences when metadata and
-  running upstream RPC are available; it does not enforce checkpoint gates.
+1. Stops L2Reth and L1 Interface before upstream catch-up.
+2. Starts bundled Dogecoin, or checks the configured external Dogecoin RPC.
+   It requires the correct network, unpruned data, `initialblockdownload=false`,
+   blocks caught up to known headers, and matching required checkpoint hashes.
+3. Starts L1 Interface. It waits for `/health` to report historical sync
+   complete, `/api/v1/health/ready` to report ready, and its synthetic chain to
+   cover and match the recorded checkpoints required by restored L2Reth.
+4. Starts L2Reth without restarting its Compose dependencies. Check L2 progress
+   before exposing RPC traffic.
+
+A low upstream height waits and retries; a hash mismatch aborts with downstream
+stopped. Hash requirements may deliberately refer to heights older than the
+upstream snapshot tip. Capture order does not replace these checks. No-snapshot
+startup has no snapshot checkpoints to verify, but retains the synchronization
+and health waits.
+
+These host-side waits require published L1 RPC/health ports and a reachable
+Docker daemon. They run in the foreground; keep the session alive (for example
+with tmux). Re-running `start` after interruption is safe but stops downstream
+again. Plain `docker compose up -d` and daemon auto-restart do **not** run this
+host-side checkpoint sequence. Use `start` after data replacement or a cold
+recovery. L2Reth still performs its RPC/readiness check on every container start.
+A normal container healthcheck is not a continuous guarantee of chain sync.
 
 ## L2Reth
 
-Restore the newest compatible L2Reth snapshot into `${DATA_ROOT}/l2reth` and
-start the stack:
+The archive is rooted at `l2reth/`, including `db/mdbx.dat`, `db/scroll.db` and
+`static_files/`. It excludes chain configuration, credentials, node keys and
+keystores. Forbidden `genesis/` and `lost+found/` descendants are rejected even
+without explicit tar directory entries. Keep backups until restored sync is
+verified.
+
+### Legacy Component Restore
+
+`restore-snapshot.sh` is retained for schema-1 catalogs and explicit archives.
+It validates archive checksums/layout and uses staged startup by default, but
+has no group checkpoint contract. It refuses to modify data already managed
+by a group. Prefer group restore for normal recovery.
 
 ```bash
-./scripts/restore-snapshot.sh l2reth
+./scripts/restore-snapshot.sh --index-url https://YOUR-BUCKET/testnet/legacy-index.json --list
+./scripts/restore-snapshot.sh --no-start \
+  --index-url https://YOUR-BUCKET/testnet/legacy-index.json l2reth
+python3 scripts/snapshot-group.py start
 ```
 
-The archive holds Reth databases and static files under one `l2reth/` root. It
-must exclude genesis, `protocol_context.json`, `jwt.hex`, node keys, keystores,
-and `reth.toml`. The package supplies chain configuration, not node keys or
-wallets; a chain snapshot does not restore node identity. The first startup
-may perform database recovery; let it finish before checking sync progress.
+Advanced direct-archive mode requires `--snapshot-url HTTPS_URL` and `--sha256
+HASH`; it bypasses index/network/image metadata checks. The group helper uses
+this mode internally only after validating its pinned metadata. A direct
+operator restore must independently verify those properties and required
+checkpoints. `--cache-dir`, `SNAPSHOT_CACHE_DIR`, and legacy `L2RETH_SNAPSHOT_*`
+overrides apply to component mode; group mode ignores those overrides so they
+cannot replace a pinned selection.
 
-The script refuses to replace a non-empty data directory unless `--force` is
-given. With `--force`, the old directory is kept next to it, for example
-`${DATA_ROOT}/l2reth.backup-20260806T120000Z-12345`. Remove the backup
-manually only after verifying the restored node.
-
-Use `--no-start` to restore without starting services, then start them with
-`docker compose up -d`.
-
-<details>
-<summary>Advanced: use a mirror or alternate cache</summary>
-
-`--index-url` points the script at a mirrored index. Alternatively, export
-`SNAPSHOT_INDEX_URL` in the shell before running the script. Snapshot-specific
-variables (`SNAPSHOT_INDEX_URL`, `SNAPSHOT_CACHE_DIR`, and the legacy
-`L2RETH_SNAPSHOT_*` variables) are read from the process environment, **not
-from `.env`**. Use command-line flags for a one-off override.
-
-To bypass the index, supply both the archive URL and its SHA-256; no image
-compatibility check is made in this mode:
-
-```bash
-./scripts/restore-snapshot.sh \
-  --snapshot-url https://mirror.example/l2reth-snapshot.tar.gz \
-  --sha256 'REPLACE_WITH_64_HEX_CHARACTER_SHA256' \
-  --cache-dir /path/on/a/large/disk \
-  l2reth
-```
-
-A cached archive with the expected checksum is reused. A cached archive with a
-different checksum is preserved with an `.invalid-<timestamp>` suffix before a
-fresh download. Do not bypass a checksum failure.
-
-</details>
+Cached archives live at `${DATA_ROOT}/.snapshot-cache/<component>`. A cached
+checksum mismatch is quarantined before redownload. A newly downloaded
+checksum mismatch exits without activation; the next run quarantines it.
+Never bypass a checksum failure.
 
 ## Dogecoin
 
-Restore a Dogecoin snapshot for a **new node** or to recover into **new
-storage**. A healthy existing node should keep its data and continue syncing
-from peers; upgrades never require a Dogecoin restore.
+Do not restore over a healthy Dogecoin node simply for an upgrade. A partial
+group can omit Dogecoin and retain it. Testnet uses a Docker volume. Group restore can populate a new empty volume only. For a populated existing volume, omit Dogecoin from the group and let it catch up, or deliberately configure a new volume before recovery. `--force` never replaces an existing volume.
 
-Each Dogecoin snapshot has a manifest, whose URL the script prints when it
-selects the snapshot. It records the checkpoint height and hash, the Dogecoin
-Core version, and the validation done before publishing. Archives are taken
-with `txindex=1`, unpruned, and contain only `testnet3/blocks/` and
-`testnet3/chainstate/`. They exclude wallets, configuration, credentials,
-cookies, peer state, and logs; a chain snapshot is not a wallet backup.
-
-### Restore into a New Docker Volume
-
-Dogecoin keeps its data in the Docker volume named by `DOGECOIN_VOLUME_NAME`
-(default `dogeos-rpc-package_dogecoin_data`). **The script only restores into
-a volume that does not exist yet.** For a new installation, the default name is
-unused. To recover
-an existing node, keep its original volume and set `DOGECOIN_VOLUME_NAME` in
-`.env` to a new, unused name; you can switch back by restoring the old
-name. Never delete or clear the original volume.
-
-```bash
-./scripts/restore-snapshot.sh --no-start dogecoin
-```
-
-With `--no-start`, running services are not touched and the script prints the
-commands that switch to the new volume. They stop the dependent services first
-and recreate `dogecoin-node`:
-
-```bash
-docker compose stop l2reth-node l1-interface dogecoin-node
-docker compose up -d --force-recreate dogecoin-node
-docker compose up -d
-```
-
-`DATA_ROOT` holds the download cache, but the extracted data goes to Docker's
-volume storage; make sure the disk behind Docker's data root has room. If
-extraction fails or is interrupted, the script removes the partly filled
-volume it created; fix the cause and run it again.
+The archive root is `dogecoin/`, with `testnet3/blocks/` and `testnet3/chainstate/`. Keep block/transaction
+indexes and chainstate together; snapshots are not wallet backups.
 
 ### Verify the Restored Node
 
-Initial block-index loading and chain-state checks can take more than ten
-minutes, including several minutes at `Rewinding blocks...` without another
-log line. `-rpcwait` waits for RPC warmup:
-
 ```bash
-docker compose logs --tail 100 dogecoin-node
-
-docker compose exec -T dogecoin-node \
-  /dogecoin/bin/dogecoin-cli -rpcwait -conf=/run/dogeos/dogecoin.conf \
-  -datadir=/data getblockchaininfo
-
-# Replace HEIGHT with the checkpoint height from the snapshot manifest.
 docker compose exec -T dogecoin-node \
   /dogecoin/bin/dogecoin-cli -conf=/run/dogeos/dogecoin.conf \
-  -datadir=/data getblockhash HEIGHT
+  -datadir=/data getblockchaininfo
 
 docker compose exec -T dogecoin-node \
   /dogecoin/bin/dogecoin-cli -conf=/run/dogeos/dogecoin.conf \
   -datadir=/data verifychain 3 288
 ```
 
-Check that `chain` is `test`, `pruned` is `false`, the
-block hash matches the manifest's checkpoint hash, and `verifychain` returns
-`true`. After catching up, `initialblockdownload` should be `false` and the tip
-should agree with a trusted node. Avoid `-reindex`: the archive includes the
-block and transaction indexes.
+Expect `chain=test`, `pruned=false`, completed initial sync, and a true
+`verifychain` result. The group startup helper also verifies the manifest's
+Dogecoin block hashes. Avoid reindexing a valid archive unnecessarily.
 
 ## L1 Interface
 
-L1 Interface is a separately published component, restored with the same
-script as Dogecoin and L2Reth. It does not require the three snapshots to be
-published together. `--list` shows available entries; an explicit restore
-fails if none matches the pinned L1 Interface image. A failed download or
-checksum check never silently falls back to bootstrap.
+L1 data can be a component of a full or partial group. Missing snapshots use
+the network's initialization path; corrupt or incompatible snapshots never
+silently fall back to bootstrap.
 
 ### Fixed Data Layout
 
-Only `DATA_ROOT` is configurable. The host directory
-`${DATA_ROOT}/l1-interface` is mounted read-write at `/data`. Database filenames
-and paths inside the container are fixed by the package:
+The host `${DATA_ROOT}/l1-interface` is mounted as `/data`. Only the host root
+is configurable; internal database and artifact paths are fixed:
 
 ```text
-l1-interface/                               # single archive root
-  l1-interface.sqlite                      # /data/l1-interface.sqlite
-  replay.sqlite                            # /data/replay.sqlite
-  replay.artifacts/                        # /data/replay.artifacts/
+l1-interface/
+  l1-interface.sqlite
+  replay.sqlite
+  replay.artifacts/
     eth_da_artifacts.sqlite
-    eth_da_artifacts/                       # include even when empty
-    ...                                    # all other replay artifacts
-  l1-interface-historical-artifact.sqlite   # required when configured
+    eth_da_artifacts/
+    ...
+  l1-interface-historical-artifact.sqlite  # when configured
 ```
 
-Restore activates the archive root as `${DATA_ROOT}/l1-interface`, without
-adding a second `l1-interface/` directory. Configuration and genesis stay in
-`config/`; they are not snapshot contents. Do not override database paths in
-service env files or add nested mounts under `/data`. Startup rejects custom
-database paths; restore also checks the resolved Compose mounts and paths
-before downloading. An existing deployment with custom paths must reconcile
-its data layout before using these operations; the package does not move it
-automatically.
-
-The databases and artifacts are one unit: never combine files from different
-snapshots. The restore requires Python 3 with SQLite support. It checks archive
-layout, rejects links, special files, duplicate members and SQLite sidecars,
-and runs read-only SQLite `quick_check` in staging before stopping services.
-Publishers must checkpoint all databases before archiving; deleting WAL files
-is not a substitute. Protocol compatibility and the completeness of database
-artifact references also require the publisher's restore/start test with the
-compatible image; these are not proved by `quick_check`.
+These files are one unit from one stopped instance. Never mix databases or
+artifacts from different captures. The package supplies configuration and
+genesis outside the archive. Restore checks fixed mounts/paths, archive
+members, SQLite integrity and the pinned testnet historical-file checksum. These checks do not prove
+semantic consistency of replay and referenced DA artifacts; the publisher
+must test restore/start and historical data reads with the intended image.
 
 ### With a Compatible Snapshot
 
-For a new node, restore Dogecoin first if desired, then L1 Interface, then
-L2Reth. Keep services stopped while restoring:
-
 ```bash
-./scripts/restore-snapshot.sh --list
-# Run only when --list shows a compatible L1 Interface snapshot.
-./scripts/restore-snapshot.sh --no-start l1-interface
+python3 scripts/snapshot-group.py restore GROUP_ID --no-start
+python3 scripts/snapshot-group.py start
 ```
 
-For an existing node, the script refuses a non-empty L1 directory unless
-`--force` is supplied. It validates the staged data, stops L2Reth and L1
-Interface, then preserves the old directory as a timestamped backup and
-activates the entire new directory. Dogecoin data is unchanged. Keep the
-backup until startup and syncing are verified.
-
-Start Dogecoin first and let it catch up, then L1 Interface. Check
-`/api/v1/health/ready` and its logs. Before starting an existing or restored
-L2Reth, ensure L1 Interface has reached the upstream checkpoint required by
-that L2 data; compare checkpoint hashes when provided. A lower upstream
-height calls for catch-up, while a hash mismatch needs investigation. A health
-response alone does not establish checkpoint compatibility.
-
-```bash
-docker compose up -d dogecoin-node
-# Wait for Dogecoin RPC warmup and the required chain checkpoint.
-docker compose up -d l1-interface
-# Wait for readiness and the required L1 checkpoint before continuing.
-curl --fail http://localhost:9090/api/v1/health/ready
-docker compose up -d l2reth-node
-```
-
-These are staged operator checks, not an automatic checkpoint gate in the
-restore script. Without `--no-start`, the existing script starts the stack
-immediately after restore. Use `--no-start` when combining snapshots or
-replacing upstream data of an existing L2 node.
+Use `--force` only when intentionally replacing nonempty bind-mounted data;
+old directories are preserved. The group state records the L1/Dogecoin and
+L2/L1 dependencies used during staged startup. Low upstream height causes
+waiting; a block hash mismatch requires investigation.
 
 ### Without a Compatible Snapshot
 
-A fresh testnet node uses the fixed historical bootstrap in
-`l1-interface-init-fetch-sqlite`: the pre-upgrade historical artifact and an
-initial replay DB. This bootstrap is a versioned initialization prerequisite,
-not a periodic runtime snapshot. Start Dogecoin and then L1 Interface as above;
-the initializer downloads and verifies the pinned bootstrap, and L1 Interface
-builds its index and catches up from Dogecoin and Ethereum DA.
-
-After a runtime snapshot restore, the initializer preserves the existing
-`replay.sqlite`. The restored historical artifact must match the package's
-pinned bootstrap SHA-256; the restore checks it before activation. An existing
-`l1-interface.sqlite` without `replay.sqlite` is an incomplete data set: the
-initializer refuses to insert a fresh bootstrap DB into it. Restore a complete
-L1 snapshot or deliberately rebuild using the procedure below.
-
-Never enable fresh-genesis initialization for this upgraded testnet or reuse
-a pre-v0.3.0 L1 Interface database. Existing healthy data should simply continue
-syncing; absence of a published snapshot is not a reason to reset it.
+For a fresh testnet data directory, the one-shot initializer downloads and
+verifies the pinned historical artifact and replay seed. The startup helper
+recreates this initializer before starting L1 so an old completed init
+container cannot skip validation. Existing replay data is preserved. An L1
+index database without its replay database is rejected as an incomplete data
+set. Never enable fresh-genesis mode for this upgraded testnet or combine
+pre-upgrade L1 databases with the replay seed.
 
 ### Rebuild from the Bootstrap Data
 
-Without a snapshot, L1 Interface data can be rebuilt from the pinned,
-verified bootstrap data that the `l1-interface-init-fetch-sqlite` service
-downloads. L2Reth is stopped first and started only after L1 Interface is
-ready.
-
-The block runs in its own `bash`, so an error stops it without closing your
-shell. It takes `DATA_ROOT` from the configuration Docker Compose resolves
-(this needs `jq`), so it acts on the directory the stack actually mounts:
-
-```bash
-bash <<'EOF'
-set -euo pipefail
-DATA_ROOT="$(docker compose config --format json |
-  jq -r '.services["l2reth-node"].volumes[] | select(.target == "/l2reth") | .source | rtrimstr("/l2reth")')"
-case "$DATA_ROOT" in
-  /path/to|/path/to/*) echo 'Replace the DATA_ROOT placeholder first' >&2; exit 1 ;;
-  /|/tmp|/var/tmp) echo "Refusing unsafe DATA_ROOT: $DATA_ROOT" >&2; exit 1 ;;
-  /*) ;;
-  *) echo "DATA_ROOT must be absolute" >&2; exit 1 ;;
-esac
-
-docker compose stop l2reth-node l1-interface
-
-L1_BACKUP="${DATA_ROOT}/l1-interface.backup-$(date -u +%Y%m%dT%H%M%SZ)"
-if [ -d "${DATA_ROOT}/l1-interface" ]; then
-  mv "${DATA_ROOT}/l1-interface" "$L1_BACKUP"
-  printf 'Previous L1 Interface data preserved at: %s\n' "$L1_BACKUP"
-fi
-
-# Run the one-shot downloader again for the new empty directory.
-docker compose rm -f l1-interface-init-fetch-sqlite
-docker compose up -d l1-interface
-EOF
-```
-
-Wait until `curl http://localhost:9090/health` returns HTTP 200 with
-`"status":"ready"` (HTTP 503 with `"historical_sync":"in_progress"` means it is
-still catching up), then start L2Reth:
-
-```bash
-docker compose up -d l2reth-node
-```
-
-Keep the backup until L1 Interface has caught up and L2Reth follows the
-canonical chain.
+For an ungrouped node that intentionally needs fresh L1/L2 data, use the reset
+procedure below and then `start`. For grouped recovery, publish/select a valid
+replacement group and use `restore --force`. Avoid manually replacing only
+part of the L1 data directory or bypassing the recorded checkpoint gates.
 
 ## Reset L2Reth and L1 Interface Data
 
-Use this only when both services intentionally need fresh data; it is not an
-upgrade step. The helper stops the stack, moves `${DATA_ROOT}/l2reth` and
-`${DATA_ROOT}/l1-interface` to timestamped backups, and creates empty
-directories. Dogecoin data and the snapshot cache are kept:
+`reset-chain-data.sh` is for intentional resets of legacy, ungrouped data. It
+stops services and moves L1/L2 data to backups (or deletes it only with the
+explicit `--delete --yes` options), retaining Dogecoin and download caches.
+It refuses grouped data so dependency metadata cannot silently become stale;
+use a validated group restore with `--force` for grouped recovery.
 
 ```bash
 ./scripts/reset-chain-data.sh
-./scripts/restore-snapshot.sh --no-start l2reth
-docker compose up -d
+python3 scripts/snapshot-group.py start
 ```
 
-Verify with [Verify Services](../README.md#5-verify-services) and keep the
-backups until the new data is verified.
-
-<details>
-<summary>Advanced: permanently delete L2Reth and L1 Interface data</summary>
-
-This stops the stack and permanently deletes both data directories without
-backups. Dogecoin data and the snapshot cache are kept.
-
-```bash
-./scripts/reset-chain-data.sh --delete --yes
-```
-
-</details>
+Keep backups until sync and RPC behavior are verified. Mainnet cold startup
+still depends on its release initialization prerequisites.

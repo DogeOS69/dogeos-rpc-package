@@ -21,10 +21,14 @@ internal ports overlap.
 it with:
 
 ```bash
-docker compose up -d
+python3 scripts/snapshot-group.py start
 ```
 
-Compose recreates only the services whose configuration changed.
+The staged helper stops downstream services first, then waits for upstream
+sync/readiness and saved snapshot checkpoints. This briefly interrupts L2 RPC.
+Use it for cold startup and recovery; plain Compose startup does not enforce
+these host-side gates. It requires the bundled L1 Interface endpoints; custom
+external L1 endpoints need their own verified startup orchestration.
 
 ### L1 Interface Data Paths
 
@@ -76,7 +80,7 @@ DOGEOS_ETHEREUM_RPC_URL=https://your-ethereum-execution-rpc
 ```
 
 The provider must support Ethereum mainnet (chain ID `1`) and execution
-methods including `eth_getBlockByHash`. Apply it with `docker compose up -d`.
+methods including `eth_getBlockByHash`. Apply it with `python3 scripts/snapshot-group.py start`.
 
 <details>
 <summary>Advanced: use an external Dogecoin RPC</summary>
@@ -143,7 +147,7 @@ To serve without them, set `L2RETH_HTTP_API` and `L2RETH_WS_API` to
 `eth,net,web3`. `L2RETH_EXTRA_ARGS` accepts other `rollup-node` flags, such as
 `--rpc.gascap` or `--rpc-cache.*`, separated by spaces. Do not repeat a flag
 already set by `scripts/l2reth_entrypoint.sh`; `rollup-node` exits on
-duplicates. Apply changes with `docker compose up -d`.
+duplicates. Apply changes with `python3 scripts/snapshot-group.py start`.
 
 ### Load Balancer Health
 
@@ -235,7 +239,7 @@ Shutdown keeps all chain data; it lives under `DATA_ROOT`.
   expected during startup. Follow the logs until `/health` returns HTTP 200.
 - **Ethereum RPC returns plan or unsupported-chain errors:** the provider must
   permit Ethereum mainnet and `eth_getBlockByHash`. Set `DOGEOS_ETHEREUM_RPC_URL` in
-  `.env` to a provider that does and run `docker compose up -d`.
+  `.env` to a provider that does and run `python3 scripts/snapshot-group.py start`.
 - **L2Reth stays at `Waiting for L1 interface`:** the entrypoint waits for an
   `eth_chainId` HTTP success and HTTP 200 from `/api/v1/health/ready` in the
   same retry cycle. Connection failures, timeouts, and other readiness status
