@@ -57,9 +57,11 @@ The node reads the signer from L1 Interface about every 12 seconds and exits
 only after three reads in a row return the same new signer, roughly 25 to 40
 seconds after L1 Interface first returns it. Failed reads never cause an exit:
 while L1 Interface is unreachable, L2Reth keeps running with the old signer and
-logs a warning after every 25 failed reads in a row. The check starts from its
-first successful read after startup, so a rotation that lands between the
-node's startup and that read is missed; restarting L2Reth picks it up.
+logs a warning after every 25 failed reads in a row. The node reads its signer
+once at startup, and the check starts from its own first successful read a
+moment later. A rotation that lands between those two reads is missed: the node
+keeps the old signer and does not exit until a later rotation. Restarting
+L2Reth picks up the new signer, without the rotation log line.
 
 The same policy brings a running L2Reth back after a host or Docker restart. A
 container stopped with `docker compose stop` stays stopped, and
@@ -352,17 +354,20 @@ docker compose --env-file .env.testnet up -d --force-recreate l1-interface
 
 ### Restart Monitoring
 
-Docker restarts L2Reth after any exit, so a node that keeps failing never stays
-down on its own. A stop request (`docker compose stop`, a host shutdown) exits
-with code 0 and a signer rotation with code 70 (see [Services](#services)); any
-other exit is a failure. Docker resets its restart back-off after a run of 10
-seconds or more, so a node that fails later than that restarts again right
-away, without end.
+Docker restarts L2Reth after every exit except a stop you request, so a node
+that keeps failing never stays down on its own. A signer rotation exits with
+code 70 (see [Services](#services)). A running node that finishes shutting down
+after a stop request (`docker compose stop`, a host shutdown) exits with code 0;
+a stop while it still waits for L1 Interface, or one that outlasts the
+30-second grace period, ends with 137. Any other exit is a failure. Docker
+resets its restart back-off after a run of 10 seconds or more, so a node that
+fails later than that restarts again right away, without end.
 
 ```bash
 # Restarts since the container was last started by hand, recreated, or
-# started by a Docker daemon start, and whether the last exit was an
-# out-of-memory kill
+# started by a Docker daemon start. oom=true means the last exit was an
+# out-of-memory kill; Docker clears it when the container starts again, so on
+# a running node look for exit 137 in the events below instead.
 docker inspect -f '{{.RestartCount}} oom={{.State.OOMKilled}}' \
   "$(docker compose --env-file .env.testnet ps -q l2reth-node)"
 
