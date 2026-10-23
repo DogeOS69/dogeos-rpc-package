@@ -224,9 +224,9 @@ genesis (chain ID `1122005`), the mainnet L2Reth settings, and the L2Reth image
 `dogeos69/rollup-node:v0.3.0-beta.2`, set by `L2RETH_IMAGE_TAG` in
 `.env.example.mainnet`. Values that are not public yet are left empty or set to
 `provided-at-onboarding`; operators receive them at onboarding. The stack does
-not start until they are filled in. Do not use testnet data or settings for
-mainnet, and run it on its own host: this Compose file runs one complete stack
-per host (see [Data Storage](#data-storage)).
+not start until the required ones are filled in. Do not use testnet data or
+settings for mainnet, and run it on its own host: this Compose file runs one
+complete stack per host (see [Data Storage](#data-storage)).
 
 1. Create the Compose env file:
 
@@ -241,7 +241,8 @@ per host (see [Data Storage](#data-storage)).
    and `L1_INTERFACE_REPLAY_DB_URL`. If you already run a mainnet Dogecoin node
    from this package, keep your `.env.mainnet`, project name, and Dogecoin
    volume, and add the "Image Tags and Bootstrap Artifacts" settings from the
-   template.
+   template. Without them, Compose falls back to the testnet image and
+   bootstrap downloads.
 
 2. Put the other onboarding values in gitignored override files, so they stay
    out of tracked files:
@@ -263,8 +264,16 @@ per host (see [Data Storage](#data-storage)).
 
    ```bash
    docker compose --env-file .env.mainnet config --quiet
+   docker compose --env-file .env.mainnet config | grep -E 'image: dogeos69/|_URL:'
    docker compose --env-file .env.mainnet up -d
    ```
+
+   Before `up`, confirm that the output shows `rollup-node:v0.3.0-beta.2` and
+   your onboarding L1 Interface image tag and download URLs, not the testnet
+   ones. If a testnet replay database was already downloaded, remove
+   `replay.sqlite` and `replay.sqlite.bootstrap-source.json` from
+   `${DATA_ROOT}/l1-interface` first: an existing replay database is never
+   replaced.
 
    No mainnet snapshots are published, so L2Reth syncs from genesis. Verify the
    services as in [Quick Start step 5](#5-verify-services), using
@@ -275,8 +284,8 @@ restart behaviour under [Services](#services) applies; a new mainnet container
 already has `restart: unless-stopped`, so it needs no recreate. The commands
 under Services and [Maintenance](#maintenance) are written for testnet. On
 mainnet, use `.env.mainnet` instead of `.env.testnet`, the L2 HTTP port `18545`
-instead of `8545`, and an Ethereum mainnet RPC (chain ID `1`) instead of
-Sepolia.
+instead of `8545`, the host P2P port `40303` instead of `30303`, and an
+Ethereum mainnet RPC (chain ID `1`) instead of Sepolia.
 
 ## Service Endpoints
 
