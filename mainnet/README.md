@@ -47,10 +47,16 @@ chmod 600 .env
 docker compose up -d
 ```
 
-Compared with testnet: Dogecoin data lives in `${DATA_ROOT}/dogecoin`, the
-Dogecoin RPC and L1 Interface ports are published on `127.0.0.1` by default,
-the RPC password has no default, and default host ports differ (L2Reth HTTP
-`18545`, WebSocket `18546`, P2P `40303`; Dogecoin P2P `22556`, RPC `22555`).
+Compared with testnet:
+
+- Dogecoin needs far less memory: the default limit is 8 GB instead of 24 GB.
+  Dogecoin Core keeps every block's index entry in memory, and mainnet has
+  about a tenth of testnet's blocks.
+- Dogecoin data lives in `${DATA_ROOT}/dogecoin`.
+- The Dogecoin RPC and L1 Interface ports are published on `127.0.0.1` by
+  default, and the RPC password has no default.
+- Default host ports differ: L2Reth HTTP `18545`, WebSocket `18546`, P2P
+  `40303`; Dogecoin P2P `22556`, RPC `22555`.
 
 ## Documentation
 

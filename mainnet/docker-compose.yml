@@ -23,9 +23,13 @@ services:
     image: dogeos69/dogecoin:1.14.9
     logging: *logging
     restart: unless-stopped
-    mem_reservation: ${DOGECOIN_MEM_RESERVATION:-14g}
-    mem_limit: ${DOGECOIN_MEM_LIMIT:-24g}
-    memswap_limit: ${DOGECOIN_MEM_LIMIT:-24g}
+    # Dogecoin Core keeps every block header's index entry in memory (about
+    # 250 bytes each, ~1.6 GB at 6.5M mainnet blocks), plus dbcache (450 MB
+    # default) and mempool (300 MB default): about 3 GB in total. Testnet needs
+    # far more because it has ten times as many blocks.
+    mem_reservation: ${DOGECOIN_MEM_RESERVATION:-4g}
+    mem_limit: ${DOGECOIN_MEM_LIMIT:-8g}
+    memswap_limit: ${DOGECOIN_MEM_LIMIT:-8g}
     oom_score_adj: -100
     volumes:
       - type: bind
