@@ -35,7 +35,7 @@ The Quick Start below is for a new installation.
 
 ## Services
 
-The testnet stack runs three services:
+The stack runs three services:
 
 - **Dogecoin** stores and syncs Dogecoin chain data in a named Docker volume.
 - **L1 Interface** indexes Dogecoin and replays Ethereum DA data. It initializes
@@ -43,7 +43,9 @@ The testnet stack runs three services:
 - **L2Reth** syncs the DogeOS L2 chain and serves Ethereum-compatible RPC.
 
 L2Reth and L1 Interface store their data under the `DATA_ROOT` you configure.
-The package includes the testnet network settings and peer addresses.
+The package includes the testnet network settings and peer addresses. On
+mainnet, the values that are not public yet come from operator onboarding; see
+[Mainnet Follower](#mainnet-follower).
 
 L2Reth runs as a follower with `--consensus.exit-on-signer-rotation`. When the
 sequencer signer rotates on L1, the node logs
@@ -101,9 +103,8 @@ OOM-killed.
 
 ## Quick Start
 
-The commands below are for testnet. Do not substitute `.env.mainnet`: the
-current release does not ship a complete full-stack mainnet configuration.
-See [Mainnet status](#mainnet-status) before using the mainnet templates.
+The commands below are for testnet. For mainnet, follow
+[Mainnet Follower](#mainnet-follower).
 
 ### 1. Configure the Compose Environment
 
@@ -216,22 +217,68 @@ For snapshot recovery and replacement procedures, see the
 [testnet snapshot guide](snapshot_testnet.md). Mainnet snapshot automation is
 not available in this release; see [mainnet snapshot status](snapshot_mainnet.md).
 
-## Mainnet Status
+## Mainnet Follower
 
-This release supports the complete RPC stack on **testnet only**. Mainnet
-full-stack deployment and snapshots are not supported. Do not start this stack
-with `.env.mainnet` or use testnet data for mainnet.
+Mainnet is private. The package includes the public mainnet pieces: the L2
+genesis (chain ID `1122005`), the mainnet L2Reth settings, and the L2Reth image
+`dogeos69/rollup-node:v0.3.0-beta.2`, set by `L2RETH_IMAGE_TAG` in
+`.env.example.mainnet`. Values that are not public yet are left empty or set to
+`provided-at-onboarding`; operators receive them at onboarding. The stack does
+not start until they are filled in. Do not use testnet data or settings for
+mainnet.
 
-Existing mainnet operators should keep their current configuration and Dogecoin
-volume. See [mainnet snapshot status](snapshot_mainnet.md).
+1. Create the Compose env file:
+
+   ```bash
+   if [ ! -e .env.mainnet ]; then cp .env.example.mainnet .env.mainnet; fi
+   chmod 600 .env.mainnet
+   ```
+
+   Set `DATA_ROOT` and the Dogecoin RPC credentials as in
+   [Quick Start step 1](#1-configure-the-compose-environment), and the
+   onboarding values for `L1_INTERFACE_IMAGE_TAG`, `L1_INTERFACE_ARTIFACT_URL`,
+   and `L1_INTERFACE_REPLAY_DB_URL`. If you already run a mainnet Dogecoin node
+   from this package, keep your `.env.mainnet`, project name, and Dogecoin
+   volume, and add the "Image Tags and Bootstrap Artifacts" settings from the
+   template.
+
+2. Put the other onboarding values in gitignored override files, so they stay
+   out of tracked files:
+
+   | File | Settings |
+   |------|----------|
+   | `envs/mainnet/l2reth.local.env` | `L2RETH_PEER_LIST`, `L2RETH_NETWORK_ID`, `L2RETH_BLOB_S3_URL`, and optionally `L2RETH_SEQUENCER_URL` |
+   | `envs/mainnet/l1-interface.local.env` | Every empty setting in `envs/mainnet/l1-interface.env`, including your own Ethereum mainnet execution RPC in `DOGEOS_L1_INTERFACE_ETHEREUM_DA__L1_RPC_URL` |
+
+   ```bash
+   chmod 600 envs/mainnet/l2reth.local.env envs/mainnet/l1-interface.local.env
+   ```
+
+   Replace `configs/mainnet/protocol_context.json` with the protocol context
+   from onboarding. It is a tracked file that package updates may change, so
+   keep a copy.
+
+3. Check the configuration and start the stack:
+
+   ```bash
+   docker compose --env-file .env.mainnet config --quiet
+   docker compose --env-file .env.mainnet up -d
+   ```
+
+   No mainnet snapshots are published, so L2Reth syncs from genesis. Verify the
+   services as in [Quick Start step 5](#5-verify-services), using
+   `.env.mainnet` and the mainnet L2 HTTP port (`18545` by default).
+
+L2Reth runs with `--consensus.exit-on-signer-rotation` on mainnet too, and the
+restart behaviour under [Services](#services) applies unchanged.
 
 ## Service Endpoints
 
-- **Dogecoin RPC**: `http://localhost:44555` (testnet)
+- **Dogecoin RPC**: `http://localhost:${DOGECOIN_RPC_PORT}` (`44555` on testnet, `22555` on mainnet)
 - **L1 Interface RPC**: `http://localhost:8547` (L1 Ethereum client for L2Reth)
 - **L1 Interface Health**: `http://localhost:9090/health`
-- **L2Reth HTTP RPC**: `http://localhost:${L2_HTTP_PORT}` (`8545` by default on testnet)
-- **L2Reth WebSocket**: `ws://localhost:${L2_WS_PORT}` (`8546` by default on testnet)
+- **L2Reth HTTP RPC**: `http://localhost:${L2_HTTP_PORT}` (`8545` by default on testnet, `18545` on mainnet)
+- **L2Reth WebSocket**: `ws://localhost:${L2_WS_PORT}` (`8546` by default on testnet, `18546` on mainnet)
 
 ## Network Security
 
@@ -245,8 +292,8 @@ Use host/cloud firewalls, a private network or VPN, and an authenticated reverse
 proxy where remote RPC access is required. Normally only the intended P2P ports
 should be internet-reachable:
 
-- Dogecoin P2P: `${DOGECOIN_P2P_PORT}` (`44556` on testnet)
-- L2Reth P2P: `${L2_P2P_PORT}` TCP and UDP (`30303` by default)
+- Dogecoin P2P: `${DOGECOIN_P2P_PORT}` (`44556` on testnet, `22556` on mainnet)
+- L2Reth P2P: `${L2_P2P_PORT}` TCP and UDP (`30303` by default on testnet, `40303` on mainnet)
 
 To change the bundled Dogecoin RPC credentials, edit
 `DOGECOIN_RPC_USER`/`DOGECOIN_RPC_PASSWORD` once in the local Compose env and
@@ -266,10 +313,12 @@ Edit these local files for your deployment:
 
 Both files are gitignored. Keep them private and include them in your
 configuration backups. Keep the project name, Dogecoin volume name, and RPC
-credentials unchanged when upgrading an existing node.
+credentials unchanged when upgrading an existing node. Mainnet uses
+`.env.mainnet` and the files listed in [Mainnet Follower](#mainnet-follower).
 
-Use the supplied genesis, protocol context, and peer settings. No configuration
-generation or entrypoint-script edits are required for normal operation.
+On testnet, use the supplied genesis, protocol context, and peer settings. No
+configuration generation or entrypoint-script edits are required for normal
+operation.
 
 ### Custom Ethereum RPC
 
