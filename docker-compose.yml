@@ -27,6 +27,9 @@ services:
   l2reth-node:
     image: dogeos69/rollup-node:v0.3.0-beta.1c
     restart: unless-stopped
+    # Reth's own shutdown can take about 10 seconds, Docker's default, so a busy
+    # node could be killed (exit 137) on stop or reboot.
+    stop_grace_period: 30s
     mem_reservation: 1g
     mem_limit: ${L2RETH_MEM_LIMIT:-8g}
     memswap_limit: ${L2RETH_MEM_LIMIT:-8g}
