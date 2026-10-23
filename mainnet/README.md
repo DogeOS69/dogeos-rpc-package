@@ -32,6 +32,31 @@ Before release, also:
 - Publish `mainnet/index.json` in the snapshot bucket
   ([snapshot publishing](docs/snapshot-publishing.md)).
 
+## Hardware Requirements
+
+| Resource | Minimum | Recommended |
+|----------|---------|-------------|
+| RAM | 16 GB | 32 GB |
+| CPU | 4 cores | 8 cores |
+| Disk | 500 GB SSD | 1 TB NVMe SSD |
+
+Memory per service (`docker-compose.yml` defaults, adjustable in `.env`):
+
+| Service | Typical use | Limit | Notes |
+|---------|-------------|-------|-------|
+| `dogecoin-node` | about 3–4 GB (4 GB reserved) | 8 GB | Block index for every block (~1.6 GB at 6.5M blocks), dbcache 450 MB, mempool up to 300 MB; the limit covers startup and catch-up peaks |
+| `l2reth-node` | grows with RPC traffic | 8 GB | Tracing calls use the most |
+| `l1-interface` | small; more during startup | 2 GB | |
+
+A service that exceeds its limit is OOM-killed (swap is disabled), so keep the
+limits above the typical use and leave memory for the host.
+
+Disk: the Dogecoin mainnet chain alone is about 170 GiB of blocks (October
+2026), roughly 200–250 GB with undo data, chain state, and the transaction
+index, and it keeps growing. L2Reth and L1 Interface data start small. A
+snapshot restore needs room for the downloaded archive and the extracted data
+at the same time. Keep `DATA_ROOT` on an SSD.
+
 ## Usage After Release
 
 Run every command in this directory. Your settings live in one file, `.env`,
