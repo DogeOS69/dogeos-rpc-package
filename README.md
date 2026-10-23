@@ -233,7 +233,8 @@ Mainnet is private. The package includes the public mainnet pieces: the L2
 genesis (chain ID `1122005`), the mainnet L2Reth settings, and the L2Reth image
 `dogeos69/rollup-node:v0.3.0-beta.2`, set by `L2RETH_IMAGE_TAG` in
 `.env.example.mainnet`. Values that are not public yet are left empty or set to
-`provided-at-onboarding`; operators receive them at onboarding. The stack does
+`provided-at-onboarding` (`PROVIDED_AT_ONBOARDING` in the protocol context);
+operators receive them at onboarding. The stack does
 not start until the required ones are filled in. Do not use testnet data or
 settings for mainnet, and run it on its own host: this Compose file runs one
 complete stack per host (see [Data Storage](#data-storage)).
