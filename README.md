@@ -238,11 +238,15 @@ complete stack per host (see [Data Storage](#data-storage)).
    Set `DATA_ROOT` and the Dogecoin RPC credentials as in
    [Quick Start step 1](#1-configure-the-compose-environment), and the
    onboarding values for `L1_INTERFACE_IMAGE_TAG`, `L1_INTERFACE_ARTIFACT_URL`,
-   and `L1_INTERFACE_REPLAY_DB_URL`. If you already run a mainnet Dogecoin node
-   from this package, keep your `.env.mainnet`, project name, and Dogecoin
-   volume, and add the "Image Tags and Bootstrap Artifacts" settings from the
-   template. Without them, Compose falls back to the testnet image and
-   bootstrap downloads.
+   and `L1_INTERFACE_REPLAY_DB_URL`. If you already run a v0.3.0 mainnet
+   Dogecoin node from this package, keep your `.env.mainnet`, project name, and
+   Dogecoin volume, and add the "Image Tags and Bootstrap Artifacts" settings
+   from the template. Without them, Compose falls back to the testnet image and
+   bootstrap downloads. A v0.2.x mainnet deployment (configured in `.env`) must
+   first stop its old services with the old Compose file, as in
+   [step 1 of the upgrade guide](upgrade_v0.3.0.md#1-stop-the-old-services),
+   before pulling this version. Then create `.env.mainnet` from the template
+   and carry over its project name, Dogecoin volume name, and RPC credentials.
 
 2. Put the other onboarding values in gitignored override files, so they stay
    out of tracked files:

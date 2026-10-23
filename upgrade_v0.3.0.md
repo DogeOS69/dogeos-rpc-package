@@ -2,7 +2,8 @@
 
 Use this guide **after v0.3.0 is merged into `main`**. It upgrades the old
 v0.2.x package, whether it used L2Geth or older L2Reth. Allow a maintenance
-window. This guide is for testnet only; for mainnet, see "Mainnet Follower" in
+window. The migration steps are for testnet. On mainnet, stop the old services
+as in step 1, then follow "Mainnet Follower" in
 [README.md](README.md#mainnet-follower).
 
 **Stop the old services before `git pull`, using the old Compose file.** The
