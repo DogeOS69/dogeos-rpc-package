@@ -225,7 +225,8 @@ genesis (chain ID `1122005`), the mainnet L2Reth settings, and the L2Reth image
 `.env.example.mainnet`. Values that are not public yet are left empty or set to
 `provided-at-onboarding`; operators receive them at onboarding. The stack does
 not start until they are filled in. Do not use testnet data or settings for
-mainnet.
+mainnet, and run it on its own host: this Compose file runs one complete stack
+per host (see [Data Storage](#data-storage)).
 
 1. Create the Compose env file:
 
@@ -270,7 +271,10 @@ mainnet.
    `.env.mainnet` and the mainnet L2 HTTP port (`18545` by default).
 
 L2Reth runs with `--consensus.exit-on-signer-rotation` on mainnet too, and the
-restart behaviour under [Services](#services) applies unchanged.
+restart behaviour under [Services](#services) applies. Use `.env.mainnet` in
+place of `.env.testnet` in the commands under Services and
+[Maintenance](#maintenance). A new mainnet container already has
+`restart: unless-stopped`, so it needs no recreate.
 
 ## Service Endpoints
 
