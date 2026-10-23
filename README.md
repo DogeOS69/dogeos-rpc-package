@@ -350,6 +350,32 @@ service after changing `l1-interface.local.env` or another service env file:
 docker compose --env-file .env.testnet up -d --force-recreate l1-interface
 ```
 
+### Restart Monitoring
+
+Docker restarts L2Reth after any exit, so a node that keeps failing never stays
+down on its own. A stop request (`docker compose stop`, a host shutdown) exits
+with code 0 and a signer rotation with code 70 (see [Services](#services)); any
+other exit is a failure. Docker resets its restart back-off after a run of 10
+seconds or more, so a node that fails later than that restarts again right
+away, without end.
+
+```bash
+# Restarts since the container was last started or recreated by hand, and
+# whether the last exit was an out-of-memory kill
+docker inspect -f '{{.RestartCount}} oom={{.State.OOMKilled}}' \
+  "$(docker compose --env-file .env.testnet ps -q l2reth-node)"
+
+# Exit code of each stop or crash as it happens
+docker events --filter event=die \
+  --filter container="$(docker compose --env-file .env.testnet ps -q l2reth-node)" \
+  --format '{{.Time}} exitCode={{.Actor.Attributes.exitCode}}'
+```
+
+Alert when the restart count rises by 3 or more within 30 minutes, or on any
+exit other than 70 that you did not request. Also compare the node's head with
+an RPC you trust (the block number and the block hash at that height): this
+catches a node that keeps running but stops syncing.
+
 ### Troubleshooting
 
 - **L1 Interface restarts with `RPC error -28: Loading block index...`:**
@@ -365,6 +391,13 @@ docker compose --env-file .env.testnet up -d --force-recreate l1-interface
 - **L2Reth stays at `Waiting for L1 interface`:** L2Reth's entrypoint waits for
   an `eth_chainId` response from L1 Interface. Check L1 Interface health and
   logs first.
+- **L2Reth keeps restarting, and the exits are not the signer-rotation log line
+  (code 70):** run `docker compose --env-file .env.testnet stop l2reth-node`; it
+  stays down across reboots. Save the logs with
+  `docker compose --env-file .env.testnet logs --since 2h l2reth-node > l2reth-node.log`
+  and look for `fail-stopping`, `Fatal error in consensus engine`,
+  `panicked at`, or `genesis`. Do not reset or restore data until someone has
+  read them.
 - **`net_peerCount` is `0x0`:** Confirm every enode hostname resolves, TCP/UDP
   port 30303 is reachable, and `L2RETH_NETWORK_ID` matches the remote peers.
   Configured enodes are not proof of completed devp2p handshakes.
