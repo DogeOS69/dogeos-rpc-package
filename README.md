@@ -354,33 +354,34 @@ docker compose --env-file .env.testnet up -d --force-recreate l1-interface
 
 ### Restart Monitoring
 
-Docker restarts L2Reth after every exit except a stop you request, so a node
-that keeps failing never stays down on its own. A signer rotation exits with
-code 70 (see [Services](#services)). A running node that finishes shutting down
-after a stop request (`docker compose stop`, a host shutdown) exits with code 0;
-a stop while it still waits for L1 Interface, or one that outlasts the
-30-second grace period, ends with 137. Any other exit is a failure. Docker
+Docker restarts L2Reth after every exit except `docker compose stop` or `down`,
+so a node that keeps failing never stays down on its own. A signer rotation
+exits with code 70 (see [Services](#services)). A running node that finishes
+shutting down after `docker compose stop` or a host shutdown exits with code 0;
+after a host shutdown, Docker starts it again at boot. Exit 137 means Docker
+killed the process: an out-of-memory kill, a stop while the node still waits for
+L1 Interface, or a stop that outlasts the 30-second grace period. Any other
+exit, and a 137 you did not cause by stopping the node, is a failure. Docker
 resets its restart back-off after a run of 10 seconds or more, so a node that
 fails later than that restarts again right away, without end.
 
 ```bash
 # Restarts since the container was last started by hand, recreated, or
 # started by a Docker daemon start. oom=true means the last exit was an
-# out-of-memory kill; Docker clears it when the container starts again, so on
-# a running node look for exit 137 in the events below instead.
+# out-of-memory kill; Docker clears it when the container starts again.
 docker inspect -f '{{.RestartCount}} oom={{.State.OOMKilled}}' \
   "$(docker compose --env-file .env.testnet ps -q l2reth-node)"
 
-# Exit code of each stop or crash as it happens
-docker events --filter event=die \
+# Each exit (die, with its code) and out-of-memory kill (oom) as it happens
+docker events --filter event=die --filter event=oom \
   --filter container="$(docker compose --env-file .env.testnet ps -q l2reth-node)" \
-  --format '{{.Time}} exitCode={{.Actor.Attributes.exitCode}}'
+  --format '{{.Time}} {{.Action}} exitCode={{.Actor.Attributes.exitCode}}'
 ```
 
-Alert when the restart count rises by 3 or more within 30 minutes, or on any
-exit other than 70 that you did not request. Also compare the node's head with
-an RPC you trust (the block number and the block hash at that height): this
-catches a node that keeps running but stops syncing.
+Alert when the restart count rises by 3 or more within 30 minutes, on any `oom`
+event, or on any exit other than 70 that you did not request. Also compare the
+node's head with an RPC you trust (the block number and the block hash at that
+height): this catches a node that keeps running but stops syncing.
 
 ### Troubleshooting
 
