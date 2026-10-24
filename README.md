@@ -53,11 +53,23 @@ sequencer signer rotates on L1, the node logs
 L1. Docker clears the exit code once the container runs again, so the log line
 is the record of a rotation restart.
 
-The same policy brings a running L2Reth back after a host or Docker restart; a
-container stopped with `docker compose stop` or `down` stays down. An existing
-container keeps its old restart policy until it is recreated with
-`docker compose --env-file .env.testnet up -d --no-deps l2reth-node`;
-`docker compose restart` does not apply it.
+The node reads the signer from L1 Interface about every 12 seconds and exits
+only after three successful reads in a row return the same new signer; failed
+reads in between are skipped. With working reads, that is roughly 25 to 40 seconds after
+L1 Interface first returns the new signer. Failed reads never cause an exit:
+while L1 Interface is unreachable, L2Reth keeps running with the old signer and
+logs a warning after every 25 failed reads in a row. The node reads its signer
+once at startup, and the check starts from its own first successful read a
+moment later. A rotation that lands between those two reads is missed: the node
+keeps the old signer and does not exit until a later rotation. Restarting
+L2Reth picks up the new signer, without the rotation log line.
+
+The same policy brings a running L2Reth back after a host or Docker restart. A
+container stopped with `docker compose stop` stays stopped, and
+`docker compose down` removes it. An existing container keeps its old restart
+policy and shutdown time until it is recreated with
+`docker compose --env-file .env.testnet up -d --no-deps l2reth-node`, which
+briefly interrupts L2 RPC; `docker compose restart` does not apply them.
 
 ## Hardware Requirements
 
@@ -113,6 +125,17 @@ any custom names; see the [upgrade guide](upgrade_v0.3.0.md).
 on your mounted data disk, outside the repository. Verify the disk mount
 before starting; otherwise chain data can fill the host's root disk. For
 example, use `findmnt -T /data` if your disk is mounted at `/data`.
+
+Docker starts L2Reth and L1 Interface again when the host boots
+(`restart: unless-stopped`), so the data disk must be mounted before Docker
+starts; otherwise they can start on an empty directory on the root disk. Mount
+the disk at boot (for example through `/etc/fstab`) and make Docker wait for it
+with `sudo systemctl edit docker.service`, using your disk's mount point:
+
+```ini
+[Unit]
+RequiresMountsFor=/data
+```
 
 The restore script and Compose create their data directories as needed.
 `DATA_ROOT` controls L2Reth and L1 Interface storage; Dogecoin continues to use
@@ -330,6 +353,38 @@ service after changing `l1-interface.local.env` or another service env file:
 docker compose --env-file .env.testnet up -d --force-recreate l1-interface
 ```
 
+### Restart Monitoring
+
+Docker restarts L2Reth after every exit except a manual stop or kill
+(`docker compose stop`, `down` or `kill`), so a node that keeps failing never
+stays down on its own. A signer rotation
+exits with code 70 (see [Services](#services)). A running node that finishes
+shutting down after `docker compose stop` or a host shutdown exits with code 0;
+after a host shutdown, Docker starts it again at boot. Exit 137 means Docker
+killed the process: an out-of-memory kill, a stop while the node still waits for
+L1 Interface, or a stop that outlasts the 30-second grace period. Any other
+exit, and a 137 you did not cause by stopping the node, is a failure. Docker
+resets its restart back-off after a run of 10 seconds or more, so a node that
+fails later than that restarts again right away, without end.
+
+```bash
+# Restarts since the container was last started by hand, recreated, or
+# started by a Docker daemon start. oom=true means the last exit was an
+# out-of-memory kill; Docker clears it when the container starts again.
+docker inspect -f '{{.RestartCount}} oom={{.State.OOMKilled}}' \
+  "$(docker compose --env-file .env.testnet ps -q l2reth-node)"
+
+# Each exit (die, with its code) and out-of-memory kill (oom) as it happens
+docker events --filter event=die --filter event=oom \
+  --filter container="$(docker compose --env-file .env.testnet ps -q l2reth-node)" \
+  --format '{{.Time}} {{.Action}} exitCode={{.Actor.Attributes.exitCode}}'
+```
+
+Alert when the restart count rises by 3 or more within 30 minutes, on any `oom`
+event, or on any exit other than 70 that you did not request. Also compare the
+node's head with an RPC you trust (the block number and the block hash at that
+height): this catches a node that keeps running but stops syncing.
+
 ### Troubleshooting
 
 - **L1 Interface restarts with `RPC error -28: Loading block index...`:**
@@ -345,6 +400,13 @@ docker compose --env-file .env.testnet up -d --force-recreate l1-interface
 - **L2Reth stays at `Waiting for L1 interface`:** L2Reth's entrypoint waits for
   an `eth_chainId` response from L1 Interface. Check L1 Interface health and
   logs first.
+- **L2Reth keeps restarting, and the exits are not the signer-rotation log line
+  (code 70):** run `docker compose --env-file .env.testnet stop l2reth-node`; it
+  stays down across reboots. Save the logs with
+  `docker compose --env-file .env.testnet logs --since 2h l2reth-node > l2reth-node.log`
+  and look for `fail-stopping`, `Fatal error in consensus engine`,
+  `panicked at`, or `genesis hash in the storage does not match`. Do not reset
+  or restore data until someone has read them.
 - **`net_peerCount` is `0x0`:** Confirm every enode hostname resolves, TCP/UDP
   port 30303 is reachable, and `L2RETH_NETWORK_ID` matches the remote peers.
   Configured enodes are not proof of completed devp2p handshakes.
