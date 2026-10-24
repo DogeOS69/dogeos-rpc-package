@@ -1,0 +1,36 @@
+{
+  "protocol": {
+    "protocol_version": 2,
+    "dogecoin_chain_id": "PROVIDED_AT_ONBOARDING",
+    "l2_chain_id": 1122005,
+    "eth_chain_id": 1
+  },
+  "genesis": {
+    "genesis_sequencer_outpoint": {
+      "txid": "PROVIDED_AT_ONBOARDING",
+      "vout": 0
+    },
+    "genesis_bridge_key_hash": "PROVIDED_AT_ONBOARDING",
+    "initial_confirmed_block_number": "PROVIDED_AT_ONBOARDING",
+    "initial_confirmed_block_hash": "PROVIDED_AT_ONBOARDING",
+    "initial_ethereum_block_hash": "PROVIDED_AT_ONBOARDING",
+    "initial_tx_index": 0,
+    "genesis_batch_hash": "PROVIDED_AT_ONBOARDING",
+    "genesis_state_root": "PROVIDED_AT_ONBOARDING",
+    "initial_system_signer": "PROVIDED_AT_ONBOARDING"
+  },
+  "protocol_config_seed": {
+    "protocol_config": {
+      "l2_chain_id": 1122005,
+      "eth_chain_id": 1,
+      "key_rotation_min_grace_wf_txs": "PROVIDED_AT_ONBOARDING",
+      "min_deposit_sats": "PROVIDED_AT_ONBOARDING",
+      "deposit_queue_transform": {
+        "l1_scroll_messenger_address": "PROVIDED_AT_ONBOARDING",
+        "l2_messenger_address": "PROVIDED_AT_ONBOARDING",
+        "moat_address": "PROVIDED_AT_ONBOARDING",
+        "message_queue_gas_limit": 200000
+      }
+    }
+  }
+}

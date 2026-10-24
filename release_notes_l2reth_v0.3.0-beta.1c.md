@@ -20,7 +20,8 @@ remain running. L2 RPC will be briefly unavailable while L2Reth restarts.
    `configs/testnet/l2reth-genesis.json` must be updated together.
 2. Keep the existing `.env.testnet`, Compose project name, `DATA_ROOT`,
    Dogecoin volume name, and RPC credentials. Do not replace the local env
-   file with a template.
+   file with a template, but copy into it any settings it lacks from
+   `.env.example.testnet`; `docker compose` names a missing one.
 3. With the existing stack running, execute the following in its deployment
    directory. If you use a custom env-file path or Compose options such as
    `-p` or `-f`, retain those options in every command below.

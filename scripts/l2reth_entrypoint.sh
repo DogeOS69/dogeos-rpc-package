@@ -33,6 +33,38 @@ BLOB_S3_URL="${L2RETH_BLOB_S3_URL:?L2RETH_BLOB_S3_URL must be set (DA blob archi
 # handshake compares network ids and silently drops peers on mismatch.
 NETWORK_ID="${L2RETH_NETWORK_ID:?L2RETH_NETWORK_ID must be set (cluster p2p network id)}"
 
+# Per-network settings come from envs/<network>/l2reth.env. A container
+# created before these settings existed is restarted by Docker with this
+# script and its old environment, so they fall back to the values this script
+# used to hard-code. The L1 message limit only applies to a sequencer, so its
+# fallback cannot pick the wrong network.
+MAX_L1_MESSAGES="${L2RETH_MAX_L1_MESSAGES:-51}"
+# The legacy geth header transform is only for the one-way testnet geth-to-Reth
+# crossover; mainnet sets it to false. Fall back to true only for the testnet
+# genesis (chain id 6281971).
+GENESIS=/l2reth/genesis/genesis.json
+LEGACY_GETH_HEADER_TRANSFORM="${L2RETH_LEGACY_GETH_HEADER_TRANSFORM:-}"
+if [ -z "$LEGACY_GETH_HEADER_TRANSFORM" ]; then
+  if grep -Eq '"chainId": *6281971,' "$GENESIS"; then
+    LEGACY_GETH_HEADER_TRANSFORM=true
+  else
+    echo "ERROR: L2RETH_LEGACY_GETH_HEADER_TRANSFORM must be set (envs/<network>/l2reth.env)" >&2
+    exit 1
+  fi
+fi
+
+# Optional: forward eth_sendRawTransaction to the sequencer RPC.
+SEQUENCER_FLAGS=""
+if [ -n "${L2RETH_SEQUENCER_URL:-}" ]; then
+  SEQUENCER_FLAGS="--network.sequencer-url $L2RETH_SEQUENCER_URL"
+fi
+
+# Optional: cap on the priority fee eth_maxPriorityFeePerGas suggests (wei).
+GPO_FLAGS=""
+if [ -n "${L2RETH_GPO_MAXPRICE:-}" ]; then
+  GPO_FLAGS="--gpo.maxprice $L2RETH_GPO_MAXPRICE"
+fi
+
 # Wait for the L1 interface RPC before starting the node. Waiting here instead
 # of in a compose init container keeps the dependency daemon-managed, so
 # startup survives the compose client (e.g. SSH session) going away.
@@ -44,17 +76,19 @@ until curl -fsS --max-time 2 -H "content-type: application/json" \
 done
 echo "L1 interface is ready"
 
-exec rollup-node node --chain /l2reth/genesis/genesis.json --datadir=/l2reth --metrics=0.0.0.0:6060 --network.scroll-wire=true --network.bridge=true  \
-  --network.legacy-geth-header-transform true \
+exec rollup-node node --chain "$GENESIS" --datadir=/l2reth --metrics=0.0.0.0:6060 --network.scroll-wire=true --network.bridge=true  \
+  --network.legacy-geth-header-transform "$LEGACY_GETH_HEADER_TRANSFORM" \
   --network-id "$NETWORK_ID" \
   --http --http.addr=0.0.0.0 --http.port=8545 --http.corsdomain "*" --http.api eth,net,web3,debug,trace \
   --ws --ws.addr=0.0.0.0 --ws.port=8546 --ws.api eth,net,web3,debug,trace \
   --log.stdout.format log-fmt -vvv \
   --txpool.pending-max-count=1000 \
   --builder.gaslimit=30000000 \
-  --sequencer.max-l1-messages 51 \
+  --sequencer.max-l1-messages "$MAX_L1_MESSAGES" \
   --rpc.max-connections=5000 \
   $PEER_FLAGS \
+  $SEQUENCER_FLAGS \
+  $GPO_FLAGS \
   --engine.sync-at-startup false \
   --consensus.exit-on-signer-rotation \
   --l1.url "$L1_ENDPOINT" \
