@@ -82,7 +82,6 @@ services:
       L2RETH_EXTRA_ARGS: ${L2RETH_EXTRA_ARGS:-}
       L2RETH_P2P_PORT: ${L2_P2P_PORT:-30303}
       L2RETH_P2P_PUBLIC_IP: ${L2RETH_P2P_PUBLIC_IP:-}
-      L2RETH_P2P_SOURCE_CIDRS: ${L2RETH_P2P_SOURCE_CIDRS:-}
     volumes:
       - type: bind
         source: ./config/l2reth-genesis.json

@@ -1,10 +1,13 @@
-"""Offline identity lifecycle and public allowlist report regression tests."""
+"""Offline persistent private-key lifecycle regression tests."""
 import copy
 import importlib.util
-import os
+import contextlib
+import io
+import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("identity", ROOT / "scripts/p2p-identity.py")
@@ -12,8 +15,7 @@ identity = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(identity)
 # Public secp256k1 test vector, never an operational key.
 ONE = b"0" * 63 + b"1"
-GENERATOR = ("79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
-             "483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8")
+
 
 
 class IdentityTests(unittest.TestCase):
@@ -35,9 +37,7 @@ class IdentityTests(unittest.TestCase):
             "volumes": [{"type": "bind", "source": str(self.data), "target": "/l2reth"},
                         {"type": "bind", "source": str(self.key), "target": identity.KEY_TARGET,
                          "read_only": True, "bind": {"create_host_path": False}}],
-            "environment": {"L2RETH_P2P_PUBLIC_IP": "203.0.113.10", "L2RETH_P2P_PORT": "31303",
-                            "L2RETH_P2P_SOURCE_CIDRS": "198.51.100.20/32,198.51.100.0/24"},
-            "ports": [{"target": 31303, "published": "31303", "protocol": x} for x in ("tcp", "udp")]
+            "environment": {}
         }}}
 
     def test_generation_idempotence_and_permissions(self):
@@ -45,7 +45,6 @@ class IdentityTests(unittest.TestCase):
         self.assertEqual(identity.initialize(self.key, self.data)[0], first)
         self.assertEqual(identity.read_key(self.key), first)
         self.assertEqual(self.key.stat().st_mode & 0o777, 0o600)
-        self.assertEqual(len(identity.public_key(first)), 128)
 
     def test_legacy_migration_preserves_identity_across_data_replacement(self):
         legacy = self.write_key(self.data / "discovery-secret", ONE + b"\n")
@@ -56,7 +55,7 @@ class IdentityTests(unittest.TestCase):
         self.data.mkdir()
         (self.data / "db").mkdir()
         self.assertEqual(identity.initialize(self.key, self.data)[0], ONE)
-        self.assertEqual(identity.public_key(identity.read_key(self.key)), GENERATOR)
+        self.assertEqual(identity.read_key(self.key), ONE)
 
     def test_import_normalizes_and_never_overwrites(self):
         source = self.write_key(self.root / "import", b"0x" + ONE + b"\n")
@@ -88,27 +87,17 @@ class IdentityTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             identity.read_key(self.key)
 
-    def test_known_public_key_and_nat_report(self):
-        cfg = self.config()
-        service = cfg["services"]["l2reth-node"]
-        path, data, env = identity.settings(cfg)
-        self.assertEqual((path, data), (self.key, self.data))
-        report = identity.report(ONE, env, service)
-        self.assertEqual(report["node_id"], GENERATOR)
-        self.assertEqual(report["enode"], f"enode://{GENERATOR}@203.0.113.10:31303")
-        self.assertEqual(report["source_cidrs"], ["198.51.100.20/32", "198.51.100.0/24"])
-        self.assertEqual(set(report), {"network", "node_id", "enode", "source_cidrs"})
-
-    def test_report_requires_ip_cidrs_and_matching_ports(self):
-        service = self.config()["services"]["l2reth-node"]
-        for key, value in (("L2RETH_P2P_PUBLIC_IP", ""), ("L2RETH_P2P_SOURCE_CIDRS", ""),
-                           ("L2RETH_P2P_SOURCE_CIDRS", "198.51.100.20/24"), ("L2RETH_P2P_PORT", "30303")):
-            env = dict(service["environment"], **{key: value})
-            with self.assertRaises(ValueError):
-                identity.report(ONE, env, service)
-        service["ports"].pop()
-        with self.assertRaises(ValueError):
-            identity.report(ONE, service["environment"], service)
+    def test_cli_init_without_network_addresses_preserves_key_and_keeps_it_private(self):
+        # A new outbound-only node needs no advertised IP or egress declaration.
+        output = io.StringIO()
+        with patch("sys.argv", ["p2p-identity.py", "init"]), \
+                patch.object(identity.subprocess, "check_output", return_value=json.dumps(self.config())), \
+                contextlib.redirect_stdout(output):
+            identity.main()
+            first = identity.read_key(self.key)
+            identity.main()
+        self.assertEqual(identity.read_key(self.key), first)
+        self.assertNotIn(first.decode(), output.getvalue())
 
     def test_compose_normalization_omits_false_create_host_path(self):
         cfg = self.config()

@@ -34,7 +34,7 @@ Swap is disabled, so a service that exceeds its limit can be OOM-killed.
 
 Use a Linux host with Docker Engine running and Docker Compose **2.24+**.
 The host scripts need Bash, Python **3.9+ with SQLite**, curl, GNU tar/coreutils,
-jq, OpenSSL (secp256k1 support) and `findmnt` (util-linux). Install these with your host's package manager
+jq and `findmnt` (util-linux). Install these with your host's package manager
 before proceeding.
 Your login user must be able to run Docker commands. Check:
 
@@ -48,7 +48,6 @@ tar --version
 stat --version
 jq --version
 findmnt --version
-openssl version
 ```
 
 `tar` and `stat` should report GNU versions. Run the deployment commands below
@@ -111,24 +110,29 @@ For an existing volume, `docker volume inspect VOLUME_NAME` shows its mount
 location. Keep existing project/volume names: changing them can create a new,
 empty Dogecoin volume. See [Data Storage](docs/operations.md#data-storage).
 
-### Initialize P2P Identity and Request Allowlisting
+### Initialize P2P Identity
 
-Before any snapshot restore or startup, set `L2RETH_P2P_PUBLIC_IP` to your
-reachable static IPv4 and `L2RETH_P2P_SOURCE_CIDRS` to your actual outbound
-public CIDRs (comma-separated; one IPv4 uses `/32`) in `.env`. Then run:
+Before any snapshot restore or startup, generate a persistent key or migrate
+an existing node's key:
 
 ```bash
 python3 scripts/p2p-identity.py init
-python3 scripts/p2p-identity.py show
 ```
 
-Send the `show` JSON (`network`, public `node_id`, `enode`, `source_cidrs`) to
-operations for **both IP and public-key allowlisting**, and wait for confirmation
-before expecting L2 peers. Never send the private-key file. The key lives at
-`${DATA_ROOT}/l2reth-identity/discovery-secret`, outside replaceable chain data;
-`L2RETH_P2P_KEY_FILE` can select a different private file. Back it up securely.
-Existing nodes must migrate their original identity before replacing any data.
-See [P2P Identity](docs/p2p-identity.md) for import, migration, NAT and port setup.
+The key lives at `${DATA_ROOT}/l2reth-identity/discovery-secret`, outside
+replaceable chain data; `L2RETH_P2P_KEY_FILE` can select a different private
+file. Back it up securely. Existing nodes must migrate their original identity
+before replacing any data. See [P2P Identity](docs/p2p-identity.md) for import
+and migration instructions.
+
+To request allowlisting before the first sync, follow
+[Collect Information for Operations](docs/p2p-identity.md#collect-information-for-operations):
+use Geth's standard `devp2p key to-enode` command to read the public key, confirm
+fixed outbound IPs/CIDRs from your host and NAT configuration, and submit the
+public key/CIDRs to DogeOS operations. A single fixed IPv4 is submitted as `/32`.
+The guide includes the exact commands and an alternative using the running
+node's native log/IPC API. Outbound CIDRs are not node settings in `.env`;
+a public inbound endpoint is optional and separate from outbound allowlisting.
 
 ### 2. Check the Ethereum RPC
 
@@ -211,6 +215,20 @@ saved group ID as described in the recovery guide.
 
 Use this helper for cold startup and recovery. Plain `docker compose up -d`
 and Docker daemon auto-restart do not run its host-side checkpoint sequence.
+
+Once L2Reth has initialized P2P, verify its identity against the public key
+you submitted (or collect it now if you skipped the offline query):
+
+```bash
+docker compose logs --no-color l2reth-node | grep 'P2P networking initialized'
+```
+
+The 128 hex characters between `enode://` and `@` are the P2P public key to
+submit to DogeOS operations, together with your confirmed outbound CIDRs.
+The enode IP is not proof of the outbound source IP. Wait for IP/public-key
+allowlisting before expecting peers and completing RPC verification.
+See [Collect Information for Operations](docs/p2p-identity.md#collect-information-for-operations)
+for CIDR confirmation, log availability and the local API alternative.
 
 ### 5. Verify Services
 

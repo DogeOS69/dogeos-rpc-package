@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""Initialize a persistent P2P identity and print public allowlist information."""
+"""Initialize, migrate or check the persistent P2P private-key file."""
 import argparse
 import fcntl
-import ipaddress
 import json
 import os
 from pathlib import Path
@@ -13,10 +12,8 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-NETWORK = "mainnet"
 KEY_TARGET = "/run/dogeos/l2reth-p2p.key"
 ORDER = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
-SPKI_PREFIX = bytes.fromhex("3056301006072a8648ce3d020106052b8104000a03420004")
 
 
 def require(condition, message):
@@ -68,16 +65,6 @@ def read_key(path, importing=False):
     return raw.lower()
 
 
-def public_key(raw):
-    # SEC1 DER is passed through stdin, never via argv or a temporary PEM file.
-    der = bytes.fromhex("302e0201010420") + bytes.fromhex(raw.decode()) + bytes.fromhex("a00706052b8104000a")
-    result = subprocess.run(["openssl", "ec", "-inform", "DER", "-pubout", "-conv_form", "uncompressed",
-                             "-outform", "DER"], input=der, capture_output=True)
-    require(result.returncode == 0 and result.stdout.startswith(SPKI_PREFIX) and len(result.stdout) == len(SPKI_PREFIX) + 64,
-            "OpenSSL could not derive a secp256k1 public key")
-    return result.stdout[len(SPKI_PREFIX):].hex()
-
-
 def initialize(path, data, import_key=None):
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     with (path.parent / ".p2p-identity.lock").open("a") as lock:
@@ -97,8 +84,6 @@ def initialize(path, data, import_key=None):
                     "existing L2 data has no discovery-secret; locate the original key and use init --import-key (no automatic rotation)")
             raw = f"{secrets.randbelow(ORDER - 1) + 1:064x}".encode()
             note = "Generated new identity"
-        # Validate/derive before persisting so missing OpenSSL leaves no half-initialized key.
-        public_key(raw)
         temporary = None
         try:
             with tempfile.NamedTemporaryFile(dir=path.parent, prefix=".p2p-key-", delete=False) as stream:
@@ -114,31 +99,9 @@ def initialize(path, data, import_key=None):
         return raw, note
 
 
-def report(raw, env, service):
-    public_ip = env.get("L2RETH_P2P_PUBLIC_IP", "")
-    require(public_ip, "set L2RETH_P2P_PUBLIC_IP to the reachable static IPv4 address before exporting an enode")
-    try:
-        address = ipaddress.IPv4Address(public_ip)
-        port = int(env.get("L2RETH_P2P_PORT", "30303"))
-        cidrs = [str(ipaddress.ip_network(x.strip(), strict=True)) for x in
-                 env.get("L2RETH_P2P_SOURCE_CIDRS", "").split(",") if x.strip()]
-    except ValueError:
-        raise ValueError("invalid public IPv4, P2P port or source CIDR; use network CIDRs (for one IPv4, /32)") from None
-    require(not address.is_unspecified and not address.is_multicast and not address.is_loopback,
-            "P2P public IP must be a reachable unicast address")
-    require(1 <= port <= 65535 and cidrs, "set a valid P2P port and L2RETH_P2P_SOURCE_CIDRS (actual outbound public source ranges)")
-    for protocol in ("tcp", "udp"):
-        require(any(int(p["target"]) == port and int(p["published"]) == port
-                    and p.get("protocol", "tcp") == protocol for p in service.get("ports", [])),
-                "P2P host and container ports must match the advertised port for TCP and UDP")
-    node_id = public_key(raw)
-    return {"network": NETWORK, "node_id": node_id, "enode": f"enode://{node_id}@{address}:{port}",
-            "source_cidrs": cidrs}
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("init", "check", "show"))
+    parser.add_argument("action", choices=("init", "check"))
     parser.add_argument("--env-file")
     parser.add_argument("--import-key", type=Path, help="init only: copy an existing private-key file; never pass the key itself")
     args = parser.parse_args()
@@ -147,17 +110,14 @@ def main():
     command = ["docker", "compose", "-f", str(ROOT / "docker-compose.yml"), "--project-directory", str(ROOT),
                "--env-file", str(env_file), "config", "--format", "json"]
     config = json.loads(subprocess.check_output(command, text=True))
-    path, data, env = settings(config)
+    path, data, _ = settings(config)
     if args.action == "init":
-        raw, note = initialize(path, data, args.import_key)
+        _, note = initialize(path, data, args.import_key)
         print(note + "; private key is not displayed")
-        print("Node ID: " + public_key(raw))
-        print("Back up the private key securely; run show after configuring public IP and source CIDRs.")
-    elif args.action == "check":
+        print("Back up the private key securely. See docs/p2p-identity.md for native node information and allowlisting.")
+    else:
         read_key(path)
         print("Persistent P2P identity valid")
-    else:
-        print(json.dumps(report(read_key(path), env, config["services"]["l2reth-node"]), indent=2))
 
 
 if __name__ == "__main__":

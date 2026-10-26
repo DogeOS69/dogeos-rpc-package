@@ -11,7 +11,13 @@ restart, snapshot restore or reset after this upgrade**, run
 It copies the old `l2reth/discovery-secret` when available, preserving the node
 ID. Custom identities can be imported with `--import-key`; existing destination
 keys are never overwritten. See [P2P Identity](docs/p2p-identity.md) for migration,
-secure backup and the public JSON to send to operations for IP/key allowlisting.
+secure backup and using native node information for IP/key allowlisting.
+The key helper only initializes/migrates/checks the private-key file. The custom
+public-key/enode/CIDR exporter and `L2RETH_P2P_SOURCE_CIDRS` setting were removed;
+remove that unused setting from existing `.env` files. The guide now covers
+standard `devp2p` key generation and offline public-key lookup before first
+sync, plus Reth's native startup log/local `admin_nodeInfo` for runtime checks.
+Network operators confirm egress CIDRs separately; `L2RETH_P2P_PUBLIC_IP` is only an optional inbound address.
 `L2_P2P_PORT` now sets both the host and container TCP/UDP ports. P2P identity,
 NAT and port overrides in `L2RETH_EXTRA_ARGS` must move to the dedicated settings.
 Snapshots must exclude `discovery-secret` and all other node identity files.

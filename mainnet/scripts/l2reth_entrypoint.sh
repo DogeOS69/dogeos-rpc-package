@@ -16,7 +16,7 @@ case "$P2P_PORT" in
   ''|*[!0-9]*) echo "ERROR: invalid P2P port" >&2; exit 1 ;;
 esac
 [ "$P2P_PORT" -ge 1 ] && [ "$P2P_PORT" -le 65535 ] || exit 1
-# Keep exported allowlist information consistent with the running node.
+# Keep the persistent key and P2P listener consistent with Compose settings.
 set -f
 for flag in ${L2RETH_EXTRA_ARGS:-}; do
   case "$flag" in
