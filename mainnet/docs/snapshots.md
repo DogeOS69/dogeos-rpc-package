@@ -1,5 +1,11 @@
 # Snapshots and Recovery
 
+P2P identities are operator-owned and never part of a snapshot group. Initialize
+or migrate yours **before restoring/replacing L2 data**; see
+[P2P Identity](p2p-identity.md). Publishers must exclude `discovery-secret`,
+`nodekey`, `p2p-secret-key`, `l2reth-p2p.key`, `l2reth-identity/` and keystores.
+Restore validation rejects them; restore/reset preserves the separate identity.
+
 Run commands inside `mainnet/`. Keep the existing `.env`, `DATA_ROOT`, and RPC
 credentials when recovering a node. Mainnet is not released; the required release configuration and initialization procedure must be supplied first.
 

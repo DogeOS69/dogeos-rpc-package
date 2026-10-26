@@ -100,6 +100,9 @@ DATA_ROOT_ABS="$(check_data_path DATA_ROOT "$DATA_ROOT" "$REPO_ROOT_ABS")"
 [ ! -e "$DATA_ROOT_ABS/.snapshot-group-state.json" ] ||
   fail "data is managed by a snapshot group; use snapshot-group.py restore GROUP_ID --force instead of resetting dependency metadata"
 
+# Preserve/migrate identity before any chain data can be moved or deleted.
+python3 "$NETWORK_DIR/scripts/p2p-identity.py" check --env-file "$ENV_FILE_ABS"
+
 L1_DIR="$DATA_ROOT_ABS/l1-interface"
 L2_DIR="$DATA_ROOT_ABS/l2reth"
 
@@ -109,7 +112,7 @@ L2_DIR="$DATA_ROOT_ABS/l2reth"
 echo "Data reset targets:"
 echo "  $L1_DIR"
 echo "  $L2_DIR"
-echo "Dogecoin data and the snapshot cache will be preserved."
+echo "Dogecoin data, the P2P identity and the snapshot cache will be preserved."
 echo
 
 echo "Stopping Compose services..."

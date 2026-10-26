@@ -2,6 +2,33 @@
 set -eu
 
 DATA_DIR=/l2reth
+P2P_KEY_FILE=/run/dogeos/l2reth-p2p.key
+# Never let Reth generate a replacement identity implicitly.
+if [ ! -f "$P2P_KEY_FILE" ] || [ -L "$P2P_KEY_FILE" ] ||
+   [ ! -r "$P2P_KEY_FILE" ] || [ "$(wc -c < "$P2P_KEY_FILE")" -ne 64 ] ||
+   ! grep -Eq '^[0-9a-fA-F]{64}$' "$P2P_KEY_FILE" ||
+   grep -Eq '^0{64}$' "$P2P_KEY_FILE"; then
+  echo "ERROR: invalid/missing persistent P2P key; run scripts/p2p-identity.py init on the host." >&2
+  exit 1
+fi
+P2P_PORT="${L2RETH_P2P_PORT:-30303}"
+case "$P2P_PORT" in
+  ''|*[!0-9]*) echo "ERROR: invalid P2P port" >&2; exit 1 ;;
+esac
+[ "$P2P_PORT" -ge 1 ] && [ "$P2P_PORT" -le 65535 ] || exit 1
+# Keep exported allowlist information consistent with the running node.
+set -f
+for flag in ${L2RETH_EXTRA_ARGS:-}; do
+  case "$flag" in
+    --p2p-secret-key*|--nat|--nat=*|--port|--port=*|--discovery.port|--discovery.port=*|--instance|--instance=*|--with-unused-ports|--with-unused-ports=*)
+      echo "ERROR: use dedicated P2P settings instead of L2RETH_EXTRA_ARGS overrides." >&2
+      exit 1 ;;
+  esac
+done
+set --
+if [ -n "${L2RETH_P2P_PUBLIC_IP:-}" ]; then
+  set -- --nat "extip:$L2RETH_P2P_PUBLIC_IP"
+fi
 
 mkdir -p "$DATA_DIR"
 if [ ! -w "$DATA_DIR" ]; then
@@ -59,6 +86,9 @@ set -f
 exec rollup-node node \
   --chain /l2reth/genesis/genesis.json \
   --datadir=/l2reth \
+  --p2p-secret-key "$P2P_KEY_FILE" \
+  --port "$P2P_PORT" --discovery.port "$P2P_PORT" \
+  "$@" \
   --metrics=0.0.0.0:6060 \
   --network-id "$NETWORK_ID" \
   --http --http.addr=0.0.0.0 --http.port=8545 --http.corsdomain "*" --http.api "$HTTP_API" \

@@ -530,6 +530,8 @@ def main():
             load_group(args.index_url, None, Path(tmp), stack)
         return
     stack = Stack(args.env_file)
+    subprocess.run([sys.executable, str(ROOT / "scripts/p2p-identity.py"), "check",
+                    "--env-file", str(stack.env_file)], check=True)
     stack.data.mkdir(parents=True, exist_ok=True)
     # Serializes group restores and staged starts. Single-component restore
     # refuses to modify data managed by a group.

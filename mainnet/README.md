@@ -46,7 +46,7 @@ complete**. It is not a runnable mainnet installation today.
 
 Use a Linux host with Docker Engine running and Docker Compose **2.24+**.
 The host scripts need Bash, Python **3.9+ with SQLite**, curl, GNU tar/coreutils,
-jq and `findmnt` (util-linux). Install these with your host's package manager
+jq, OpenSSL (secp256k1 support) and `findmnt` (util-linux). Install these with your host's package manager
 before proceeding.
 Your login user must be able to run Docker commands. Check:
 
@@ -60,6 +60,7 @@ tar --version
 stat --version
 jq --version
 findmnt --version
+openssl version
 ```
 
 `tar` and `stat` should report GNU versions. Run the deployment commands below
@@ -97,6 +98,25 @@ docker compose config --quiet
 Allow room for downloaded archives, extracted data, retained backups and chain
 growth. The configuration check must pass before continuing; it fails in the
 current unreleased checkout because release configuration files are missing.
+
+### Initialize P2P Identity and Request Allowlisting
+
+Before any snapshot restore or startup, set `L2RETH_P2P_PUBLIC_IP` to your
+reachable static IPv4 and `L2RETH_P2P_SOURCE_CIDRS` to your actual outbound
+public CIDRs (comma-separated; one IPv4 uses `/32`) in `.env`. Then run:
+
+```bash
+python3 scripts/p2p-identity.py init
+python3 scripts/p2p-identity.py show
+```
+
+Send the `show` JSON (`network`, public `node_id`, `enode`, `source_cidrs`) to
+operations for **both IP and public-key allowlisting**, and wait for confirmation
+before expecting L2 peers. Never send the private-key file. The key lives at
+`${DATA_ROOT}/l2reth-identity/discovery-secret`, outside replaceable chain data;
+`L2RETH_P2P_KEY_FILE` can select a different private file. Back it up securely.
+Existing nodes must migrate their original identity before replacing any data.
+See [P2P Identity](docs/p2p-identity.md) for import, migration, NAT and port setup.
 
 ### Choose a Recovery Source
 
@@ -167,6 +187,7 @@ Apply `.env` changes with `start` in a maintenance window;
 
 - [Release Readiness](docs/release-readiness.md) — maintainer checklist
 - [Verify Your RPC Node](docs/verify-node.md) — checks before serving traffic
+- [P2P Identity and Allowlisting](docs/p2p-identity.md) — setup, migration and public information for operations
 - [Operations](docs/operations.md) — configuration, security, endpoints,
   maintenance, troubleshooting, data storage
 - [Snapshots and Recovery](docs/snapshots.md) — restoring snapshots, resetting

@@ -1,5 +1,11 @@
 # Snapshot Publishing
 
+P2P identities are operator-owned and never part of a snapshot group. Initialize
+or migrate yours **before restoring/replacing L2 data**; see
+[P2P Identity](p2p-identity.md). Publishers must exclude `discovery-secret`,
+`nodekey`, `p2p-secret-key`, `l2reth-p2p.key`, `l2reth-identity/` and keystores.
+Restore validation rejects them; restore/reset preserves the separate identity.
+
 This is the contract for mainnet snapshot groups and
 `scripts/snapshot-group.py`. Groups contain independently downloadable
 Dogecoin, L1 Interface and L2Reth archives; a component may explicitly be

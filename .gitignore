@@ -10,3 +10,10 @@
 # Legacy file-based Dogecoin RPC credentials from older releases.
 secrets/*/dogecoin_rpc_user
 secrets/*/dogecoin_rpc_password
+
+# Node identity private keys (public IDs/enodes are safe to share).
+**/discovery-secret
+**/l2reth-identity/
+**/l2reth-p2p.key
+**/nodekey
+**/.p2p-key-*

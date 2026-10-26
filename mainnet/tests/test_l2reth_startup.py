@@ -10,12 +10,15 @@ NETWORK_DIR = Path(__file__).resolve().parents[1]
 
 
 class StartupTests(unittest.TestCase):
-    def run_startup(self, statuses, rpc_fail_first=False, custom_url=None):
+    def run_startup(self, statuses, rpc_fail_first=False, custom_url=None, missing_key=False, overrides=None):
         with tempfile.TemporaryDirectory(prefix="l2-startup-test-") as tmp:
             root = Path(tmp)
             script = (NETWORK_DIR / "scripts/l2reth_entrypoint.sh").read_text()
             # Relocate only the container data directory for this host-side test.
             script = script.replace("DATA_DIR=/l2reth", f'DATA_DIR="{root}/data"', 1)
+            script = script.replace("P2P_KEY_FILE=/run/dogeos/l2reth-p2p.key", f'P2P_KEY_FILE="{root}/key"', 1)
+            if not missing_key:
+                (root / "key").write_text("0" * 63 + "1")
             entrypoint = root / "entrypoint.sh"
             entrypoint.write_text(script)
             bin_dir = root / "bin"
@@ -48,6 +51,7 @@ printf '%s' "$round" > "$TEST_ROOT/round"
 [ "$round" -lt "$MAX_ROUNDS" ] || exit 89
 ''',
                 "rollup-node": '''#!/bin/sh
+printf '%s\\n' "$@" > "$TEST_ROOT/argv"
 cat "$TEST_ROOT/round" 2>/dev/null > "$TEST_ROOT/started" || echo 0 > "$TEST_ROOT/started"
 ''',
             }
@@ -67,11 +71,31 @@ cat "$TEST_ROOT/round" 2>/dev/null > "$TEST_ROOT/started" || echo 0 > "$TEST_ROO
                        MAX_ROUNDS=str(len(statuses)))
             if custom_url:
                 env["L2RETH_L1_READY_URL"] = custom_url
+            env.update(overrides or {})
             result = subprocess.run(["/bin/sh", str(entrypoint)], env=env,
                                     capture_output=True, text=True, timeout=5)
+            self.argv = (root / "argv").read_text().splitlines() if (root / "argv").exists() else []
+            self.output = result.stdout + result.stderr
             started = root / "started"
             return (result.returncode, started.read_text().strip() if started.exists() else None,
-                    (root / "requests").read_text())
+                    (root / "requests").read_text() if (root / "requests").exists() else "")
+
+    def test_persistent_identity_and_advertised_port_arguments(self):
+        code, started, _ = self.run_startup(["200"], overrides={
+            "L2RETH_P2P_PORT": "31303", "L2RETH_P2P_PUBLIC_IP": "203.0.113.10"})
+        self.assertEqual(code, 0, self.output)
+        self.assertEqual(started, "0")
+        for flag, value in (("--port", "31303"), ("--discovery.port", "31303"),
+                            ("--nat", "extip:203.0.113.10")):
+            self.assertEqual(self.argv[self.argv.index(flag) + 1], value)
+        self.assertTrue(self.argv[self.argv.index("--p2p-secret-key") + 1].endswith("/key"))
+
+    def test_missing_key_and_conflicting_override_prevent_launch(self):
+        for options in ({"missing_key": True}, {"overrides": {"L2RETH_EXTRA_ARGS": "--port=31303"}}):
+            code, started, requests = self.run_startup(["200"], **options)
+            self.assertNotEqual(code, 0)
+            self.assertIsNone(started)
+            self.assertEqual(requests, "")
 
     def test_unready_timeout_and_redirect_wait_until_200(self):
         code, started, requests = self.run_startup(["503", "timeout", "302", "200"])

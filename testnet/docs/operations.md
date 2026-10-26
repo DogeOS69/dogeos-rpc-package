@@ -1,5 +1,9 @@
 # Operations
 
+Before first startup or recovery, configure [P2P Identity and Allowlisting](p2p-identity.md).
+The private key is stored separately from chain data. `L2_P2P_PORT` sets the
+same TCP/UDP port for the listener, Docker mapping and advertised enode.
+
 Configuration, security, and maintenance for a running testnet stack. Run
 every command inside the `testnet/` directory; Docker Compose and the scripts
 read `.env` there.

@@ -5,6 +5,17 @@ changelog in `mainnet/`.
 
 ## Unreleased
 
+L2Reth now requires an independent persistent P2P key. **Before the first
+restart, snapshot restore or reset after this upgrade**, run
+`python3 scripts/p2p-identity.py init` with the existing data still present.
+It copies the old `l2reth/discovery-secret` when available, preserving the node
+ID. Custom identities can be imported with `--import-key`; existing destination
+keys are never overwritten. See [P2P Identity](docs/p2p-identity.md) for migration,
+secure backup and the public JSON to send to operations for IP/key allowlisting.
+`L2_P2P_PORT` now sets both the host and container TCP/UDP ports. P2P identity,
+NAT and port overrides in `L2RETH_EXTRA_ARGS` must move to the dedicated settings.
+Snapshots must exclude `discovery-secret` and all other node identity files.
+
 The deployment guide now separates fresh sync, grouped restore, startup progress
 and RPC verification. `snapshot-group.py list` fetches pinned manifests and
 shows components, heights, sizes and compatible images. With `.env` present

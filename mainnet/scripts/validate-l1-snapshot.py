@@ -103,7 +103,7 @@ def validate_archive(archive, historical):
                     (len(relative.parts) == 1 and top in allowed_files and member.isfile()),
                     f"file outside the fixed L1 layout: {name}")
             require(not any(part.endswith((".env", ".conf", ".toml", "-wal", "-shm", "-journal"))
-                            or part in {"nodekey", "jwt.hex", "wallet.dat", "wallets"}
+                            or part in {"nodekey", "discovery-secret", "p2p-secret-key", "l2reth-p2p.key", "l2reth-identity", "jwt.hex", "wallet.dat", "wallets"}
                             or part.startswith("keystore") for part in relative.parts),
                     f"configuration, key, or uncheckpointed database file: {name}")
             directories.update(str(parent) for parent in relative.parents if str(parent) != ".")

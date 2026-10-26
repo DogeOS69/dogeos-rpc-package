@@ -31,6 +31,12 @@ class ArchiveTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "forbidden"):
                 self.check(tarfile.TarInfo(name))
 
+    def test_identity_keys_rejected_at_any_depth(self):
+        for name in ("discovery-secret", "nodekey", "p2p-secret-key", "l2reth-p2p.key", "l2reth-identity/key"):
+            for prefix in ("l2reth/", "l2reth/db/"):
+                with self.subTest(name=prefix + name), self.assertRaises(ValueError):
+                    self.check(tarfile.TarInfo(prefix + name))
+
     def test_links_duplicates_and_traversal_rejected(self):
         link = tarfile.TarInfo("l2reth/db/link")
         link.type = tarfile.SYMTYPE

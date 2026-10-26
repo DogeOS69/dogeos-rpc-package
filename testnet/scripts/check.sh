@@ -42,8 +42,8 @@ for f in docker-compose.yml env.example README.md CHANGELOG.md \
     scripts/dogecoin_entrypoint.sh scripts/l1-interface_entrypoint.sh \
     scripts/l2reth_entrypoint.sh scripts/restore-snapshot.sh \
     scripts/reset-chain-data.sh scripts/lib/env.sh scripts/validate-l1-snapshot.py \
-    scripts/snapshot-group.py scripts/validate-data-archive.py scripts/verify-rpc.py \
-    tests/test_l1_snapshot.py tests/test_l2reth_startup.py \
+    scripts/snapshot-group.py scripts/validate-data-archive.py scripts/verify-rpc.py scripts/p2p-identity.py \
+    tests/test_l1_snapshot.py tests/test_l2reth_startup.py tests/test_p2p_identity.py \
     tests/test_snapshot_groups.py tests/test_data_archive.py tests/test_verify_rpc.py docs/group-manifest.example.json; do
   [ -e "$copy/$f" ] || failed "$NETWORK/$f is missing"
 done
@@ -75,6 +75,12 @@ for name in sorted(set(services) & expected):
     if name != "l1-interface-init-fetch-sqlite" and entrypoint != ["/bin/sh", "/entrypoint.sh"]:
         problems.append(f"{name} must run its scripts/ entrypoint, got {entrypoint}")
     print(f"  {name:32} {image}")
+key_mounts = [m for m in services["l2reth-node"].get("volumes", [])
+              if m.get("target") == "/run/dogeos/l2reth-p2p.key"]
+if len(key_mounts) != 1 or not key_mounts[0].get("read_only") or key_mounts[0].get("bind", {}).get("create_host_path", False) is not False:
+    problems.append("L2Reth must mount a pre-existing read-only P2P identity file")
+elif not key_mounts[0]["source"].endswith("/l2reth-identity/discovery-secret"):
+    problems.append("default P2P identity must be outside the L2 chain data directory")
 if problems:
     sys.exit("\n".join(f"{network}: {p}" for p in problems))
 ' "$NETWORK" || failed "configuration checks"

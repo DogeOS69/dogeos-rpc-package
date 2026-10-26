@@ -448,6 +448,9 @@ if [ -d "$TARGET_DIR" ] &&
   fail "$TARGET_DIR is not empty; rerun with --force to keep it as a backup and restore the snapshot"
 fi
 
+if [ "$COMPONENT" = l2reth ]; then
+  python3 "$NETWORK_DIR/scripts/p2p-identity.py" check --env-file "$ENV_FILE_ABS"
+fi
 mkdir -p "$DATA_ROOT_ABS"
 [ -w "$DATA_ROOT_ABS" ] || fail "DATA_ROOT is not writable by the current user: $DATA_ROOT_ABS"
 TARGET_PARENT="$(dirname "$TARGET_DIR")"
@@ -593,7 +596,7 @@ case "$COMPONENT" in
         fail "snapshot contains forbidden path: $forbidden_path"
       fi
     done
-    if grep -Eq '(^|/)(nodekey|keystore[^/]*)(/|$)' "$LISTING_PATH"; then
+    if grep -Eq '(^|/)(nodekey|discovery-secret|p2p-secret-key|l2reth-p2p.key|l2reth-identity|keystore[^/]*)(/|$)' "$LISTING_PATH"; then
       fail "snapshot contains a P2P node key or keystore path"
     fi
     require_member '^l2reth/db/mdbx\.dat$' l2reth/db/mdbx.dat

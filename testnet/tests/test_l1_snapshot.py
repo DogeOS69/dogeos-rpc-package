@@ -166,17 +166,31 @@ class SnapshotTests(unittest.TestCase):
         fresh = subprocess.run(["sh", "-c", script], env=env, capture_output=True, text=True)
         self.assertEqual(fresh.returncode, 0, fresh.stderr)
 
-    def restore(self, bad_sqlite=False, fail_stop=False):
+    def restore(self, bad_sqlite=False, fail_stop=False, component="l1-interface", missing_key=False):
         package = self.root / "package" / NETWORK
         shutil.copytree(NETWORK_DIR / "scripts", package / "scripts")
         (package / ".env").write_text("# fixture; mocked Compose supplies resolved config\n")
-        target = self.data / "l1-interface"
+        target = self.data / component
         target.mkdir(parents=True)
         (target / "original").write_text("keep me")
         if bad_sqlite:
             (self.source / "replay.sqlite").write_bytes(b"bad database")
         archive = self.archive()
-        cache = self.data / ".snapshot-cache/l1-interface"
+        if component == "l2reth":
+            with tarfile.open(archive, "w:gz") as out:
+                for name in ("db/mdbx.dat", "db/scroll.db", "static_files/header"):
+                    item = tarfile.TarInfo("l2reth/" + name)
+                    item.size = 1
+                    out.addfile(item, io.BytesIO(b"x"))
+            key = self.data / "l2reth-identity/discovery-secret"
+            if not missing_key:
+                key.parent.mkdir()
+                key.write_text("0" * 63 + "1")  # Public test vector only.
+                key.chmod(0o600)
+            self.config["services"]["l2reth-node"]["volumes"].append({
+                "type": "bind", "source": str(key), "target": "/run/dogeos/l2reth-p2p.key",
+                "read_only": True, "bind": {"create_host_path": False}})
+        cache = self.data / ".snapshot-cache" / component
         cache.mkdir(parents=True)
         shutil.copyfile(archive, cache / archive.name)
         config_file = self.root / "config.json"
@@ -186,7 +200,7 @@ class SnapshotTests(unittest.TestCase):
         docker = bindir / "docker"
         docker.write_text("#!/usr/bin/env python3\nimport os,sys\nfrom pathlib import Path\n"
                           "if 'config' in sys.argv: print(Path(os.environ['TEST_CONFIG']).read_text())\n"
-                          "elif 'stop' in sys.argv:\n"
+                          "elif 'stop' in sys.argv or 'down' in sys.argv:\n"
                           " Path(os.environ['TEST_STOP']).write_text(' '.join(sys.argv))\n"
                           " sys.exit(int(os.environ['TEST_FAIL_STOP']))\n"
                           "else: sys.exit('unexpected docker call: '+repr(sys.argv))\n")
@@ -201,12 +215,33 @@ class SnapshotTests(unittest.TestCase):
                    TEST_FAIL_STOP=str(int(fail_stop)), PYTHONDONTWRITEBYTECODE="1")
         for key in ("SNAPSHOT_INDEX_URL", "SNAPSHOT_CACHE_DIR"):
             env.pop(key, None)
+        self.restore_env = env
+        self.fixture_package = package
         result = subprocess.run([
             "bash", str(package / "scripts/restore-snapshot.sh"), "--no-start", "--force",
             "--snapshot-url", "https://example.invalid/" + archive.name,
-            "--sha256", hashlib.sha256(archive.read_bytes()).hexdigest(), "l1-interface",
+            "--sha256", hashlib.sha256(archive.read_bytes()).hexdigest(), component,
         ], env=env, capture_output=True, text=True)
         return result, target, stop_log
+
+    def test_l2_restore_and_reset_preserve_external_identity(self):
+        result, target, stop_log = self.restore(component="l2reth")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        key = self.data / "l2reth-identity/discovery-secret"
+        original = key.read_bytes()
+        self.assertTrue((target / "db/mdbx.dat").is_file())
+        reset = subprocess.run(["bash", str(self.fixture_package / "scripts/reset-chain-data.sh"),
+                                "--delete", "--yes"], env=self.restore_env, capture_output=True, text=True)
+        self.assertEqual(reset.returncode, 0, reset.stdout + reset.stderr)
+        self.assertEqual(key.read_bytes(), original)
+        self.assertFalse(any(target.iterdir()))
+
+    def test_l2_restore_without_identity_stops_before_replacement(self):
+        result, target, stop_log = self.restore(component="l2reth", missing_key=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("init first", result.stderr)
+        self.assertFalse(stop_log.exists())
+        self.assertEqual((target / "original").read_text(), "keep me")
 
     def test_restore_preserves_old_data_and_stops_dependents(self):
         result, target, stop_log = self.restore()

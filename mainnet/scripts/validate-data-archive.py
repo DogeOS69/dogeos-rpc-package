@@ -24,7 +24,7 @@ def validate(archive, component, network):
             if component == "l2reth":
                 if relative and relative[0] in {"jwt.hex", "reth.toml", "genesis", "lost+found", "protocol_context.json"}:
                     raise ValueError("forbidden L2Reth tree: " + member.name)
-                if any(x == "nodekey" or x.startswith("keystore") for x in relative):
+                if any(x in {"nodekey", "discovery-secret", "p2p-secret-key", "l2reth-p2p.key", "l2reth-identity"} or x.startswith("keystore") for x in relative):
                     raise ValueError("node key/keystore: " + member.name)
             elif any(x in {"wallet.dat", "wallets", ".cookie", "peers.dat", "banlist.dat", ".lock"}
                      or x.endswith(".conf") for x in relative):
