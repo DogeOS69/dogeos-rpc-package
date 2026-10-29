@@ -15,8 +15,8 @@
     "initial_confirmed_block_hash": "TODO(mainnet)",
     "initial_ethereum_block_hash": "TODO(mainnet)",
     "initial_tx_index": 0,
-    "genesis_batch_hash": "TODO(mainnet)",
-    "genesis_state_root": "TODO(mainnet)",
+    "genesis_batch_hash": "0x3a436d3738b6bdc7b3b4ffd1f28e6cddefba0c10d63839fe7df49c72607957d3",
+    "genesis_state_root": "0xb664af5befb987dc28f8698efd26d819c44299c6c7dae42822e9fb4d2fcab0e9",
     "initial_system_signer": "TODO(mainnet)"
   },
   "protocol_config_seed": {
