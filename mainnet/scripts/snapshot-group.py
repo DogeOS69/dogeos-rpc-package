@@ -221,6 +221,15 @@ def load_group(index_url, group_id, directory, stack=None):
     return fetch_manifest(selected, directory)
 
 
+def dogecoin_volume(config):
+    """Docker volume name holding Dogecoin data, or "" for a bind-mounted directory."""
+    mount = next((v for v in config["services"]["dogecoin-node"].get("volumes", []) if v["target"] == "/data"), None)
+    require(mount is not None, "dogecoin-node must mount its data at /data")
+    if mount["type"] != "volume":
+        return ""
+    return (config.get("volumes") or {}).get(mount["source"], {}).get("name") or mount["source"]
+
+
 class Stack:
     def __init__(self, env_file):
         env_file = Path(env_file or ROOT / ".env").resolve()
@@ -244,6 +253,7 @@ class Stack:
         self.external_doge = self.external_doge or self.l1env.get("DOGEOS_L1_INTERFACE_DOGECOIN_RPC__URL", "")
         if urllib.parse.urlsplit(self.external_doge).hostname == "dogecoin-node":
             self.external_doge = ""
+        self.doge_volume = dogecoin_volume(self.config)
         require(self.l1env.get("L1_INTERFACE_SKIP_DOGE_SYNC") != "true", "L1 historical sync bypass is forbidden")
         l2env = services["l2reth-node"].get("environment", {})
         require(l2env.get("L2RETH_L1_ENDPOINT", "http://l1-interface:8545") == "http://l1-interface:8545",
@@ -253,6 +263,10 @@ class Stack:
 
     def compose(self, *args):
         subprocess.run(self.command + list(args), check=True)
+
+    def volume_exists(self, name):
+        return subprocess.run(["docker", "volume", "inspect", name],
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
 
     def identity(self):
         env = self.l1env
@@ -434,6 +448,12 @@ def restore(stack, group, force, no_start):
     require(isinstance(completed, list) and all(c in COMPONENTS and group["components"][c] for c in completed),
             "invalid restore journal")
     # Preflight replacements before stopping services or marking a restore pending.
+    # A Dogecoin Docker volume is never replaced, with or without --force.
+    if (stack.doge_volume and group["components"]["dogecoin"] and "dogecoin" not in completed
+            and stack.volume_exists(stack.doge_volume)):
+        raise ValueError("Docker volume " + stack.doge_volume + " already exists and is never replaced; "
+                         "set a new, unused DOGECOIN_VOLUME_NAME in " + str(stack.env_file) +
+                         ", or choose a group without Dogecoin")
     if not force:
         for component, entry in group["components"].items():
             path = stack.data / component

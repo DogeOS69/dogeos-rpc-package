@@ -47,6 +47,11 @@ class FakeStack:
         self.height = 100
         self.ibd = False
         self.config = {"services": {name: {"image": "image:1"} for name in groups.SERVICES.values()}}
+        self.doge_volume = ""
+        self.existing_volumes = set()
+
+    def volume_exists(self, name):
+        return name in self.existing_volumes
 
     def identity(self):
         return manifest()["identity"]
@@ -389,6 +394,30 @@ class GroupTests(unittest.TestCase):
         incompatible["components"]["l2reth"]["compatible_images"] = ["image:1"]
         with self.assertRaisesRegex(ValueError, "image incompatible"):
             groups.restore(self.stack, incompatible, True, True)
+
+    def test_dogecoin_volume_name_from_config(self):
+        volume = {"services": {"dogecoin-node": {"volumes": [
+                      {"type": "volume", "source": "dogecoin_data", "target": "/data"}]}},
+                  "volumes": {"dogecoin_data": {"name": "custom_dogecoin_data"}}}
+        self.assertEqual(groups.dogecoin_volume(volume), "custom_dogecoin_data")
+        bind = {"services": {"dogecoin-node": {"volumes": [
+                    {"type": "bind", "source": "/srv/data/dogecoin", "target": "/data"}]}}}
+        self.assertEqual(groups.dogecoin_volume(bind), "")
+
+    def test_existing_dogecoin_volume_rejected_before_stop_or_journal(self):
+        self.stack.doge_volume = "dogeos-rpc-package_dogecoin_data"
+        self.stack.existing_volumes.add(self.stack.doge_volume)
+        # --force never replaces a Docker volume, so it does not bypass the check.
+        with self.assertRaisesRegex(ValueError, "DOGECOIN_VOLUME_NAME"):
+            groups.restore(self.stack, manifest(), True, True)
+        self.assertFalse(self.stack.calls)
+        self.assertFalse(self.stack.state.exists())
+        # Retaining the populated volume (a group without Dogecoin) is allowed.
+        group = manifest()
+        group["components"]["dogecoin"] = None
+        with patch.object(groups.subprocess, "run") as run:
+            groups.restore(self.stack, group, True, True)
+        self.assertEqual([c.args[0][-2] for c in run.call_args_list], ["l1-interface", "l2reth"])
 
 
 if __name__ == "__main__":
