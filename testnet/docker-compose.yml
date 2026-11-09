@@ -1,0 +1,278 @@
+# DogeOS RPC stack for testnet. Self-contained: everything this network runs
+# (images, configuration, scripts, bootstrap download) lives in this directory,
+# and nothing is shared with mainnet.
+#
+# Run commands in this directory. Operator settings come from .env here,
+# created from env.example; Compose reads it by default.
+#
+# Image versions (behavior documented for this network was checked against
+# these versions):
+#   dogecoin-node  Dogecoin Core 1.14.9
+#   l2reth-node    DogeOS69/dogeos-rollup-node  v0.3.0-beta.1c-ca.20261021.1-stateroot  59bcd0ef
+#   l1-interface   DogeOS L1 Interface          v0.3.0-beta.3d
+
+# Project name of earlier releases, so existing containers and the Dogecoin
+# volume are reused. COMPOSE_PROJECT_NAME in .env overrides it.
+name: dogeos-rpc-package
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: ${LOG_MAX_SIZE:-100m}
+    max-file: ${LOG_MAX_FILE:-5}
+
+services:
+  dogecoin-node:
+    image: dogeos69/dogecoin:1.14.9
+    logging: *logging
+    restart: unless-stopped
+    mem_reservation: ${DOGECOIN_MEM_RESERVATION:-14g}
+    mem_limit: ${DOGECOIN_MEM_LIMIT:-24g}
+    memswap_limit: ${DOGECOIN_MEM_LIMIT:-24g}
+    oom_score_adj: -100
+    volumes:
+      - type: bind
+        source: ./config/dogecoin.conf
+        target: /etc/dogeos/dogecoin.conf
+        read_only: true
+        bind:
+          create_host_path: false
+      - ./scripts/dogecoin_entrypoint.sh:/entrypoint.sh:ro
+      # Docker volume kept from earlier releases.
+      - dogecoin_data:/data
+    secrets:
+      - dogecoin_rpc_user
+      - dogecoin_rpc_password
+    # Container ports are fixed by dogecoin.conf. P2P stays on the port
+    # dogecoind listens on and advertises; DOGECOIN_RPC_PORT only changes the
+    # RPC host port. INTERNAL_BIND_ADDR is unset by default, publishing RPC on
+    # all interfaces as earlier releases did.
+    ports:
+      - 44556:44556
+      - ${INTERNAL_BIND_ADDR:+${INTERNAL_BIND_ADDR:-}:}${DOGECOIN_RPC_PORT:-44555}:44555
+    entrypoint:
+      - /bin/sh
+      - /entrypoint.sh
+    command:
+      - /dogecoin/bin/dogecoind
+      - "-conf=/run/dogeos/dogecoin.conf"
+      - "-datadir=/data"
+      - "-printtoconsole"
+
+  l2reth-node:
+    image: dogeos69/rollup-node:v0.3.0-beta.1c-ca.20261021.1-stateroot
+    logging: *logging
+    # Required by --consensus.exit-on-signer-rotation: the node exits with code
+    # 70 when the L1 signer rotates and must be restarted to pick it up.
+    restart: unless-stopped
+    # Allow Reth to finish persistence before Docker forces termination.
+    stop_grace_period: 30s
+    mem_reservation: 1g
+    mem_limit: ${L2RETH_MEM_LIMIT:-16g}
+    memswap_limit: ${L2RETH_MEM_LIMIT:-16g}
+    oom_score_adj: -100
+    env_file:
+      - ./config/l2reth.env
+    environment:
+      L2RETH_HTTP_API: ${L2RETH_HTTP_API:-eth,net,web3,debug,trace}
+      L2RETH_WS_API: ${L2RETH_WS_API:-eth,net,web3,debug,trace}
+      L2RETH_EXTRA_ARGS: ${L2RETH_EXTRA_ARGS:-}
+      L2RETH_P2P_PORT: ${L2_P2P_PORT:-30303}
+      L2RETH_P2P_PUBLIC_IP: ${L2RETH_P2P_PUBLIC_IP:-}
+    volumes:
+      - type: bind
+        source: ./config/l2reth-genesis.json
+        target: /l2reth/genesis/genesis.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - ./scripts/l2reth_entrypoint.sh:/entrypoint.sh:ro
+      # Identity survives chain-data resets and snapshot restores.
+      - type: bind
+        source: ${L2RETH_P2P_KEY_FILE:-${DATA_ROOT:?DATA_ROOT must be set}/l2reth-identity/discovery-secret}
+        target: /run/dogeos/l2reth-p2p.key
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${DATA_ROOT:?DATA_ROOT must be set}/l2reth
+        target: /l2reth
+        bind:
+          create_host_path: true
+    ports:
+      - ${L2_HTTP_PORT:-8545}:8545
+      - ${L2_WS_PORT:-8546}:8546
+      - ${L2_P2P_PORT:-30303}:${L2_P2P_PORT:-30303}/tcp
+      - ${L2_P2P_PORT:-30303}:${L2_P2P_PORT:-30303}/udp
+      - 127.0.0.1:${L2_METRICS_PORT:-6060}:6060
+    depends_on:
+      l1-interface:
+        condition: service_started
+    entrypoint:
+      - /bin/sh
+      - /entrypoint.sh
+
+  l1-interface:
+    image: dogeos69/l1-interface:v0.3.0-beta.3d
+    logging: *logging
+    restart: unless-stopped
+    mem_reservation: 512m
+    mem_limit: ${L1_INTERFACE_MEM_LIMIT:-2g}
+    memswap_limit: ${L1_INTERFACE_MEM_LIMIT:-2g}
+    oom_score_adj: -100
+    env_file:
+      - ./config/l1-interface.env
+      # Deprecated: the operator override file of earlier releases (relative to
+      # the repository root), still read after l1-interface.env. Use the .env
+      # settings below instead.
+      - path: ../envs/testnet/l1-interface.local.env
+        required: false
+    # Optional operator overrides from .env; the entrypoint applies the ones
+    # that are set, ahead of l1-interface.env and the deprecated file.
+    environment:
+      DOGEOS_RPC_PACKAGE_DOGECOIN_RPC_URL: http://dogecoin-node:44555
+      DOGEOS_RPC_PACKAGE_ETHEREUM_RPC_URL: ${DOGEOS_ETHEREUM_RPC_URL:-}
+      DOGEOS_RPC_PACKAGE_EXTERNAL_DOGECOIN_RPC_URL: ${DOGEOS_EXTERNAL_DOGECOIN_RPC_URL:-}
+      DOGEOS_RPC_PACKAGE_EXTERNAL_DOGECOIN_RPC_USER: ${DOGEOS_EXTERNAL_DOGECOIN_RPC_USER:-}
+      DOGEOS_RPC_PACKAGE_EXTERNAL_DOGECOIN_RPC_PASSWORD: ${DOGEOS_EXTERNAL_DOGECOIN_RPC_PASSWORD:-}
+    volumes:
+      - type: bind
+        source: ./config/l2reth-genesis.json
+        target: /app/genesis/genesis.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./config/protocol_context.json
+        target: /app/protocol_context.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - ./scripts/l1-interface_entrypoint.sh:/entrypoint.sh:ro
+      - type: bind
+        source: ${DATA_ROOT:?DATA_ROOT must be set}/l1-interface
+        target: /data
+        bind:
+          create_host_path: true
+    secrets:
+      - dogecoin_rpc_user
+      - dogecoin_rpc_password
+    entrypoint:
+      - /bin/sh
+      - /entrypoint.sh
+    ports:
+      - ${INTERNAL_BIND_ADDR:+${INTERNAL_BIND_ADDR:-}:}8547:8545
+      - ${INTERNAL_BIND_ADDR:+${INTERNAL_BIND_ADDR:-}:}5052:5052
+      - ${INTERNAL_BIND_ADDR:+${INTERNAL_BIND_ADDR:-}:}9090:9090
+    # Readiness of the database and replay read model: 503 during startup,
+    # while reorg recovery is active, or after the replay pipeline stops.
+    # (The legacy /health endpoint only reports that startup finished.)
+    # Docker's health status is informational; no service depends on it. The
+    # L2Reth entrypoint polls this same endpoint and does not start the node
+    # until it returns 200. The image has no curl.
+    healthcheck:
+      test:
+        - CMD
+        - bash
+        - -c
+        - exec 3<>/dev/tcp/127.0.0.1/9090 && printf 'GET /api/v1/health/ready HTTP/1.0\r\n\r\n' >&3 && head -n 1 <&3 | grep -q ' 200 '
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      # Initial sync on a new node can take hours; failures before the first
+      # success are not counted.
+      start_period: 12h
+    depends_on:
+      l1-interface-init-fetch-sqlite:
+        condition: service_completed_successfully
+
+  # One-time bootstrap of the pre-v0.3.0 testnet history (not a periodic
+  # snapshot). Each URL basename ends with -<sha256>, which is verified.
+  l1-interface-init-fetch-sqlite:
+    image: curlimages/curl:8.20.0
+    logging: *logging
+    restart: "no"
+    environment:
+      ARTIFACT_URL: https://dogeos-eth-da-archive-testnet.s3.us-west-2.amazonaws.com/history/l1-interface-historical-artifact-404b44250950c18748b8595c26f6ab8f109b4873002d5be5ce0ddb0d0c30cf5a.sqlite
+      REPLAY_DB_URL: https://dogeos-eth-da-archive-testnet.s3.us-west-2.amazonaws.com/history/replay-fb8c66a7ce147e0fa8ac2166dded42247cab1debb755df37ba31452e3c275494.sqlite
+      DOGEOS_L1_INTERFACE_EVENT_PLANE_ARTIFACT_PATH: /data/l1-interface-historical-artifact.sqlite
+      DOGEOS_L1_INTERFACE_REPLAY_READ__SQLITE_PATH: /data/replay.sqlite
+    user: "0:0"
+    volumes:
+      - type: bind
+        source: ${DATA_ROOT:?DATA_ROOT must be set}/l1-interface
+        target: /data
+        bind:
+          create_host_path: true
+    entrypoint:
+      - /bin/sh
+      - "-c"
+    command:
+      - |
+        set -eu
+
+        checksum_from_url() {
+          url_no_query=$${1%%\?*}
+          url_no_fragment=$${url_no_query%%#*}
+          filename=$${url_no_fragment##*/}
+          stem=$${filename%.*}
+          checksum=$${stem##*-}
+
+          if ! printf '%s' "$$checksum" | grep -Eq '^[0-9a-fA-F]{64}$$'; then
+            echo "URL basename must end with -<sha256> before the extension: $$filename" >&2
+            exit 1
+          fi
+
+          printf '%s' "$$checksum"
+        }
+
+        # An existing index DB without its replay DB is an incomplete data set,
+        # not a fresh node. Do not silently combine it with bootstrap state.
+        if [ -e /data/l1-interface.sqlite ] && [ ! -f "$$DOGEOS_L1_INTERFACE_REPLAY_READ__SQLITE_PATH" ]; then
+          echo "Incomplete L1 data: replay.sqlite is missing. Restore the complete L1 snapshot or use the documented rebuild procedure." >&2
+          exit 1
+        fi
+
+        # --- Task 1: Artifact Download ---
+        DEST_PATH="$$DOGEOS_L1_INTERFACE_EVENT_PLANE_ARTIFACT_PATH"
+        DEST_DIR=$$(dirname "$$DEST_PATH")
+        ARTIFACT_SHA256=$$(checksum_from_url "$$ARTIFACT_URL")
+        mkdir -p "$$DEST_DIR"
+
+        if [ -f "$$DEST_PATH" ] && echo "$$ARTIFACT_SHA256  $$DEST_PATH" | sha256sum -c - >/dev/null 2>&1; then
+          echo "Artifact cached and verified."
+        else
+          echo "Downloading artifact..."
+          curl -fSL --retry 5 --retry-delay 5 -o "$$DEST_PATH.tmp" "$$ARTIFACT_URL"
+          echo "$$ARTIFACT_SHA256  $$DEST_PATH.tmp" | sha256sum -c -
+          mv "$$DEST_PATH.tmp" "$$DEST_PATH"
+        fi
+        chmod 444 "$$DEST_PATH"
+
+        # --- Task 2: Replay DB Download ---
+        REPLAY_PATH="$$DOGEOS_L1_INTERFACE_REPLAY_READ__SQLITE_PATH"
+        REPLAY_DIR=$$(dirname "$$REPLAY_PATH")
+        REPLAY_DB_SHA256=$$(checksum_from_url "$$REPLAY_DB_URL")
+        mkdir -p "$$REPLAY_DIR"
+
+        if [ -f "$$REPLAY_PATH" ]; then
+          echo "Replay DB exists; not overwriting mutable replay DB."
+        else
+          echo "Downloading bootstrap Replay DB..."
+          curl -fSL --retry 5 --retry-delay 5 -o "$$REPLAY_PATH.tmp" "$$REPLAY_DB_URL"
+          echo "$$REPLAY_DB_SHA256  $$REPLAY_PATH.tmp" | sha256sum -c -
+          echo "{\"source_url\":\"$$REPLAY_DB_URL\",\"source_sha256\":\"$$REPLAY_DB_SHA256\"}" > "$$REPLAY_PATH.tmp.bootstrap-source.json"
+          mv "$$REPLAY_PATH.tmp" "$$REPLAY_PATH"
+          mv "$$REPLAY_PATH.tmp.bootstrap-source.json" "$$REPLAY_PATH.bootstrap-source.json"
+        fi
+
+volumes:
+  # Name used by earlier releases; nodes with custom names set it in .env.
+  dogecoin_data:
+    name: ${DOGECOIN_VOLUME_NAME:-${COMPOSE_PROJECT_NAME:-dogeos-rpc-package}_dogecoin_data}
+
+secrets:
+  dogecoin_rpc_user:
+    environment: DOGECOIN_RPC_USER
+  dogecoin_rpc_password:
+    environment: DOGECOIN_RPC_PASSWORD
