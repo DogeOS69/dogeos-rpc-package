@@ -49,9 +49,13 @@ class FakeStack:
         self.config = {"services": {name: {"image": "image:1"} for name in groups.SERVICES.values()}}
         self.doge_volume = ""
         self.existing_volumes = set()
+        self.stale_volume = False
 
     def volume_exists(self, name):
         return name in self.existing_volumes
+
+    def doge_volume_stale(self):
+        return self.stale_volume
 
     def identity(self):
         return manifest()["identity"]
@@ -418,6 +422,37 @@ class GroupTests(unittest.TestCase):
         with patch.object(groups.subprocess, "run") as run:
             groups.restore(self.stack, group, True, True)
         self.assertEqual([c.args[0][-2] for c in run.call_args_list], ["l1-interface", "l2reth"])
+
+    def test_start_recreates_dogecoin_attached_to_another_volume(self):
+        self.stack.stale_volume = True
+        def health(url):
+            return {"historical_sync": "completed", "ready": True}
+        def rpc(url, method, params=None):
+            return "0x14" if method == "eth_blockNumber" else {"hash": "0x" + "a" * 64}
+        with patch.object(groups, "http_json", health), patch.object(groups, "rpc", rpc):
+            groups.start(self.stack, manifest())
+        self.assertIn(("up", "-d", "--force-recreate", "dogecoin-node"), self.stack.calls)
+        self.assertNotIn(("up", "-d", "dogecoin-node"), self.stack.calls)
+
+    def test_doge_volume_stale_compares_container_mount(self):
+        stack = groups.Stack.__new__(groups.Stack)
+        stack.command = ["docker", "compose"]
+        stack.doge_volume = "new_dogecoin_data"
+        def mounts(name):
+            return json.dumps([{"Type": "bind", "Destination": "/entrypoint.sh"},
+                               {"Type": "volume", "Name": name, "Destination": "/data"}])
+        listed = subprocess.CompletedProcess([], 0, stdout="0123abcd\n")
+        for mounted, stale in (("old_dogecoin_data", True), ("new_dogecoin_data", False)):
+            with patch.object(groups.subprocess, "run", return_value=listed), \
+                    patch.object(groups.subprocess, "check_output", return_value=mounts(mounted)) as inspect:
+                self.assertIs(stack.doge_volume_stale(), stale)
+            self.assertEqual(inspect.call_args.args[0][-1], "0123abcd")
+        # No container yet, or a bind-mounted data directory: nothing to recreate.
+        with patch.object(groups.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, stdout="")):
+            self.assertFalse(stack.doge_volume_stale())
+        stack.doge_volume = ""
+        with patch.object(groups.subprocess, "run", side_effect=AssertionError("no docker call")):
+            self.assertFalse(stack.doge_volume_stale())
 
 
 if __name__ == "__main__":

@@ -268,6 +268,19 @@ class Stack:
         return subprocess.run(["docker", "volume", "inspect", name],
                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
 
+    def doge_volume_stale(self):
+        """Whether the existing dogecoin-node container mounts another /data volume than configured."""
+        if not self.doge_volume:
+            return False
+        ids = subprocess.run(self.command + ["ps", "-a", "-q", "dogecoin-node"],
+                             capture_output=True, text=True, check=True).stdout.split()
+        if not ids:
+            return False
+        mounts = json.loads(subprocess.check_output(
+            ["docker", "inspect", "--format", "{{json .Mounts}}", ids[0]], text=True)) or []
+        return not any(m.get("Type") == "volume" and m.get("Destination") == "/data"
+                       and m.get("Name") == self.doge_volume for m in mounts)
+
     def identity(self):
         env = self.l1env
         values = {}
@@ -401,7 +414,10 @@ def start(stack, group=None):
     # restored from older data catches up. This is an explicit maintenance start.
     stack.compose("stop", "l2reth-node", "l1-interface")
     if not stack.external_doge:
-        stack.compose("up", "-d", "dogecoin-node")
+        # The service still names the same volume key after a restore into a
+        # new volume, so Compose could keep the container on the old volume.
+        recreate = ["--force-recreate"] if stack.doge_volume_stale() else []
+        stack.compose("up", "-d", *recreate, "dogecoin-node")
 
     def doge_ready():
         info = stack.doge("getblockchaininfo")
