@@ -5,6 +5,7 @@ import base64
 import datetime as dt
 import fcntl
 import hashlib
+import http.client
 import importlib.util
 import json
 import os
@@ -388,7 +389,9 @@ def http_json(url, payload=None, user="", password=""):
             if response.status != 200:
                 raise Pending("RPC/health did not return HTTP 200")
             return json.load(response)
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+    # A service that is still starting can accept the TCP connection (Docker
+    # publishes the port first) and then reset or close it without a reply.
+    except (OSError, http.client.HTTPException, json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise Pending("RPC/health unavailable") from exc
 
 

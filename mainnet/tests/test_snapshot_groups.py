@@ -10,6 +10,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+import unittest.mock
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -381,6 +382,19 @@ class GroupTests(unittest.TestCase):
         self.assertEqual(len(lines), 1)
         self.assertIn("dogecoin-node container is restarting, restarted 1 time(s) during this wait", lines[0])
         self.assertIn("DOGECOIN_MEM_LIMIT", lines[0])
+
+    def test_service_still_starting_is_pending(self):
+        # urllib.error.URLError is raised for refused connections; a published port
+        # whose service is not listening yet resets or closes the connection instead.
+        for error in (ConnectionResetError(104, "Connection reset by peer"),
+                      groups.http.client.RemoteDisconnected("Remote end closed connection without response"),
+                      groups.http.client.BadStatusLine(""),
+                      TimeoutError("timed out")):
+            opener = unittest.mock.Mock()
+            opener.open.side_effect = error
+            with patch.object(groups.urllib.request, "build_opener", return_value=opener):
+                with self.assertRaises(groups.Pending):
+                    groups.http_json("http://127.0.0.1:9090/health")
 
     def test_container_state_never_raises(self):
         stack = groups.Stack.__new__(groups.Stack)
