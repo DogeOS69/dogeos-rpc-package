@@ -298,6 +298,55 @@ docker compose ps -aq | xargs -r docker inspect \
   --format '{{.Name}} status={{.State.Status}} restarts={{.RestartCount}}'
 ```
 
+### Restart Monitoring
+
+
+Docker restarts L2Reth after every exit except a manual stop or kill
+(`docker compose stop`, `down` or `kill`), so a node that keeps failing never
+stays down on its own. A signer rotation
+exits with code 70 (see Troubleshooting below). A running node that finishes
+shutting down after `docker compose stop` or a host shutdown exits with code 0;
+after a host shutdown, Docker starts it again at boot. Exit 137 means Docker
+killed the process: an out-of-memory kill, a stop while the node still waits for
+L1 Interface, or a stop that outlasts the 30-second grace period. Any other
+exit, and a 137 you did not cause by stopping the node, is a failure. Docker
+resets its restart back-off after a run of 10 seconds or more, so a node that
+fails later than that restarts again right away, without end.
+
+```bash
+# Restarts since the container was last started by hand, recreated, or
+# started by a Docker daemon start. oom=true means the last exit was an
+# out-of-memory kill; Docker clears it when the container starts again.
+docker inspect -f '{{.RestartCount}} oom={{.State.OOMKilled}}' \
+  "$(docker compose ps -q l2reth-node)"
+
+# Each exit (die, with its code) and out-of-memory kill (oom) as it happens
+docker events --filter event=die --filter event=oom \
+  --filter container="$(docker compose ps -q l2reth-node)" \
+  --format '{{.Time}} {{.Action}} exitCode={{.Actor.Attributes.exitCode}}'
+```
+
+Alert when the restart count rises by 3 or more within 30 minutes, on any `oom`
+event, or on any exit other than 70 that you did not request. Also compare the
+node's head with an RPC you trust (the block number and the block hash at that
+height): this catches a node that keeps running but stops syncing.
+
+### Data Disk at Boot
+
+Docker restarts running services after a host reboot. Mount the data disk
+before Docker starts so services cannot write to an empty directory on the
+root disk. Configure the mount at boot and add a Docker service dependency
+with `sudo systemctl edit docker.service`, using the actual mount point:
+
+```ini
+[Unit]
+RequiresMountsFor=/data
+```
+
+Recreate L2Reth after upgrading to apply the 30-second shutdown grace period:
+`docker compose up -d --no-deps --force-recreate l2reth-node`.
+`docker compose restart` does not apply Compose configuration changes.
+
 ### Changing Data
 
 Services depend on each other as Dogecoin → L1 Interface → L2Reth. Before
@@ -336,6 +385,11 @@ Shutdown keeps all chain data; it lives under `DATA_ROOT`.
 - **L2Reth logs repeated `failed to fetch ... block` errors:** its data is
   ahead of L1 Interface, for example after restoring a newer L2Reth snapshot.
   It continues once L1 Interface catches up.
+- **L2Reth repeatedly exits for reasons other than signer rotation:** stop it
+  with `docker compose stop l2reth-node` and save the logs with
+  `docker compose logs --since 2h l2reth-node > l2reth-node.log`.
+  Investigate consensus failures, panics, and genesis mismatches before
+  resetting or restoring data.
 - **L2Reth exits with code 70 and restarts:** expected after the authorized
   signer in the L1 system contract rotates. L2Reth always runs with
   `--consensus.exit-on-signer-rotation`, which exits so that the restart reads

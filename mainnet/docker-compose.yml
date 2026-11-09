@@ -70,6 +70,8 @@ services:
     # Required by --consensus.exit-on-signer-rotation: the node exits with code
     # 70 when the L1 signer rotates and must be restarted to pick it up.
     restart: unless-stopped
+    # Allow Reth to finish persistence before Docker forces termination.
+    stop_grace_period: 30s
     mem_reservation: 1g
     mem_limit: ${L2RETH_MEM_LIMIT:-16g}
     memswap_limit: ${L2RETH_MEM_LIMIT:-16g}
