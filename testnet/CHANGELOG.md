@@ -76,12 +76,14 @@ window. This applies changed limits and stops L1/L2 while upstream checks run.
 
 Testnet now lives in the `testnet/` directory and runs from there. Move your
 settings file once; the containers, the Dogecoin volume, `DATA_ROOT`, and the
-RPC credentials stay the same, and no data is migrated:
+RPC credentials stay the same, and no data is migrated. Create the persistent
+P2P key before starting; it copies the node's existing key, keeping its node ID:
 
 ```bash
 git pull
 mv .env.testnet testnet/.env
 cd testnet
+python3 scripts/p2p-identity.py init
 python3 scripts/snapshot-group.py start
 ```
 

@@ -167,7 +167,9 @@ services:
     # Readiness of the database and replay read model: 503 during startup,
     # while reorg recovery is active, or after the replay pipeline stops.
     # (The legacy /health endpoint only reports that startup finished.)
-    # Informational: L2Reth does not wait on it. The image has no curl.
+    # Docker's health status is informational; no service depends on it. The
+    # L2Reth entrypoint polls this same endpoint and does not start the node
+    # until it returns 200. The image has no curl.
     healthcheck:
       test:
         - CMD
