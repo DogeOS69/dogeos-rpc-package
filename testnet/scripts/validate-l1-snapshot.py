@@ -89,6 +89,9 @@ def validate_archive(archive, historical):
                     f"unsafe archive path: {name}")
             require(path.parts and path.parts[0] == "l1-interface",
                     f"unexpected archive root: {name}")
+            # Members must name the root literally ("l1-interface/...", not
+            # "./l1-interface/..." or "l1-interface//x"), as tar extracts them.
+            require(str(path) == name, f"archive paths must be normalized: {name}")
             require(member.isfile() or member.isdir(), f"links/special files are forbidden: {name}")
             require(str(path) not in seen, f"duplicate archive member: {name}")
             seen.add(str(path))

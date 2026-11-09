@@ -12,6 +12,10 @@ def validate(archive, component, network):
             path = PurePosixPath(member.name)
             if path.is_absolute() or ".." in path.parts or not path.parts or path.parts[0] != component:
                 raise ValueError("unsafe archive path: " + member.name)
+            # Members must name the component root literally ("l2reth/...",
+            # not "./l2reth/..." or "l2reth//db"), as tar extracts them.
+            if str(path) != member.name.rstrip("/"):
+                raise ValueError("archive paths must be normalized: " + member.name)
             if not (member.isfile() or member.isdir()):
                 raise ValueError("links and special files are forbidden: " + member.name)
             normalized = str(path)

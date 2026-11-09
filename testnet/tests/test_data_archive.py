@@ -44,3 +44,26 @@ class ArchiveTests(unittest.TestCase):
         for item in (link, tarfile.TarInfo("l2reth/db/mdbx.dat"), tarfile.TarInfo("l2reth/../outside")):
             with self.assertRaises(ValueError):
                 self.check(item)
+
+    def test_non_normalized_paths_rejected(self):
+        for name in ("./l2reth/db/extra", "l2reth//db/extra", "l2reth/db/./extra"):
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, "normalized"):
+                self.check(tarfile.TarInfo(name))
+
+    def test_dogecoin_private_state_and_required_trees(self):
+        chain = "dogecoin/" + ("testnet3/" if ROOT.name == "testnet" else "")
+        required = (chain + "blocks/index/CURRENT", chain + "chainstate/CURRENT")
+        def check(names):
+            with tempfile.NamedTemporaryFile(suffix=".tar.gz") as path:
+                with tarfile.open(path.name, "w:gz") as out:
+                    for name in names:
+                        info = tarfile.TarInfo(name)
+                        info.size = 1
+                        out.addfile(info, io.BytesIO(b"x"))
+                archive.validate(path.name, "dogecoin", ROOT.name)
+        check(required)
+        for private in ("wallet.dat", "wallets/w1", "dogecoin.conf", ".cookie", "peers.dat", "banlist.dat", ".lock"):
+            with self.subTest(name=private), self.assertRaisesRegex(ValueError, "forbidden"):
+                check(required + (chain + private,))
+        with self.assertRaisesRegex(ValueError, "missing"):
+            check(required[:1])

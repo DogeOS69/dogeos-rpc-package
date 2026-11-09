@@ -605,66 +605,27 @@ if [ -n "$SIZE_BYTES" ]; then
   [ "$(stat -c%s "$ARCHIVE_PATH")" -eq "$SIZE_BYTES" ] || fail "archive size does not match metadata"
 fi
 
-# Reject forbidden subtrees, duplicate members, links and non-regular data
-# before tar can extract anything. L1 uses its stricter fixed-layout validator.
-if [ "$COMPONENT" != l1-interface ]; then
+# --- Archive layout ---------------------------------------------------------
+
+# One pass over the archive, before tar extracts anything, rejects absolute,
+# traversing or non-normalized paths, other roots, links and special files,
+# duplicate members, configuration, credentials, node keys, wallets and peer
+# state, and missing required data. L1 uses its stricter fixed-layout validator.
+echo "Validating archive layout (reads the whole archive)..."
+if [ "$COMPONENT" = l1-interface ]; then
+  python3 "$NETWORK_DIR/scripts/validate-l1-snapshot.py" archive "$ARCHIVE_PATH" \
+    --network "$NETWORK" --historical "$L1_HISTORICAL" || fail "invalid L1 Interface snapshot layout"
+else
   python3 "$NETWORK_DIR/scripts/validate-data-archive.py" "$ARCHIVE_PATH" \
     --component "$COMPONENT" --network "$NETWORK" || fail "invalid data archive"
 fi
 
-# --- Archive layout ---------------------------------------------------------
-
-LISTING_PATH="$TMP_DIR/listing"
-echo "Validating archive layout (reads the whole archive)..."
-tar -tzf "$ARCHIVE_PATH" >"$LISTING_PATH"
-
-awk -v root="$ARCHIVE_ROOT" '
-  /^\// { bad = 1; print "absolute path: " $0 > "/dev/stderr" }
-  /(^|\/)\.\.(\/|$)/ { bad = 1; print "parent traversal: " $0 > "/dev/stderr" }
-  $0 != root && $0 != root "/" && index($0, root "/") != 1 {
-    bad = 1; print "unexpected archive root: " $0 > "/dev/stderr"
-  }
-  END { exit bad }
-' "$LISTING_PATH" || fail "snapshot archive contains unsafe or unexpected paths"
-
-require_member() {
-  grep -Eq "$1" "$LISTING_PATH" || fail "snapshot does not contain $2"
-}
-
+# Checked again after extraction, relative to the extracted data directory.
 case "$COMPONENT" in
-  l2reth)
-    for forbidden_path in l2reth/jwt.hex l2reth/reth.toml l2reth/lost+found \
-        l2reth/genesis l2reth/protocol_context.json; do
-      if grep -Fxq "$forbidden_path" "$LISTING_PATH" ||
-         grep -Fxq "$forbidden_path/" "$LISTING_PATH"; then
-        fail "snapshot contains forbidden path: $forbidden_path"
-      fi
-    done
-    if grep -Eq '(^|/)(nodekey|discovery-secret|p2p-secret-key|l2reth-p2p.key|l2reth-identity|keystore[^/]*)(/|$)' "$LISTING_PATH"; then
-      fail "snapshot contains a P2P node key or keystore path"
-    fi
-    require_member '^l2reth/db/mdbx\.dat$' l2reth/db/mdbx.dat
-    require_member '^l2reth/db/scroll\.db$' l2reth/db/scroll.db
-    require_member '^l2reth/static_files(/|$)' l2reth/static_files
-    REQUIRED_FILES="db/mdbx.dat db/scroll.db"
-    ;;
-  l1-interface)
-    python3 "$NETWORK_DIR/scripts/validate-l1-snapshot.py" archive "$ARCHIVE_PATH" \
-      --network "$NETWORK" --historical "$L1_HISTORICAL" || fail "invalid L1 Interface snapshot layout"
-    if grep -Eq '(^|/)[^/]*\.(env|toml|conf)$' "$LISTING_PATH"; then
-      fail "snapshot contains a configuration or environment file"
-    fi
-    require_member '^l1-interface/l1-interface\.sqlite$' l1-interface/l1-interface.sqlite
-    require_member '^l1-interface/replay\.sqlite$' l1-interface/replay.sqlite
-    REQUIRED_FILES="l1-interface.sqlite replay.sqlite"
-    ;;
+  l2reth) REQUIRED_FILES="db/mdbx.dat db/scroll.db" ;;
+  l1-interface) REQUIRED_FILES="l1-interface.sqlite replay.sqlite" ;;
   dogecoin)
     CHAIN_DIR="testnet3/"
-    if grep -Eq '(^|/)(wallet\.dat|wallets|[^/]*\.conf|\.cookie|peers\.dat|banlist\.dat|\.lock)(/|$)' "$LISTING_PATH"; then
-      fail "snapshot contains a wallet, configuration, credential, or peer-state file"
-    fi
-    require_member "^dogecoin/${CHAIN_DIR}blocks/index/CURRENT\$" "dogecoin/${CHAIN_DIR}blocks/index"
-    require_member "^dogecoin/${CHAIN_DIR}chainstate/CURRENT\$" "dogecoin/${CHAIN_DIR}chainstate"
     REQUIRED_FILES="${CHAIN_DIR}blocks/index/CURRENT ${CHAIN_DIR}chainstate/CURRENT"
     ;;
 esac

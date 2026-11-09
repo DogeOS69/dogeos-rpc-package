@@ -89,7 +89,8 @@ class SnapshotTests(unittest.TestCase):
         for name in ("l1-interface/replay.sqlite", "l1-interface/.env",
                      "l1-interface/l1-interface/replay.sqlite", "l1-interface/../outside",
                      "/outside", "l1-interface/replay.sqlite-wal",
-                     "l1-interface/replay.artifacts/nested/password.env"):
+                     "l1-interface/replay.artifacts/nested/password.env",
+                     "./l1-interface/replay.artifacts/extra", "l1-interface//replay.artifacts/extra"):
             with self.subTest(name=name):
                 info = tarfile.TarInfo(name)
                 info.size = 1
