@@ -440,6 +440,17 @@ class GroupTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "--force"):
             groups.restore(self.stack, other, False, True)
 
+    def test_concurrent_run_names_the_lock(self):
+        lock_path = self.path / ".snapshot-group.lock"
+        with lock_path.open("a") as held:
+            groups.fcntl.flock(held, groups.fcntl.LOCK_EX | groups.fcntl.LOCK_NB)
+            with patch.object(groups, "Stack", return_value=self.stack), \
+                    patch.object(groups.subprocess, "run"), \
+                    patch.object(groups.sys, "argv", ["snapshot-group.py", "start"]):
+                with self.assertRaisesRegex(ValueError, "another snapshot-group.py .* is running"):
+                    groups.main()
+        self.assertFalse(self.stack.calls)
+
     def test_start_recreates_dogecoin_attached_to_another_volume(self):
         self.stack.stale_volume = True
         def health(url):

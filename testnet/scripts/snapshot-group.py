@@ -582,8 +582,13 @@ def main():
     stack.data.mkdir(parents=True, exist_ok=True)
     # Serializes group restores and staged starts. Single-component restore
     # refuses to modify data managed by a group.
-    with (stack.data / ".snapshot-group.lock").open("a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    lock_path = stack.data / ".snapshot-group.lock"
+    with lock_path.open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise ValueError("another snapshot-group.py restore or start is running for this DATA_ROOT "
+                             "(lock: " + str(lock_path) + "); wait for it to finish") from None
         if args.action == "start":
             start(stack)
         else:
