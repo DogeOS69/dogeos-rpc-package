@@ -357,6 +357,12 @@ event, or on any exit other than 70 that you did not request. Also compare the
 node's head with an RPC you trust (the block number and the block hash at that
 height): this catches a node that keeps running but stops syncing.
 
+Also alert when `docker compose ps` shows `l1-interface` as `unhealthy`. Docker
+does not restart it for that, and every L2Reth start, including the automatic
+restart after a signer rotation, waits until L1 Interface is ready again; L2
+RPC stays unavailable meanwhile. See the `Waiting for L1 interface` entry in
+Troubleshooting below.
+
 ### Data Disk at Boot
 
 Docker restarts running services after a host reboot. Mount the data disk
@@ -407,8 +413,26 @@ Dogecoin Docker volume.
 - **L2Reth stays at `Waiting for L1 interface`:** the entrypoint waits for an
   `eth_chainId` HTTP success and HTTP 200 from `/api/v1/health/ready` in the
   same retry cycle. Connection failures, timeouts, and other readiness status
-  codes keep L2Reth waiting; checks repeat every 5 seconds. Check L1 Interface
-  health and logs.
+  codes keep L2Reth waiting; checks repeat every 5 seconds. This applies to
+  every start, including automatic restarts such as the exit 70 after a signer
+  rotation. While L1 Interface is still starting, waiting is expected: it
+  opens its JSON-RPC port only after historical sync and replay catch-up. Once
+  it is running, read why it is not ready (without `--fail`, so the HTTP 503
+  body stays visible):
+
+  ```bash
+  curl -sS http://localhost:9090/api/v1/health/ready | python3 -m json.tool
+  ```
+
+  Look at `critical_components`. In `replay_read_model`, an
+  `active_regression_episode` means reorg recovery is in progress; it clears
+  on its own. A `details.stop_reason` ("Replay pipeline has stopped") does not
+  clear on its own. Save the logs with
+  `docker compose logs --since 2h l1-interface > l1-interface.log` and restart
+  it once with `docker compose restart l1-interface`; L2Reth continues by
+  itself when readiness returns HTTP 200. If the stop reason comes back, or
+  `database` is unhealthy, investigate the logs before restoring or resetting
+  data. Do not bypass the readiness check.
 - **L2Reth logs repeated `failed to fetch ... block` errors:** its data is
   ahead of L1 Interface, for example after restoring a newer L2Reth snapshot.
   It continues once L1 Interface catches up.
