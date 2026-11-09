@@ -299,14 +299,17 @@ links and offline snapshot/restore behavior. CI runs it on every pull request.
 
 ## Components
 
-| Service | Image | Source |
-|---------|-------|--------|
-| `dogecoin-node` | `dogeos69/dogecoin:1.14.9` | Dogecoin Core 1.14.9 |
-| `l1-interface` | `dogeos69/l1-interface:v0.3.0-beta.3d` | DogeOS L1 Interface v0.3.0-beta.3d |
-| `l2reth-node` | `dogeos69/rollup-node:v0.3.0-beta.1c-ca.20261021.1-stateroot` | DogeOS69/dogeos-rollup-node `59bcd0ef` |
+| Service | Runs |
+|---------|------|
+| `dogecoin-node` | Dogecoin Core |
+| `l1-interface` | DogeOS L1 Interface |
+| `l2reth-node` | DogeOS rollup node (DogeOS69/dogeos-rollup-node) |
 
-Service behavior described in this documentation (health endpoints, startup
-ordering, L1 reorg handling) was checked against these versions.
+Image versions are set only in `docker-compose.yml`; list them with
+`docker compose config --images`. The [changelog](CHANGELOG.md) records each
+version change. Service behavior described in this documentation (health
+endpoints, startup ordering, L1 reorg handling) was checked against the images
+pinned there.
 
 | File | Purpose |
 |------|---------|
