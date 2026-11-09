@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Published snapshots are listed in a per-network index on S3, so a new
-# snapshot needs only an S3 upload, not a package release. See
-# docs/snapshot-publishing.md in this directory for the index format.
+# Legacy component restore from a schema-1 index, or from an explicit archive.
+# The published per-network index.json is the schema-2 group catalog read by
+# snapshot-group.py, so this script has no default index URL. See
+# docs/snapshot-publishing.md in this directory for both formats.
 NETWORK=testnet
-DEFAULT_INDEX_BASE="https://dogeos-rpc-snapshots.s3.us-west-2.amazonaws.com"
 EXTRACT_IMAGE="alpine:3.20"
 SIGNER_IDENTITY="dogeos-snapshots"
 SIGNATURE_NAMESPACE="dogeos-snapshot-index"
@@ -20,15 +20,15 @@ Usage (in the testnet directory):
 
 The env file defaults to .env in the testnet directory.
 
-Examples:
-  ./scripts/restore-snapshot.sh --list
-  ./scripts/restore-snapshot.sh --no-start dogecoin
-  ./scripts/restore-snapshot.sh l2reth
+Examples (LEGACY_INDEX is the HTTPS URL of a schema-1 component index):
+  ./scripts/restore-snapshot.sh --index-url "$LEGACY_INDEX" --list
+  ./scripts/restore-snapshot.sh --index-url "$LEGACY_INDEX" --no-start l2reth
 
-Legacy schema-1 component restore. For pinned groups use:
+Legacy schema-1 component restore. Published snapshot groups are restored with:
   python3 scripts/snapshot-group.py list
   python3 scripts/snapshot-group.py restore GROUP_ID
-The newest component snapshot compatible with docker-compose.yml is used.
+The newest component snapshot in the index that is compatible with
+docker-compose.yml is used.
 
 Services depend on each other as Dogecoin -> L1 Interface -> L2Reth. Before
 the restored data is activated, the component and every service that depends
@@ -42,7 +42,8 @@ Options:
                           directory is moved to a timestamped backup.
                           Docker volumes are never replaced.
   --no-start              Restore without starting services.
-  --index-url URL         Override the snapshot index URL.
+  --index-url URL         Schema-1 snapshot index URL. Required unless
+                          --snapshot-url is given.
   --snapshot-url URL      Skip the index and use this archive. Requires
                           --sha256. No compatibility check is made.
   --sha256 SHA256         SHA-256 of --snapshot-url.
@@ -153,6 +154,11 @@ if [ -n "$SNAPSHOT_URL" ] || [ -n "$SNAPSHOT_SHA256" ]; then
     fail "--snapshot-url and --sha256 must be given together"
   [ -z "$SNAPSHOT_ID" ] || fail "--snapshot-id cannot be combined with --snapshot-url"
 fi
+if [ -z "$SNAPSHOT_URL" ] && [ -z "$INDEX_URL" ]; then
+  fail "give a schema-1 index with --index-url (or SNAPSHOT_INDEX_URL), or an archive with
+--snapshot-url and --sha256. Published snapshot groups are restored with:
+  python3 scripts/snapshot-group.py restore GROUP_ID"
+fi
 
 require_command curl
 require_command docker
@@ -196,7 +202,6 @@ fi
 
 # --- Snapshot index ---------------------------------------------------------
 
-INDEX_URL="${INDEX_URL:-$DEFAULT_INDEX_BASE/$NETWORK/index.json}"
 TMP_DIR="$(mktemp -d)"
 STAGING_DIR=""
 PENDING_BACKUP=""
@@ -248,6 +253,10 @@ fetch_index() {
   local header
   header="$(jqx -r '[.schema_version, .network] | @tsv' <"$INDEX_PATH")" ||
     fail "snapshot index is not valid JSON: $INDEX_URL"
+  if [ "${header%%$'\t'*}" = 2 ]; then
+    fail "$INDEX_URL is a schema-2 snapshot group catalog; restore groups with:
+  python3 scripts/snapshot-group.py restore GROUP_ID"
+  fi
   [ "${header%%$'\t'*}" = 1 ] ||
     fail "unsupported snapshot index schema_version: ${header%%$'\t'*}"
   [ "${header#*$'\t'}" = "$NETWORK" ] ||

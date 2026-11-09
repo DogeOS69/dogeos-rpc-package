@@ -236,6 +236,19 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(key.read_bytes(), original)
         self.assertFalse(any(target.iterdir()))
 
+    def test_legacy_restore_requires_explicit_index(self):
+        # The default index.json is the schema-2 group catalog, which this
+        # script cannot read; it must not be used implicitly.
+        result, _, _ = self.restore(component="l2reth")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        script = str(self.fixture_package / "scripts/restore-snapshot.sh")
+        for args in (["--list"], ["--no-start", "l2reth"]):
+            missing = subprocess.run(["bash", script] + args, env=self.restore_env,
+                                     capture_output=True, text=True)
+            self.assertNotEqual(missing.returncode, 0, args)
+            self.assertIn("--index-url", missing.stderr)
+            self.assertIn("snapshot-group.py", missing.stderr)
+
     def test_l2_restore_without_identity_stops_before_replacement(self):
         result, target, stop_log = self.restore(component="l2reth", missing_key=True)
         self.assertNotEqual(result.returncode, 0)
