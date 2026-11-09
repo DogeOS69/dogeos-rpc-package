@@ -8,7 +8,7 @@
 # Image versions (behavior documented for this network was checked against
 # these versions):
 #   dogecoin-node  Dogecoin Core 1.14.9
-#   l2reth-node    DogeOS69/dogeos-rollup-node  v0.3.0-beta.1c  d3260afe
+#   l2reth-node    DogeOS69/dogeos-rollup-node  v0.3.0-beta.1c-ca.20261021.1-stateroot  59bcd0ef
 #   l1-interface   DogeOS L1 Interface          v0.3.0-beta.3d
 
 # Project name of earlier releases, so existing containers and the Dogecoin
@@ -60,7 +60,7 @@ services:
       - "-printtoconsole"
 
   l2reth-node:
-    image: dogeos69/rollup-node:v0.3.0-beta.1c
+    image: dogeos69/rollup-node:v0.3.0-beta.1c-ca.20261021.1-stateroot
     logging: *logging
     # Required by --consensus.exit-on-signer-rotation: the node exits with code
     # 70 when the L1 signer rotates and must be restarted to pick it up.

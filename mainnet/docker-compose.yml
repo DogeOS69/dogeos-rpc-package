@@ -65,7 +65,7 @@ services:
       - "-printtoconsole"
 
   l2reth-node:
-    image: dogeos69/rollup-node:v0.3.0-beta.1c  # TBD for mainnet
+    image: dogeos69/rollup-node:v0.3.0-beta.1c-ca.20261021.1-stateroot  # TBD for mainnet
     logging: *logging
     # Required by --consensus.exit-on-signer-rotation: the node exits with code
     # 70 when the L1 signer rotates and must be restarted to pick it up.
