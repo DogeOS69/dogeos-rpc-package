@@ -146,6 +146,10 @@ Recommended follow-ups:
   `docker-compose.yml`, and the Dogecoin RPC host port no longer has to match
   `dogecoin.conf`. `DOGECOIN_P2P_PORT` is no longer used: P2P stays on the
   port Dogecoin advertises. `NETWORK` is no longer needed.
+- **L2Reth image** `dogeos69/rollup-node:v0.3.0-beta.1c` →
+  `v0.3.0-beta.1c-ca.20261021.1-stateroot` (DogeOS69/dogeos-rollup-node
+  `59bcd0ef`, which pins Reth with the trie seek-boundary fix). Chain data is
+  kept; `snapshot-group.py start` pulls the image and recreates `l2reth-node`.
 - **Snapshots.** `scripts/snapshot-group.py` selects one schema-2 group, pins
   its component archives, checks compatibility and restores with dependency
   checkpoints. Use it for current deployments. The component script remains

@@ -174,7 +174,7 @@ initialization message, then read it:
 docker compose logs --no-color l2reth-node | grep 'P2P networking initialized'
 ```
 
-The pinned rollup-node version [logs its native enode when networking starts](https://github.com/DogeOS69/dogeos-rollup-node/blob/d3260afef9ae729a073fd70a43ae4f3832b482f7/crates/node/src/builder/network.rs).
+The pinned rollup-node version [logs its native enode when networking starts](https://github.com/DogeOS69/dogeos-rollup-node/blob/59bcd0efcd1df2d236eb34e0ac98cf3c03d9f478/crates/node/src/builder/network.rs).
 From `enode://<public-key>@<address>:<port>`, copy the 128 hex characters between
 `enode://` and `@`. This is the secp256k1 P2P public key, without `04` or `0x`;
 it is not an Ethereum account address. Never send the private-key file.
