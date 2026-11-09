@@ -101,7 +101,6 @@ exec rollup-node node \
   --blob.s3_url "$BLOB_S3_URL" \
   --network.scroll-wire=true \
   --network.bridge=true \
-  --network.legacy-geth-header-transform true \
   --txpool.pending-max-count=1000 \
   --builder.gaslimit=30000000 \
   --sequencer.max-l1-messages 51 \
