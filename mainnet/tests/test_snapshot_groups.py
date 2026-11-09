@@ -151,6 +151,33 @@ class GroupTests(unittest.TestCase):
             stack.assert_called_once_with("custom.env")
             self.assertIs(load.call_args.args[3], self.stack)
 
+    def test_group_catalog_has_its_own_url_and_override(self):
+        # <network>/index.json stays the schema-1 component index of
+        # restore-snapshot.sh; groups are read from group-index.json.
+        expected = groups.INDEX_BASE + "/" + ROOT.name + "/group-index.json"
+        self.assertEqual(groups.GROUP_INDEX_URL, expected)
+        base = {k: v for k, v in os.environ.items() if not k.startswith("SNAPSHOT_")}
+        for extra, url in (({}, expected),
+                           ({"SNAPSHOT_GROUP_INDEX_URL": "https://mirror.invalid/g.json"}, "https://mirror.invalid/g.json"),
+                           # The component-index override must not redirect group selection.
+                           ({"SNAPSHOT_INDEX_URL": "https://mirror.invalid/component.json"}, expected)):
+            with self.subTest(env=extra), patch.dict(os.environ, {**base, **extra}, clear=True), \
+                    patch.object(groups, "ROOT", self.path), patch.object(groups, "load_group") as load, \
+                    patch.object(groups.sys, "argv", ["snapshot-group.py", "list"]):
+                groups.main()
+                self.assertEqual(load.call_args.args[0], url)
+
+    def test_component_index_and_missing_catalog_are_explained(self):
+        component_index = {"schema_version": 1, "network": ROOT.name,
+                           "published_at": "2026-10-20T14:37:22Z", "components": {}}
+        with self.assertRaisesRegex(ValueError, "schema-1 component index.*restore-snapshot.sh"):
+            groups.validate_index(component_index, ROOT.name)
+        unreachable = subprocess.CalledProcessError(22, ["curl"])
+        with patch.object(groups, "download_json", side_effect=unreachable), \
+                self.assertRaisesRegex(ValueError, "cannot download the snapshot group catalog") as raised:
+            groups.load_group("https://mirror.invalid/secret-token/group-index.json", None, self.path)
+        self.assertNotIn("secret-token", str(raised.exception))
+
     def test_full_partial_and_empty_groups(self):
         group = manifest()
         groups.validate_manifest(group, ROOT.name)

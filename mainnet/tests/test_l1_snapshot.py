@@ -253,18 +253,37 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(len(backups), 1)
         self.assertTrue((backups[0] / "genesis/genesis.json").is_file())
 
-    def test_legacy_restore_requires_explicit_index(self):
-        # The default index.json is the schema-2 group catalog, which this
-        # script cannot read; it must not be used implicitly.
+    def test_legacy_restore_reads_component_index_by_default(self):
+        # <network>/index.json is the schema-1 component index; groups have
+        # their own group-index.json. A curl shim records the URL it is asked
+        # for and serves a prepared document instead of using the network.
         result, _, _ = self.restore(component="l2reth")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        served = self.root / "served.json"
+        log = self.root / "curl.log"
+        curl = self.root / "bin" / "curl"
+        curl.write_text("#!/usr/bin/env python3\n"
+                        "import shutil, sys\n"
+                        "args = sys.argv[1:]\n"
+                        f"open({str(log)!r}, 'a').write(args[-1] + '\\n')\n"
+                        f"shutil.copyfile({str(served)!r}, args[args.index('-o') + 1])\n")
+        curl.chmod(0o755)
         script = str(self.fixture_package / "scripts/restore-snapshot.sh")
-        for args in (["--list"], ["--no-start", "l2reth"]):
-            missing = subprocess.run(["bash", script] + args, env=self.restore_env,
-                                     capture_output=True, text=True)
-            self.assertNotEqual(missing.returncode, 0, args)
-            self.assertIn("--index-url", missing.stderr)
-            self.assertIn("snapshot-group.py", missing.stderr)
+        env = {k: v for k, v in self.restore_env.items() if not k.startswith("SNAPSHOT_")}
+        served.write_text(json.dumps({"schema_version": 1, "network": NETWORK,
+                                      "published_at": "2026-10-20T14:37:22Z", "components": {}}))
+        listed = subprocess.run(["bash", script, "--list"], env=env, capture_output=True, text=True)
+        self.assertEqual(listed.returncode, 0, listed.stdout + listed.stderr)
+        self.assertEqual(log.read_text().split(),
+                         ["https://dogeos-rpc-snapshots.s3.us-west-2.amazonaws.com/" + NETWORK + "/index.json"])
+        self.assertIn("(no snapshots published)", listed.stdout)
+        # A group catalog given to the component script points to snapshot-group.py.
+        served.write_text(json.dumps({"schema_version": 2, "network": NETWORK,
+                                      "published_at": "2026-10-23T02:00:00Z", "groups": []}))
+        wrong = subprocess.run(["bash", script, "--index-url", "https://mirror.invalid/group-index.json", "--list"],
+                               env=env, capture_output=True, text=True)
+        self.assertNotEqual(wrong.returncode, 0)
+        self.assertIn("snapshot-group.py", wrong.stderr)
 
     def test_l2_restore_without_identity_stops_before_replacement(self):
         result, target, stop_log = self.restore(component="l2reth", missing_key=True)

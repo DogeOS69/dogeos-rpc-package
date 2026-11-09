@@ -31,8 +31,10 @@ starting services or downloading archives; otherwise it reports `NOT CHECKED`.
 Snapshot groups now use a schema-2 catalog and immutable manifests with explicit
 missing components, archive checksums, release identity and dependency
 checkpoints. Use `python3 scripts/snapshot-group.py list`, then `restore GROUP_ID`.
-Publish a schema-2 catalog before using these commands; older component
-catalogs require the legacy script and an explicit legacy index URL.
+The group catalog is published as `mainnet/group-index.json`
+(`SNAPSHOT_GROUP_INDEX_URL` overrides it) and must exist before these commands
+can list or restore groups. The schema-1 component index stays at
+`mainnet/index.json`, the default of the legacy `restore-snapshot.sh`.
 
 Use `python3 scripts/snapshot-group.py start` for cold startup and recovery.
 It waits for Dogecoin initial sync, L1 startup/replay readiness, and recorded
@@ -87,6 +89,6 @@ missing. The prepared layout:
   24 GB), sized for mainnet's block count.
 - No pre-v0.3.0 history bootstrap download.
 - Snapshot restore through `scripts/snapshot-group.py restore GROUP_ID --no-start`
-  from the schema-2 `mainnet/index.json` catalog, once published; then use
+  from the schema-2 `mainnet/group-index.json` catalog, once published; then use
   `scripts/snapshot-group.py start`. The component script is reserved for
   internal restore and explicit legacy/direct-archive workflows.

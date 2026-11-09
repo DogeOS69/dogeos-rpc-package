@@ -36,5 +36,5 @@ Before release, also:
 - Keep L1 Interface paths fixed at `/data/l1-interface.sqlite`,
   `/data/replay.sqlite`, and `/data/replay.artifacts/`; see
   [Fixed Data Layout](snapshots.md#fixed-data-layout).
-- Publish a schema-2 `mainnet/index.json` and immutable group manifests in the snapshot bucket
+- Publish a schema-2 `mainnet/group-index.json` and immutable group manifests in the snapshot bucket
   ([snapshot publishing](snapshot-publishing.md)).

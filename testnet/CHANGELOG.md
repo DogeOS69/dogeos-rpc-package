@@ -31,8 +31,10 @@ starting services or downloading archives; otherwise it reports `NOT CHECKED`.
 Snapshot groups now use a schema-2 catalog and immutable manifests with explicit
 missing components, archive checksums, release identity and dependency
 checkpoints. Use `python3 scripts/snapshot-group.py list`, then `restore GROUP_ID`.
-Publish a schema-2 catalog before using these commands; older component
-catalogs require the legacy script and an explicit legacy index URL.
+The group catalog is published as `testnet/group-index.json`
+(`SNAPSHOT_GROUP_INDEX_URL` overrides it) and must exist before these commands
+can list or restore groups. The schema-1 component index stays at
+`testnet/index.json`, the default of the legacy `restore-snapshot.sh`.
 
 Use `python3 scripts/snapshot-group.py start` for cold startup and recovery.
 It waits for Dogecoin initial sync, L1 startup/replay readiness, and recorded
@@ -123,8 +125,9 @@ Recommended follow-ups:
   RPC or L1 Interface ports.
 - Restore a selected group with `python3 scripts/snapshot-group.py restore GROUP_ID --no-start`,
   then run `python3 scripts/snapshot-group.py start`. The component script
-  `restore-snapshot.sh` is only for the explicit legacy/direct-archive workflows
-  in [Snapshots and Recovery](docs/snapshots.md#legacy-component-restore);
+  `restore-snapshot.sh` is only for legacy component restores from
+  `testnet/index.json` and direct archives, described in
+  [Snapshots and Recovery](docs/snapshots.md#legacy-component-restore);
   `scripts/restore-l2reth-snapshot.sh` is gone.
 - Documentation and the changelog are now in `testnet/` as well; the root
   directory only has a short README.

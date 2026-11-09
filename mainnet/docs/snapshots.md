@@ -11,7 +11,9 @@ credentials when recovering a node. Mainnet is not released; the required releas
 
 ## How Snapshots Work
 
-The group catalog is `mainnet/index.json` in the snapshot bucket. A group
+The group catalog is `mainnet/group-index.json` in the snapshot bucket; the
+schema-1 component index stays at `mainnet/index.json` for
+[Legacy Component Restore](#legacy-component-restore). A group
 manifest pins its component archives by SHA-256 and records network identity,
 image compatibility, data checkpoints and upstream requirements. Archives keep
 their independent component layouts; they are not nested inside one large tar.
@@ -43,7 +45,7 @@ Missing/incompatible groups, download failures and checksum errors are errors;
 none triggers an automatic fallback to another group or a data reset.
 
 Use `--env-file PATH` for a different env file and `--index-url HTTPS_URL` for a
-catalog mirror. `SNAPSHOT_INDEX_URL` is a process-environment override, not an
+catalog mirror. `SNAPSHOT_GROUP_INDEX_URL` is a process-environment override, not an
 `.env` service setting. The host needs Python 3.9+ with SQLite, Bash, Docker
 Compose, curl, GNU tar/coreutils and jq (or the pinned jq helper image).
 
@@ -132,17 +134,20 @@ verified.
 
 ### Legacy Component Restore
 
-`restore-snapshot.sh` is retained for schema-1 catalogs and explicit archives.
+`restore-snapshot.sh` is retained for the schema-1 component index
+(`mainnet/index.json`, its default) and explicit archives.
 It validates archive checksums/layout and uses staged startup by default, but
 has no group checkpoint contract. It refuses to modify data already managed
 by a group. Prefer group restore for normal recovery.
 
 ```bash
-./scripts/restore-snapshot.sh --index-url https://YOUR-BUCKET/mainnet/legacy-index.json --list
-./scripts/restore-snapshot.sh --no-start \
-  --index-url https://YOUR-BUCKET/mainnet/legacy-index.json l2reth
+./scripts/restore-snapshot.sh --list
+./scripts/restore-snapshot.sh --no-start l2reth
 python3 scripts/snapshot-group.py start
 ```
+
+Use `--index-url HTTPS_URL` or `SNAPSHOT_INDEX_URL` for a mirror of the
+component index.
 
 Advanced direct-archive mode requires `--snapshot-url HTTPS_URL` and `--sha256
 HASH`; it bypasses index/network/image metadata checks. The group helper uses

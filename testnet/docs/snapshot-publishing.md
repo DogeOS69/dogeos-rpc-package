@@ -16,21 +16,31 @@ changes images.
 
 ```text
 s3://dogeos-rpc-snapshots/testnet/
-  index.json                          # mutable group catalog, schema 2
+  group-index.json                    # mutable group catalog, schema 2 (snapshot-group.py)
+  group-index.json.sig                # when index signing is enabled
+  index.json                          # mutable component index, schema 1 (restore-snapshot.sh)
   index.json.sig                      # when index signing is enabled
-  groups/<group-id>.json               # immutable group manifest
-  dogecoin/<archive>.tar.gz            # immutable
-  l1-interface/<archive>.tar.gz        # immutable
-  l2reth/<archive>.tar.gz              # immutable
+  groups/<group-id>.json              # immutable group manifest
+  dogecoin/<archive>.tar.gz           # immutable, shared by both catalogs
+  l1-interface/<archive>.tar.gz       # immutable, shared by both catalogs
+  l2reth/<archive>.tar.gz             # immutable, shared by both catalogs
 ```
 
-The default catalog URL is
-`https://dogeos-rpc-snapshots.s3.us-west-2.amazonaws.com/testnet/index.json`.
-A local package does not prove that a catalog has been published. Publish
-schema 2 before directing operators to group restore. New uploads need no
-package release unless the schema, archive rules or trusted signers change.
+The default group catalog URL is
+`https://dogeos-rpc-snapshots.s3.us-west-2.amazonaws.com/testnet/group-index.json`
+(override with `--index-url` or `SNAPSHOT_GROUP_INDEX_URL`). The schema-1
+component index stays at `testnet/index.json` for `restore-snapshot.sh`
+(override with `--index-url` or `SNAPSHOT_INDEX_URL`). The two files are
+independent: publishing a group never rewrites `index.json`, and the same
+archives may be listed in both.
 
-## Index Format (schema version 2)
+A local package does not prove that a catalog has been published. Until
+`group-index.json` exists, `snapshot-group.py list` reports that it cannot
+download the catalog. Publish it before directing operators to group restore;
+a catalog with an empty `groups` list is valid. New uploads need no package
+release unless the schema, archive rules or trusted signers change.
+
+## Group Catalog Format (schema version 2)
 
 ```json
 {
@@ -58,11 +68,12 @@ pins the choice across commands. The descriptor pins the exact manifest bytes
 by SHA-256; the manifest pins each archive. Set `Content-Type: application/json`
 and `Cache-Control: no-cache` on the mutable catalog.
 
-Schema 1 component indexes remain readable only by the legacy
-`restore-snapshot.sh`. If existing clients need them, keep a separate
-`legacy-index.json` and use `--index-url` explicitly. Old clients reject schema
-2 instead of treating it as independent component entries. Do not add groups
-to schema 1 and assume older clients honor them.
+The schema-1 component index (`index.json`) keeps its format and is read only
+by `restore-snapshot.sh`, which rejects a schema-2 catalog; `snapshot-group.py`
+rejects a schema-1 index. Keep each schema in its own file: never add groups to
+`index.json` or component entries to `group-index.json`. Listing an archive in
+`index.json` as well is optional and only serves component restores, which
+have no dependency checkpoints.
 
 ## Group Manifest
 
@@ -194,7 +205,7 @@ actual captured data; do not copy them from a previous group.
 5. Upload `groups/<group-id>.json`, then download it and compute the checksum
    used in the catalog. Do not expose an unfinished group as a partial group.
 6. Build and validate the new catalog with
-   `python3 scripts/snapshot-group.py validate-index index.json`. Update its
+   `python3 scripts/snapshot-group.py validate-index group-index.json`. Update its
    timestamp. Publish the signature first when enabled, then the catalog last.
    Readers racing those two writes may fail signature verification and must
    retry; they never bypass verification.
@@ -222,9 +233,11 @@ verification using identity `dogeos-snapshots` and namespace
 dogeos-snapshots <public key>
 ```
 
-Keep the private key in the publishing pipeline. Sign with:
+Keep the private key in the publishing pipeline. Sign each catalog you
+publish; each client verifies the `.sig` next to the catalog it reads:
 
 ```bash
+ssh-keygen -Y sign -f snapshot-signing-key -n dogeos-snapshot-index group-index.json
 ssh-keygen -Y sign -f snapshot-signing-key -n dogeos-snapshot-index index.json
 ```
 

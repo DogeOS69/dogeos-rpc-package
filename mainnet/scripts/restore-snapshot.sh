@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Legacy component restore from a schema-1 index, or from an explicit archive.
-# The published per-network index.json is the schema-2 group catalog read by
-# snapshot-group.py, so this script has no default index URL. See
-# docs/snapshot-publishing.md in this directory for both formats.
+# Component restore from the schema-1 component index (<network>/index.json),
+# or from an explicit archive. Snapshot groups have their own schema-2 catalog
+# (<network>/group-index.json), read by snapshot-group.py, so both formats are
+# published side by side. See docs/snapshot-publishing.md in this directory.
 NETWORK=mainnet
+DEFAULT_INDEX_BASE="https://dogeos-rpc-snapshots.s3.us-west-2.amazonaws.com"
 SIGNER_IDENTITY="dogeos-snapshots"
 SIGNATURE_NAMESPACE="dogeos-snapshot-index"
 
@@ -19,11 +20,12 @@ Usage (in the mainnet directory):
 
 The env file defaults to .env in the mainnet directory.
 
-Examples (LEGACY_INDEX is the HTTPS URL of a schema-1 component index):
-  ./scripts/restore-snapshot.sh --index-url "$LEGACY_INDEX" --list
-  ./scripts/restore-snapshot.sh --index-url "$LEGACY_INDEX" --no-start l2reth
+Examples:
+  ./scripts/restore-snapshot.sh --list
+  ./scripts/restore-snapshot.sh --no-start l2reth
 
-Legacy schema-1 component restore. Published snapshot groups are restored with:
+Legacy component restore from the schema-1 component index. Snapshot groups,
+which add dependency checkpoints, are restored with:
   python3 scripts/snapshot-group.py list
   python3 scripts/snapshot-group.py restore GROUP_ID
 The newest component snapshot in the index that is compatible with
@@ -40,8 +42,8 @@ Options:
   --force                 Replace non-empty data. The old directory is moved
                           to a timestamped backup.
   --no-start              Restore without starting services.
-  --index-url URL         Schema-1 snapshot index URL. Required unless
-                          --snapshot-url is given.
+  --index-url URL         Schema-1 component index URL. Defaults to the
+                          published mainnet/index.json.
   --snapshot-url URL      Skip the index and use this archive. Requires
                           --sha256. No compatibility check is made.
   --sha256 SHA256         SHA-256 of --snapshot-url.
@@ -152,11 +154,7 @@ if [ -n "$SNAPSHOT_URL" ] || [ -n "$SNAPSHOT_SHA256" ]; then
     fail "--snapshot-url and --sha256 must be given together"
   [ -z "$SNAPSHOT_ID" ] || fail "--snapshot-id cannot be combined with --snapshot-url"
 fi
-if [ -z "$SNAPSHOT_URL" ] && [ -z "$INDEX_URL" ]; then
-  fail "give a schema-1 index with --index-url (or SNAPSHOT_INDEX_URL), or an archive with
---snapshot-url and --sha256. Published snapshot groups are restored with:
-  python3 scripts/snapshot-group.py restore GROUP_ID"
-fi
+INDEX_URL="${INDEX_URL:-$DEFAULT_INDEX_BASE/$NETWORK/index.json}"
 
 require_command curl
 require_command docker

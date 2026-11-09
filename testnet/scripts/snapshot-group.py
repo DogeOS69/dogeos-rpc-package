@@ -23,6 +23,9 @@ SERVICES = dict(zip(COMPONENTS, ("dogecoin-node", "l1-interface", "l2reth-node")
 ROOT = Path(__file__).resolve().parents[1]
 NETWORK = "testnet"
 INDEX_BASE = "https://dogeos-rpc-snapshots.s3.us-west-2.amazonaws.com"
+# The schema-2 group catalog has its own file. <network>/index.json stays the
+# schema-1 component index read by restore-snapshot.sh, so both can coexist.
+GROUP_INDEX_URL = INDEX_BASE + "/" + NETWORK + "/group-index.json"
 
 
 def require(condition, message):
@@ -112,8 +115,11 @@ def validate_manifest(group, network):
 
 def validate_index(index, network):
     require(isinstance(index, dict), "index must be an object")
+    require(index.get("schema_version") != 1,
+            "this is a schema-1 component index, which has no groups; restore its components with "
+            "scripts/restore-snapshot.sh, or use the schema-2 group catalog (group-index.json)")
     require(index.get("schema_version") == 2 and index.get("network") == network,
-            "expected a schema_version 2 index for " + network + "; legacy indexes have no groups")
+            "expected a schema_version 2 group catalog for " + network)
     timestamp(index.get("published_at"))
     groups = index.get("groups")
     require(isinstance(groups, list), "groups must be a list")
@@ -194,8 +200,14 @@ def print_group(group, stack=None):
 
 
 def load_group(index_url, group_id, directory, stack=None):
-    path = directory / "index.json"
-    index = download_json(index_url, path)
+    path = directory / "group-index.json"
+    try:
+        index = download_json(index_url, path)
+    except subprocess.CalledProcessError:
+        # The URL is not printed: a mirror URL may carry credentials.
+        raise ValueError("cannot download the snapshot group catalog (unreachable, or no groups published "
+                         "yet). A node without snapshots starts with: python3 scripts/snapshot-group.py start; "
+                         "schema-1 component snapshots are restored with scripts/restore-snapshot.sh") from None
     signers = ROOT / "snapshots/allowed_signers"
     if signers.exists():
         subprocess.run(["curl", "-fsSL", "--proto", "=https", "--proto-redir", "=https",
@@ -558,7 +570,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("list", "restore", "start", "validate", "validate-index"))
     parser.add_argument("group", nargs="?", help="group id, latest, or local manifest path for validate")
-    parser.add_argument("--index-url", default=os.environ.get("SNAPSHOT_INDEX_URL", INDEX_BASE + "/" + NETWORK + "/index.json"))
+    parser.add_argument("--index-url", default=os.environ.get("SNAPSHOT_GROUP_INDEX_URL", GROUP_INDEX_URL),
+                        help="schema-2 group catalog URL (default: SNAPSHOT_GROUP_INDEX_URL or " + GROUP_INDEX_URL + ")")
     parser.add_argument("--env-file")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--no-start", action="store_true")
