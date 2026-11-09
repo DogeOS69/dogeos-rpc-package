@@ -26,6 +26,13 @@ cover the latest image and chain configuration update: pull the new image and
 recreate only `l2reth-node`, retaining its existing data. Dogecoin and
 L1 Interface do not need to be restarted.
 
+Before upgrading to a TsukiV2-capable client, obtain the network's approved
+genesis configuration. Current clients require `tsukiV2Time` when `tsukiTime`
+is set, with `tsukiV2Time` no earlier than `tsukiTime`. The checked-in Testnet
+genesis does not yet include the approved activation time; wait for that
+configuration before deploying such a client. Use the same activation time as
+the network and preserve its existing fork times and chain data.
+
 For historical v0.2.x deployments, follow
 [Upgrading from v0.2.x to v0.3.0](upgrade_v0.3.0.md) **before pulling new code**.
 That migration requires stopping the old stack with its old Compose file and

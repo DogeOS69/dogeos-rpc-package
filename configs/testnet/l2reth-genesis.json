@@ -52,8 +52,7 @@
         "startL1Block": 62379161
       },
       "genesisStateRoot": null,
-      "missingHeaderFieldsSHA256": null,
-      "l1DataFeeBufferCheck": false
+      "missingHeaderFieldsSHA256": null
     }
   },
   "nonce": "0x0",
