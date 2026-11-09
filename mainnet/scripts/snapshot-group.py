@@ -303,6 +303,20 @@ class Stack:
         return not any(m.get("Type") == "volume" and m.get("Destination") == "/data"
                        and m.get("Name") == self.doge_volume for m in mounts)
 
+    def container_state(self, service):
+        """(restart count, status) of the service's container, or None. Diagnostic
+        only: any Docker failure is reported as None, never raised."""
+        try:
+            ids = subprocess.run(self.command + ["ps", "-a", "-q", service],
+                                 capture_output=True, text=True, timeout=15).stdout.split()
+            if not ids:
+                return None
+            fields = subprocess.run(["docker", "inspect", "--format", "{{.RestartCount}} {{.State.Status}}", ids[0]],
+                                    capture_output=True, text=True, timeout=15).stdout.split()
+            return int(fields[0]), fields[1]
+        except (OSError, subprocess.SubprocessError, ValueError, IndexError):
+            return None
+
     def identity(self):
         env = self.l1env
         values = {}
@@ -389,7 +403,31 @@ class Pending(Exception):
     pass
 
 
-def wait_for(label, action):
+MEMORY_SETTINGS = {"dogecoin-node": "DOGECOIN_MEM_LIMIT", "l1-interface": "L1_INTERFACE_MEM_LIMIT"}
+
+
+def crash_check(stack, service):
+    """Return a function that explains a crash-looping service container. Its
+    RPC only looks unavailable, so the wait would otherwise seem merely slow."""
+    state = stack.container_state(service)
+    baseline = state[0] if state else 0
+
+    def note():
+        state = stack.container_state(service)
+        if state is None:
+            return ""
+        restarts, status = state
+        if restarts <= baseline and status in ("running", "created"):
+            return ""
+        if restarts > baseline:
+            status += f", restarted {restarts - baseline} time(s) during this wait"
+        return (f"WARNING: the {service} container is {status}. Exit code 137 is usually an out-of-memory kill: check "
+                f"docker compose logs {service}, its exits (docs/operations.md#restart-monitoring) "
+                f"and {MEMORY_SETTINGS[service]} in .env")
+    return note
+
+
+def wait_for(label, action, diagnose=None):
     print("Waiting for " + label, flush=True)
     while True:
         try:
@@ -397,6 +435,9 @@ def wait_for(label, action):
             return
         except (Pending, subprocess.TimeoutExpired) as exc:
             print("  " + str(exc) + "; retrying in 5 seconds", flush=True)
+            note = diagnose() if diagnose else ""
+            if note:
+                print("  " + note, flush=True)
             time.sleep(5)
 
 
@@ -440,6 +481,7 @@ def start(stack, group=None):
         # new volume, so Compose could keep the container on the old volume.
         recreate = ["--force-recreate"] if stack.doge_volume_stale() else []
         stack.compose("up", "-d", *recreate, "dogecoin-node")
+    doge_crashes = None if stack.external_doge else crash_check(stack, "dogecoin-node")
 
     def doge_ready():
         info = stack.doge("getblockchaininfo")
@@ -448,10 +490,11 @@ def start(stack, group=None):
         if info.get("initialblockdownload") is not False or info.get("blocks", -1) < info.get("headers", 0):
             raise Pending("Dogecoin initial synchronization is incomplete")
         check_points(requirements(group, "dogecoin"), info["blocks"], lambda h: stack.doge("getblockhash", [h]))
-    wait_for("Dogecoin sync and checkpoints", doge_ready)
+    wait_for("Dogecoin sync and checkpoints", doge_ready, doge_crashes)
     if "l1-interface-init-fetch-sqlite" in stack.config["services"]:
         stack.compose("up", "-d", "--force-recreate", "l1-interface-init-fetch-sqlite")
     stack.compose("up", "-d", "l1-interface")
+    l1_crashes = crash_check(stack, "l1-interface")
     health, l1 = stack.endpoint(9090), stack.endpoint(8545)
 
     def l1_ready():
@@ -462,7 +505,7 @@ def start(stack, group=None):
         height = int(rpc(l1, "eth_blockNumber"), 16)
         check_points(requirements(group, "l1-interface"), height,
                      lambda h: (rpc(l1, "eth_getBlockByNumber", [hex(h), False]) or {}).get("hash"))
-    wait_for("L1 historical sync, replay readiness and checkpoints", l1_ready)
+    wait_for("L1 historical sync, replay readiness and checkpoints", l1_ready, l1_crashes)
     stack.compose("up", "-d", "--no-deps", "l2reth-node")
     print("L2Reth started; verify L2 sync before serving RPC traffic.")
 

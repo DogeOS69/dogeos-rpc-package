@@ -50,6 +50,7 @@ class FakeStack:
         self.doge_volume = ""
         self.existing_volumes = set()
         self.stale_volume = False
+        self.containers = {}
 
     def volume_exists(self, name):
         return name in self.existing_volumes
@@ -59,6 +60,9 @@ class FakeStack:
 
     def identity(self):
         return manifest()["identity"]
+
+    def container_state(self, service):
+        return self.containers.get(service)
 
     preflight = groups.Stack.preflight
 
@@ -353,6 +357,40 @@ class GroupTests(unittest.TestCase):
         calls = self.stack.calls
         self.assertLess(calls.index(("up", "-d", "dogecoin-node")), calls.index(("up", "-d", "l1-interface")))
         self.assertEqual(calls[-1], ("up", "-d", "--no-deps", "l2reth-node"))
+
+    def test_crash_looping_upstream_is_reported_while_waiting(self):
+        self.stack.ibd = True
+        self.stack.containers = {"dogecoin-node": (2, "running"), "l1-interface": (0, "running")}
+        attempts = []
+        def sleep(_):
+            attempts.append(1)
+            if len(attempts) == 1:
+                self.stack.containers["dogecoin-node"] = (3, "restarting")
+            else:
+                self.stack.ibd = False
+        def health(url):
+            return {"historical_sync": "completed", "ready": True}
+        def rpc(url, method, params=None):
+            return "0x14" if method == "eth_blockNumber" else {"hash": "0x" + "a" * 64}
+        output = io.StringIO()
+        with patch.object(groups.time, "sleep", sleep), patch.object(groups, "http_json", health), \
+                patch.object(groups, "rpc", rpc), redirect_stdout(output):
+            groups.start(self.stack, manifest())
+        lines = [line for line in output.getvalue().splitlines() if "WARNING" in line]
+        # Restarts before this start are not counted; a stable container gets no warning.
+        self.assertEqual(len(lines), 1)
+        self.assertIn("dogecoin-node container is restarting, restarted 1 time(s) during this wait", lines[0])
+        self.assertIn("DOGECOIN_MEM_LIMIT", lines[0])
+
+    def test_container_state_never_raises(self):
+        stack = groups.Stack.__new__(groups.Stack)
+        stack.command = ["docker", "compose"]
+        with patch.object(groups.subprocess, "run", side_effect=OSError("no docker")):
+            self.assertIsNone(stack.container_state("dogecoin-node"))
+        replies = [subprocess.CompletedProcess([], 0, stdout="0123abcd\n"),
+                   subprocess.CompletedProcess([], 0, stdout="4 restarting\n")]
+        with patch.object(groups.subprocess, "run", side_effect=replies):
+            self.assertEqual(stack.container_state("dogecoin-node"), (4, "restarting"))
 
     def test_l1_readiness_failure_keeps_l2_stopped(self):
         ready = [False]

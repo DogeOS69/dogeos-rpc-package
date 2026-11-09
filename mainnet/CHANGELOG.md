@@ -38,8 +38,9 @@ can list or restore groups. The schema-1 component index stays at
 
 Use `python3 scripts/snapshot-group.py start` for cold startup and recovery.
 It waits for Dogecoin initial sync, L1 startup/replay readiness, and recorded
-checkpoint hashes before starting downstream services. Group restores keep an
-interruption journal and require the same group on retry. Direct component
+checkpoint hashes before starting downstream services. While waiting, it warns
+when the Dogecoin or L1 Interface container restarts or stops, for example
+after an out-of-memory kill. Group restores keep an interruption journal and require the same group on retry. Direct component
 restore/reset refuses grouped data. L2Reth archive checks now reject forbidden
 subtrees even when tar directory headers are absent, plus links and duplicate
 members. See [Snapshots and Recovery](docs/snapshots.md).
