@@ -25,7 +25,7 @@ services:
       - "-datadir=/data"
       - "-printtoconsole"
   l2reth-node:
-    image: dogeos69/rollup-node:v0.3.0-beta.1c-ca.20261021.1-stateroot
+    image: dogeos69/rollup-node:v0.3.0-beta.1c-ca.20261021.1-stateroot@sha256:ae9af79d24d585edb0a644f246a62517318f9cd6ed872295e8d369c4dcc0429f
     restart: unless-stopped
     # Reth's own shutdown can take about 10 seconds, Docker's default, so a busy
     # node could be killed (exit 137) on stop or reboot.
