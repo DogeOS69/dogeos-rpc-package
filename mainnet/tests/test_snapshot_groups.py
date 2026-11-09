@@ -423,6 +423,23 @@ class GroupTests(unittest.TestCase):
             groups.restore(self.stack, group, True, True)
         self.assertEqual([c.args[0][-2] for c in run.call_args_list], ["l1-interface", "l2reth"])
 
+    def test_l2_genesis_mountpoint_is_not_chain_data(self):
+        # Docker creates this mountpoint when the l2reth container starts.
+        (self.path / "l2reth/genesis").mkdir(parents=True)
+        (self.path / "l2reth/genesis/genesis.json").touch()
+        l1_only = manifest()
+        l1_only["components"]["dogecoin"] = None
+        l1_only["components"]["l2reth"] = None
+        with patch.object(groups.subprocess, "run") as run:
+            groups.restore(self.stack, l1_only, False, True)
+        self.assertEqual([c.args[0][-2] for c in run.call_args_list], ["l1-interface"])
+        # Real chain data still counts.
+        (self.path / "l2reth/db").mkdir()
+        other = manifest()
+        other["group_id"] = "with-l2"
+        with self.assertRaisesRegex(ValueError, "--force"):
+            groups.restore(self.stack, other, False, True)
+
     def test_start_recreates_dogecoin_attached_to_another_volume(self):
         self.stack.stale_volume = True
         def health(url):

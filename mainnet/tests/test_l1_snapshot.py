@@ -166,13 +166,19 @@ class SnapshotTests(unittest.TestCase):
         fresh = subprocess.run(["sh", "-c", script], env=env, capture_output=True, text=True)
         self.assertEqual(fresh.returncode, 0, fresh.stderr)
 
-    def restore(self, bad_sqlite=False, fail_stop=False, component="l1-interface", missing_key=False):
+    def restore(self, bad_sqlite=False, fail_stop=False, component="l1-interface", missing_key=False,
+                genesis_only=False):
         package = self.root / "package" / NETWORK
         shutil.copytree(NETWORK_DIR / "scripts", package / "scripts")
         (package / ".env").write_text("# fixture; mocked Compose supplies resolved config\n")
         target = self.data / component
         target.mkdir(parents=True)
-        (target / "original").write_text("keep me")
+        if genesis_only:
+            # Mountpoint Docker creates for the package genesis file.
+            (target / "genesis").mkdir()
+            (target / "genesis/genesis.json").touch()
+        else:
+            (target / "original").write_text("keep me")
         if bad_sqlite:
             (self.source / "replay.sqlite").write_bytes(b"bad database")
         archive = self.archive()
@@ -218,7 +224,8 @@ class SnapshotTests(unittest.TestCase):
         self.restore_env = env
         self.fixture_package = package
         result = subprocess.run([
-            "bash", str(package / "scripts/restore-snapshot.sh"), "--no-start", "--force",
+            "bash", str(package / "scripts/restore-snapshot.sh"), "--no-start",
+            *([] if genesis_only else ["--force"]),
             "--snapshot-url", "https://example.invalid/" + archive.name,
             "--sha256", hashlib.sha256(archive.read_bytes()).hexdigest(), component,
         ], env=env, capture_output=True, text=True)
@@ -235,6 +242,15 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(reset.returncode, 0, reset.stdout + reset.stderr)
         self.assertEqual(key.read_bytes(), original)
         self.assertFalse(any(target.iterdir()))
+
+    def test_l2_genesis_mountpoint_needs_no_force(self):
+        result, target, _ = self.restore(component="l2reth", genesis_only=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue((target / "db/mdbx.dat").is_file())
+        # The mountpoint is moved aside like any other content, never deleted.
+        backups = list(self.data.glob("l2reth.backup-*"))
+        self.assertEqual(len(backups), 1)
+        self.assertTrue((backups[0] / "genesis/genesis.json").is_file())
 
     def test_legacy_restore_requires_explicit_index(self):
         # The default index.json is the schema-2 group catalog, which this

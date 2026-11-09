@@ -451,9 +451,16 @@ case "$COMPONENT" in
     ;;
 esac
 
-if [ -d "$TARGET_DIR" ] &&
-     find "$TARGET_DIR" -mindepth 1 -maxdepth 1 -print -quit | grep -q . &&
-     [ "$FORCE" != true ]; then
+# Docker creates l2reth/genesis/ as the mountpoint for the package genesis
+# file; that alone is not existing data and needs no --force. Activation still
+# moves any non-empty directory aside rather than deleting it.
+has_existing_data() {
+  local skip=""
+  [ "$COMPONENT" != l2reth ] || skip="$1/genesis"
+  find "$1" -mindepth 1 -maxdepth 1 ! -path "${skip:-$1}" -print -quit | grep -q .
+}
+
+if [ -d "$TARGET_DIR" ] && has_existing_data "$TARGET_DIR" && [ "$FORCE" != true ]; then
   fail "$TARGET_DIR is not empty; rerun with --force to keep it as a backup and restore the snapshot"
 fi
 

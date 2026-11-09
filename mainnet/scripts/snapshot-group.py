@@ -230,6 +230,16 @@ def dogecoin_volume(config):
     return (config.get("volumes") or {}).get(mount["source"], {}).get("name") or mount["source"]
 
 
+def has_data(path):
+    """Whether a component data directory holds data. Docker creates
+    l2reth/genesis/ as the mountpoint for the package genesis file; that alone
+    is not chain data (p2p-identity.py applies the same rule)."""
+    if not path.is_dir():
+        return path.exists()
+    ignored = {"genesis"} if path.name == "l2reth" else set()
+    return any(entry.name not in ignored for entry in path.iterdir())
+
+
 class Stack:
     def __init__(self, env_file):
         env_file = Path(env_file or ROOT / ".env").resolve()
@@ -472,8 +482,7 @@ def restore(stack, group, force, no_start):
                          ", or choose a group without Dogecoin")
     if not force:
         for component, entry in group["components"].items():
-            path = stack.data / component
-            if entry and component not in completed and path.exists() and any(path.iterdir()):
+            if entry and component not in completed and has_data(stack.data / component):
                 raise ValueError(component + " data exists; use --force to preserve it as a backup")
     for component, entry in group["components"].items():
         if entry is not None:
@@ -481,8 +490,7 @@ def restore(stack, group, force, no_start):
         # A saved snapshot receipt is only a lower bound once a retained node
         # has run. Never assume it captures the current downstream dependency.
         upstreams = COMPONENTS[:COMPONENTS.index(component)]
-        path = stack.data / component
-        if component != "dogecoin" and path.exists() and any(path.iterdir()) and any(
+        if component != "dogecoin" and has_data(stack.data / component) and any(
                 group["components"][upstream] is not None for upstream in upstreams):
             raise ValueError("cannot replace upstream while retaining live " + component +
                              " data with unknown current dependencies; include its snapshot in the group")

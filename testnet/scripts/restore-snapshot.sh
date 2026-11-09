@@ -468,15 +468,22 @@ case "$COMPONENT" in
     ;;
 esac
 
+# Docker creates l2reth/genesis/ as the mountpoint for the package genesis
+# file; that alone is not existing data and needs no --force. Activation still
+# moves any non-empty directory aside rather than deleting it.
+has_existing_data() {
+  local skip=""
+  [ "$COMPONENT" != l2reth ] || skip="$1/genesis"
+  find "$1" -mindepth 1 -maxdepth 1 ! -path "${skip:-$1}" -print -quit | grep -q .
+}
+
 if [ -n "$TARGET_VOLUME" ]; then
   docker info >/dev/null 2>&1 || fail "cannot reach the Docker daemon"
   if docker volume inspect "$TARGET_VOLUME" >/dev/null 2>&1; then
     fail "Docker volume $TARGET_VOLUME already exists. Keep it, set a new, unused
 DOGECOIN_VOLUME_NAME in $ENV_FILE_ABS to restore into, and rerun."
   fi
-elif [ -d "$TARGET_DIR" ] &&
-     find "$TARGET_DIR" -mindepth 1 -maxdepth 1 -print -quit | grep -q . &&
-     [ "$FORCE" != true ]; then
+elif [ -d "$TARGET_DIR" ] && has_existing_data "$TARGET_DIR" && [ "$FORCE" != true ]; then
   fail "$TARGET_DIR is not empty; rerun with --force to keep it as a backup and restore the snapshot"
 fi
 
