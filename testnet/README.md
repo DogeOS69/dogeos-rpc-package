@@ -30,12 +30,11 @@ a 32 GB host: the default service caps total 42 GB. Dogecoin and L1 Interface
 limits are adjustable with `DOGECOIN_MEM_LIMIT` and `L1_INTERFACE_MEM_LIMIT`.
 Swap is disabled, so a service that exceeds its limit can be OOM-killed.
 
-Do not lower `DOGECOIN_MEM_LIMIT` below its default reservation of 14 GB.
-Dogecoin loads the whole testnet block index (over 67 million blocks) into
-memory at startup and used more than 11 GB before it could serve RPC. Below
-that, it is OOM-killed (exit code 137) during "Loading block index" and
-restarts in a loop without logging an error. On a 32 GB host, lower
-`L2RETH_MEM_LIMIT` instead.
+Keep `DOGECOIN_MEM_LIMIT` at its default of 24 GB. Dogecoin loads the whole
+testnet block index (over 67 million blocks) into memory at startup and needed
+about 20 GB to finish loading it. With a 16 GB limit it was OOM-killed (exit
+code 137) during "Loading block index" and restarted in a loop without logging
+an error. On a 32 GB host, lower `L2RETH_MEM_LIMIT` instead.
 
 ## Before You Start
 
