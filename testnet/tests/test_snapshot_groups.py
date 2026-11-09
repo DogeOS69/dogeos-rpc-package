@@ -341,6 +341,55 @@ class GroupTests(unittest.TestCase):
                 groups.start(self.stack, manifest())
         self.assertNotIn(("up", "-d", "--no-deps", "l2reth-node"), self.stack.calls)
 
+    def upgrade_package(self):
+        # A later release changes service images and genesis fork settings.
+        for service in self.stack.config["services"].values():
+            service["image"] = "image:2"
+        self.stack.identity = lambda: {"genesis_sha256": "f" * 64, "protocol_context_sha256": "e" * 64}
+
+    def test_start_after_package_upgrade_keeps_checkpoint_gates(self):
+        groups.atomic_json(self.stack.state, {"status": "complete", "effective_manifest": manifest()})
+        self.upgrade_package()
+        def health(url):
+            return {"historical_sync": "completed", "ready": True}
+        def same_chain(url, method, params=None):
+            return "0x14" if method == "eth_blockNumber" else {"hash": "0x" + "a" * 64}
+        def other_chain(url, method, params=None):
+            return "0x14" if method == "eth_blockNumber" else {"hash": "0x" + "b" * 64}
+        with patch.object(groups, "http_json", health), patch.object(groups, "rpc", same_chain):
+            groups.start(self.stack)
+        self.assertEqual(self.stack.calls[-1], ("up", "-d", "--no-deps", "l2reth-node"))
+        # The saved checkpoints are still enforced after the upgrade.
+        self.stack.calls.clear()
+        with patch.object(groups, "http_json", health), patch.object(groups, "rpc", other_chain):
+            with self.assertRaisesRegex(ValueError, "hash mismatch"):
+                groups.start(self.stack)
+        self.assertNotIn(("up", "-d", "--no-deps", "l2reth-node"), self.stack.calls)
+
+    def test_partial_restore_retains_checkpoints_recorded_before_upgrade(self):
+        old = manifest()
+        groups.atomic_json(self.stack.state, {"status": "complete", "effective_manifest": old})
+        self.upgrade_package()
+        group = manifest()
+        group["group_id"] = "l2-only"
+        group["identity"] = self.stack.identity()
+        group["components"]["dogecoin"] = None
+        group["components"]["l1-interface"] = None
+        group["components"]["l2reth"]["compatible_images"] = ["image:2"]
+        with patch.object(groups.subprocess, "run") as run:
+            groups.restore(self.stack, group, True, True)
+        self.assertEqual([c.args[0][-2] for c in run.call_args_list], ["l2reth"])
+        effective = json.loads(self.stack.state.read_text())["effective_manifest"]
+        self.assertEqual(effective["identity"], group["identity"])
+        self.assertEqual(effective["components"]["dogecoin"], old["components"]["dogecoin"])
+        self.assertEqual(effective["components"]["l1-interface"], old["components"]["l1-interface"])
+        # A new group must still match the current package.
+        incompatible = copy.deepcopy(group)
+        incompatible["group_id"] = "old-image"
+        incompatible["components"]["l2reth"]["compatible_images"] = ["image:1"]
+        with self.assertRaisesRegex(ValueError, "image incompatible"):
+            groups.restore(self.stack, incompatible, True, True)
+
 
 if __name__ == "__main__":
     unittest.main()

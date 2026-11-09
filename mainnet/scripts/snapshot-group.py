@@ -379,8 +379,10 @@ def start(stack, group=None):
         state = json.loads(stack.state.read_text())
         require(state.get("status") == "complete", "interrupted group restore; finish the restore before starting")
         group = validate_manifest(state["effective_manifest"], NETWORK)
-    if group:
-        stack.preflight(group)
+    # Image and release-identity compatibility is checked once, when a group is
+    # restored. Package upgrades later change images and genesis fork settings;
+    # saved checkpoints remain lower bounds for the same chains, and the hash
+    # checks below still stop on upstream data from another chain.
     # Prevent existing downstream containers from running while an upstream
     # restored from older data catches up. This is an explicit maintenance start.
     stack.compose("stop", "l2reth-node", "l1-interface")
@@ -450,14 +452,15 @@ def restore(stack, group, force, no_start):
                              " data with unknown current dependencies; include its snapshot in the group")
         old_entry = old.get("components", {}).get(component)
         if old_entry:
-            require(old.get("identity") == group["identity"], "retained data has different protocol identity")
+            # Retained data has been running with the current package, so its
+            # recorded images and identity may predate an upgrade. Only its
+            # checkpoints carry over, as lower bounds.
             effective["components"][component] = old_entry
             effective["published_at"] = max((effective["published_at"], old["published_at"]), key=timestamp)
         print(component + ": no snapshot in this group; retain known data or initialize and sync")
     # Preserved entries may be older than this group's publication. Do not use
     # the selection timestamp to pretend they belong to the new capture run.
     validate_manifest(effective, NETWORK)
-    stack.preflight(effective)
     atomic_json(receipt, group)
     state = {"status": "restoring", "selected_manifest": group, "effective_manifest": effective,
              "retained_manifest": old, "applied": list(completed)}
