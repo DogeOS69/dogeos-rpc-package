@@ -149,8 +149,10 @@ Recommended follow-ups:
   port Dogecoin advertises. `NETWORK` is no longer needed.
 - **L2Reth image** `dogeos69/rollup-node:v0.3.0-beta.1c` →
   `v0.3.0-beta.1c-ca.20261021.1-stateroot` (DogeOS69/dogeos-rollup-node
-  `59bcd0ef`, which pins Reth with the trie seek-boundary fix). Chain data is
-  kept; `snapshot-group.py start` pulls the image and recreates `l2reth-node`.
+  `59bcd0ef`, which pins Reth with the trie seek-boundary fix), pinned by
+  digest (`@sha256:ae9af79d…`) for reproducible deployments, as in RPC Package
+  v0.1.1-testnet. Chain data is kept; `snapshot-group.py start` pulls the image
+  and recreates `l2reth-node`.
 - **Snapshots.** `scripts/snapshot-group.py` selects one schema-2 group, pins
   its component archives, checks compatibility and restores with dependency
   checkpoints. Use it for current deployments. The component script remains

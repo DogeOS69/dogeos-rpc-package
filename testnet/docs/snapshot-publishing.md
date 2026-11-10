@@ -96,7 +96,7 @@ Each non-null component requires:
 |-------|-------------|
 | `id`, `source_revision` | Identify the artifact and the producing source revision |
 | `captured_at` | UTC time the data stopped changing, not compression/upload completion |
-| `compatible_images` | Nonempty list of exact image references that can open the data |
+| `compatible_images` | Nonempty list of exact image references that can open the data, as `docker compose config --images` prints them (including any `@sha256:` digest) |
 | `checkpoint.height`, `checkpoint.hash` | Data tip: Dogecoin, synthetic L1, or L2 height and block hash |
 | `requires` | Dogecoin: `{}`; L1 Interface: `{"dogecoin": <checkpoint>}`; L2Reth: `{"l1-interface": <checkpoint>}` |
 | `archive.url`, `archive.sha256` | HTTPS `.tar.gz` URL and lowercase SHA-256 |
