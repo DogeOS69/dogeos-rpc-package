@@ -119,7 +119,9 @@ def validate_archive(archive, historical):
         require(name in files, f"snapshot is missing {name}")
     require("replay.artifacts/eth_da_artifacts" in directories,
             "snapshot is missing replay.artifacts/eth_da_artifacts/")
-    if historical != "none":
+    # A checksum-pinned artifact may be omitted: the Compose bootstrap job
+    # downloads and verifies it before L1 Interface starts.
+    if historical == "required":
         require(HISTORY in files, f"snapshot is missing {HISTORY}")
 
 
@@ -128,7 +130,7 @@ def validate_extracted(directory, historical):
     for name in DATABASES:
         require((root / name).is_file(), f"snapshot is missing {name}")
     require((root / "replay.artifacts/eth_da_artifacts").is_dir(), "missing DA artifact directory")
-    if historical != "none":
+    if historical == "required":
         require((root / HISTORY).is_file(), f"snapshot is missing {HISTORY}")
     for path in root.rglob("*"):
         require(not path.is_symlink(), f"symlink in extracted data: {path}")
@@ -143,7 +145,7 @@ def validate_extracted(directory, historical):
                         f"SQLite quick_check failed: {path}")
             finally:
                 conn.close()
-    if historical not in ("none", "required"):
+    if historical not in ("none", "required") and (root / HISTORY).is_file():
         digest = hashlib.sha256()
         with (root / HISTORY).open("rb") as stream:
             for chunk in iter(lambda: stream.read(1024 * 1024), b""):

@@ -169,7 +169,7 @@ l1-interface/
     eth_da_artifacts.sqlite
     eth_da_artifacts/                  # include even if empty
     ...
-  l1-interface-historical-artifact.sqlite  # when configured
+  l1-interface-historical-artifact.sqlite  # optional on testnet
 ```
 
 Take every L1 file from the same stopped instance. Preserve the full artifact
@@ -179,7 +179,11 @@ stop. Never delete WAL files to make an archive pass validation. Exclude
 `replay.sqlite.bootstrap-source.json` provenance file may be included.
 
 Restore checks fixed runtime paths and mounts, required archive files, and
-read-only SQLite `quick_check` before activating L1 data. Testnet also verifies the historical artifact against the checksum in its pinned bootstrap URL.
+read-only SQLite `quick_check` before activating L1 data. The testnet historical
+artifact is immutable and pinned by checksum in the bootstrap URL, so an archive
+may omit it: the one-shot initializer downloads and verifies it before L1
+Interface starts. When an archive includes it, restore verifies it against that
+checksum.
 These checks do not establish semantic consistency between the databases,
 replay and DA artifacts. Test actual historical RPC and DA reads after restore.
 

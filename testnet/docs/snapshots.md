@@ -205,13 +205,15 @@ l1-interface/
     eth_da_artifacts.sqlite
     eth_da_artifacts/
     ...
-  l1-interface-historical-artifact.sqlite  # when configured
+  l1-interface-historical-artifact.sqlite  # optional in a snapshot
 ```
 
 These files are one unit from one stopped instance. Never mix databases or
 artifacts from different captures. The package supplies configuration and
 genesis outside the archive. Restore checks fixed mounts/paths, archive
-members, SQLite integrity and the pinned testnet historical-file checksum. These checks do not prove
+members, SQLite integrity and, when the snapshot includes the historical file,
+its pinned checksum. A snapshot may omit that file; the one-shot initializer
+then downloads and verifies it on the next start. These checks do not prove
 semantic consistency of replay and referenced DA artifacts; the publisher
 must test restore/start and historical data reads with the intended image.
 

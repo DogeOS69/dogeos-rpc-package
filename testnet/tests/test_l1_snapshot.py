@@ -71,7 +71,7 @@ class SnapshotTests(unittest.TestCase):
         validator.validate_extracted(self.source, "none")
 
     def test_missing_files_rejected(self):
-        for name in (*validator.DATABASES, validator.HISTORY):
+        for name in validator.DATABASES:
             with self.subTest(name=name):
                 path = self.source / name
                 original = path.read_bytes()
@@ -79,6 +79,19 @@ class SnapshotTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     validator.validate_archive(self.archive(), self.history)
                 path.write_bytes(original)
+
+    def test_pinned_history_may_be_omitted(self):
+        # The bootstrap job downloads and verifies a checksum-pinned artifact.
+        (self.source / validator.HISTORY).unlink()
+        validator.validate_archive(self.archive(), self.history)
+        validator.validate_extracted(self.source, self.history)
+
+    def test_unpinned_history_is_required(self):
+        (self.source / validator.HISTORY).unlink()
+        with self.assertRaises(ValueError):
+            validator.validate_archive(self.archive(), "required")
+        with self.assertRaises(ValueError):
+            validator.validate_extracted(self.source, "required")
 
     def test_missing_blob_directory_rejected(self):
         (self.source / "replay.artifacts/eth_da_artifacts").rmdir()
