@@ -2,8 +2,10 @@
 set -euo pipefail
 
 # Update these two values together when publishing a newer testnet snapshot.
-DEFAULT_SNAPSHOT_URL="https://dogeos-rpc-snapshots.s3.us-west-2.amazonaws.com/testnet/l2reth/dogeos-l2reth-testnet-20260828014612.tar.gz"
-DEFAULT_SNAPSHOT_SHA256="20bd404a9e1fdfd38a75e7a2d8cd8d5ebdf272fdea7ed45ede82c1c07548c48a"
+# This archive belongs to the same snapshot set as the L1 Interface archive
+# pinned in restore-l1-interface-snapshot.sh.
+DEFAULT_SNAPSHOT_URL="https://dogeos-rpc-snapshots.s3.us-west-2.amazonaws.com/testnet/l2reth/dogeos-l2reth-testnet-20261114024603.tar.gz"
+DEFAULT_SNAPSHOT_SHA256="602a43553c8bc572702b794f5b6760633d0fdb7feeb0ddcb12383c2bb548e184"
 
 usage() {
   cat <<'USAGE'
@@ -247,7 +249,11 @@ for forbidden_path in \
   "l2reth/reth.toml" \
   "l2reth/lost+found" \
   "l2reth/genesis" \
-  "l2reth/protocol_context.json"
+  "l2reth/protocol_context.json" \
+  "l2reth/known-peers.json" \
+  "l2reth/discovery-secret" \
+  "l2reth/db/lock" \
+  "l2reth/db/mdbx.lck"
 do
   if grep -Fxq "$forbidden_path" "$LISTING_PATH" ||
      grep -Fxq "$forbidden_path/" "$LISTING_PATH"; then
@@ -259,12 +265,23 @@ if grep -Eq '(^|/)(nodekey|keystore[^/]*)(/|$)' "$LISTING_PATH"; then
   fail "snapshot contains a P2P node key or keystore path"
 fi
 
+if grep -Eq '(-wal|-shm|-journal)$' "$LISTING_PATH"; then
+  fail "snapshot contains a SQLite sidecar file"
+fi
+
+# RocksDB info logs record the source host; numbered *.log WAL files are data.
+if grep -Eq '^l2reth/rocksdb/(LOG|LOG\.old\..*|LOCK)$' "$LISTING_PATH"; then
+  fail "snapshot contains RocksDB info logs or a lock file"
+fi
+
 grep -Fxq "l2reth/db/mdbx.dat" "$LISTING_PATH" ||
   fail "snapshot does not contain l2reth/db/mdbx.dat"
 grep -Fxq "l2reth/db/scroll.db" "$LISTING_PATH" ||
   fail "snapshot does not contain l2reth/db/scroll.db"
 grep -Eq '^l2reth/static_files(/|$)' "$LISTING_PATH" ||
   fail "snapshot does not contain l2reth/static_files"
+grep -Eq '^l2reth/rocksdb(/|$)' "$LISTING_PATH" ||
+  fail "snapshot does not contain l2reth/rocksdb"
 
 if [ -d "$TARGET_DIR" ] &&
    find "$TARGET_DIR" -mindepth 1 -maxdepth 1 -print -quit | grep -q .; then
@@ -288,6 +305,8 @@ tar --extract --gzip --file "$ARCHIVE_PATH" \
   fail "extracted snapshot is missing db/mdbx.dat"
 [ -f "$STAGING_DIR/l2reth/db/scroll.db" ] ||
   fail "extracted snapshot is missing db/scroll.db"
+[ -d "$STAGING_DIR/l2reth/rocksdb" ] ||
+  fail "extracted snapshot is missing rocksdb"
 
 cd "$REPO_ROOT"
 COMPOSE=(docker compose --env-file "$ENV_FILE_ABS")
