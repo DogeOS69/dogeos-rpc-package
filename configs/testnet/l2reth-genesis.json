@@ -49,7 +49,7 @@
         "l2SystemConfigAddress": "0x2669B071E88e272CBDA1e12182D8C754CB737400",
         "numL1MessagesPerBlock": 10,
         "systemContractAddress": "0x2000369731833cBf00e97146999442ADf10a4E59",
-        "startL1Block": 62379161
+        "startL1Block": 14023282
       },
       "genesisStateRoot": null,
       "missingHeaderFieldsSHA256": null,
