@@ -34,6 +34,35 @@ The package includes a public Ethereum RPC default. For another provider, follow
 [Custom Ethereum RPC](README.md#custom-ethereum-rpc). Bundled Dogecoin credentials
 come from `.env.testnet`; keep their existing values when recovering a node.
 
+## Snapshot Set
+
+The published Dogecoin, L1 Interface, and L2Reth snapshots form one versioned
+set. They were captured from the same testnet data path within one minute,
+downstream first (L2Reth, then L1 Interface, then Dogecoin), so every service
+starts at or behind the service it reads from:
+
+| Component | Archive | Checkpoint | Compressed | Restore command |
+|-----------|---------|------------|------------|-----------------|
+| Dogecoin | `dogeos-dogecoin-testnet-20261114024603.tar.gz` | block 68,064,104 | 23.20 GiB | [Dogecoin snapshot guide](snapshot_dogecoin_testnet.md) |
+| L1 Interface | `dogeos-l1-interface-testnet-20261114024603.tar.gz` | Dogecoin 68,063,954 indexed (60 confirmations); L1 block 38,711,521 | 2.03 GiB | `./scripts/restore-l1-interface-snapshot.sh` |
+| L2Reth | `dogeos-l2reth-testnet-20261114024603.tar.gz` | L2 block 9,456,342; L1 block 38,711,520 | 11.66 GiB | `./scripts/restore-l2reth-snapshot.sh` |
+
+Restore in this order: Dogecoin, L1 Interface, L2Reth. The scripts pin each
+archive URL with its SHA-256; each archive also has a `.sha256` file and a
+`.manifest.json` with its checkpoint, contents, and validation record next to
+it in the bucket.
+
+The L1 Interface must never start ahead of its Dogecoin node. Its snapshot
+requires Dogecoin at block **68,064,014** or higher. A Dogecoin node restored
+from the snapshot above, or an existing node that is synced, satisfies this.
+L2Reth waits for the L1 Interface RPC, which becomes available only after the
+L1 Interface finishes its historical catch-up.
+
+You do not have to restore every component. An existing, healthy Dogecoin node
+keeps its volume. Without the L1 Interface snapshot, the L1 Interface rebuilds
+its data from the bootstrap files instead (see
+[L1 Interface Recovery](#l1-interface-recovery)), which takes longer.
+
 ## L2Reth Snapshot (Recommended)
 
 The repository includes a one-command restore script with a versioned public
@@ -55,13 +84,15 @@ support. It performs the following workflow:
 6. Stops `l2reth-node`, activates `${DATA_ROOT}/l2reth`, and starts the complete
    testnet stack, including the user's Compose Dogecoin node.
 
-The archive contains Reth databases and static files under one `l2reth/` root.
-It intentionally excludes:
+The archive contains the Reth database (`db/mdbx.dat`), the rollup-node
+database (`db/scroll.db`), `static_files/`, and `rocksdb/` under one `l2reth/`
+root. It intentionally excludes:
 
 - `genesis.json` and `protocol_context.json`
 - `jwt.hex`
-- P2P node keys and keystores
-- the source environment's `reth.toml`
+- P2P node keys, the discovery secret, and keystores
+- the source environment's `reth.toml` and cached peer list (`known-peers.json`)
+- database locks, SQLite sidecar files, and RocksDB info logs
 
 Genesis, hardfork times, peer configuration, P2P network ID, and runtime flags
 come from the supplied repository configuration. The first Reth startup may
@@ -116,6 +147,44 @@ fresh download.
 
 </details>
 
+## L1 Interface Snapshot
+
+Use this to start the L1 Interface from the published snapshot set instead of
+rebuilding its data from the bootstrap files. Restore Dogecoin first if it has
+no chain data, and restore L2Reth from the same set afterwards.
+
+```bash
+./scripts/restore-l1-interface-snapshot.sh --no-start .env.testnet
+```
+
+The script performs the same download, SHA-256, archive-path, and staging
+checks as the L2Reth script. The archive contains only:
+
+```text
+l1-interface/
+├── l1-interface.sqlite   # DOGEOS_L1_INTERFACE_DATABASE_URL
+├── replay.sqlite         # DOGEOS_L1_INTERFACE_REPLAY_READ__SQLITE_PATH
+└── replay.artifacts/     # derived from the replay database path
+```
+
+These paths match `envs/testnet/l1-interface.env` with `${DATA_ROOT}/l1-interface`
+mounted at `/data`; do not change those settings when using the snapshot. The
+archive contains no configuration or credentials. The pinned historical artifact
+is not included; the Compose init job downloads and verifies it, and keeps the
+restored replay database.
+
+By default, the script refuses a non-empty `${DATA_ROOT}/l1-interface`. Use
+`--force` to move the old directory to a timestamped backup. With `--no-start`,
+start `dogecoin-node` first and confirm that `getblockcount` reports at least
+68,064,014 before starting the remaining services. Without `--no-start`, the
+script starts `dogecoin-node`, waits for that height, and then starts the stack.
+The health endpoint reports `"status":"ready"` once the L1 Interface has
+caught up:
+
+```bash
+curl http://localhost:9090/health
+```
+
 ## Dogecoin Node Recovery
 
 For a new node or recovery into a new volume, use the
@@ -147,9 +216,10 @@ destinations differ.
 ## L1 Interface Recovery
 
 Do not restore a pre-v0.3.0 L1 Interface database into the current release. The
-storage format changed in v0.3.0. The supported recovery path is to preserve the
-old directory and let the Compose init job download the pinned, verified
-historical artifact and replay bootstrap database again.
+storage format changed in v0.3.0. Either restore the
+[L1 Interface snapshot](#l1-interface-snapshot), or preserve the old directory
+and let the Compose init job download the pinned, verified historical artifact
+and replay bootstrap database again, as described below.
 
 The supplied testnet configuration includes the public Ethereum RPC default.
 If the deployment needs another provider, configure

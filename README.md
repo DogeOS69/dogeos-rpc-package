@@ -155,27 +155,34 @@ The package uses `https://ethereum-sepolia-rpc.publicnode.com` by default.
 No extra configuration is required. If you need a different provider, follow
 [Custom Ethereum RPC](#custom-ethereum-rpc) before starting the stack.
 
-### 3. Restore the L2Reth Snapshot (Recommended for New Nodes)
+### 3. Restore the Snapshots (Recommended for New Nodes)
 
 If the bundled Dogecoin node has no existing chain data, first follow the
 [Dogecoin testnet snapshot guide](snapshot_dogecoin_testnet.md) to restore its
 chain data into a new named volume. Existing Dogecoin nodes should keep their
 current volume; they do not need snapshot replacement.
 
-For a new testnet RPC node, restore the published L2Reth database instead of
-syncing from genesis:
+For a new testnet RPC node, restore the published L1 Interface and L2Reth
+databases instead of rebuilding them from scratch. Both belong to the same
+[snapshot set](snapshot_testnet.md#snapshot-set) and are restored in this
+order:
 
 ```bash
+./scripts/restore-l1-interface-snapshot.sh --no-start .env.testnet
 ./scripts/restore-l2reth-snapshot.sh --no-start .env.testnet
 ```
 
-The script downloads the published snapshot, verifies its SHA-256 and archive
-layout, and restores it to `${DATA_ROOT}/l2reth`. Downloads are resumable and
-cached under `${DATA_ROOT}/.snapshot-cache`. `--no-start` leaves service startup
-for the next step.
+The scripts download the published snapshots, verify their SHA-256 and archive
+layout, and restore them to `${DATA_ROOT}/l1-interface` and `${DATA_ROOT}/l2reth`.
+Downloads are resumable and cached under `${DATA_ROOT}/.snapshot-cache`.
+`--no-start` leaves service startup for the next step. The L1 Interface snapshot
+requires Dogecoin at block 68,064,014 or higher before `l1-interface` starts; a
+Dogecoin node restored from the snapshot above meets this. The L1 Interface
+snapshot is optional: without it, the L1 Interface initializes from its bootstrap
+files on first start, which takes longer.
 
-See the [testnet snapshot guide](snapshot_testnet.md#l2reth-snapshot-recommended)
-for replacement and recovery options.
+See the [testnet snapshot guide](snapshot_testnet.md) for replacement and
+recovery options.
 
 ### 4. Start Services
 

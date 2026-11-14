@@ -11,15 +11,17 @@ require restoring or replacing Dogecoin data.
 |----------|-------|
 | Network | Dogecoin testnet (`testnet3` data directory) |
 | Dogecoin Core | `1.14.9`, with `txindex=1`, unpruned |
-| Source snapshot time | 2026-09-08 19:45:12 UTC |
-| Validated block height | 67,878,838 |
-| Validated block hash | `550c9202f0f15266c13f2de4f3c8bbbd7f4010a20f59cb9aa5aebee504da2385` |
-| Compressed size | 25,313,829,142 bytes (23.58 GiB) |
-| SHA-256 | `639b8ed83bad78795d3cc06c9f528e2e6ed604dd76b077ebdbd17b3477549320` |
+| Snapshot set | `20261114024603` (with the [L2Reth and L1 Interface snapshots](snapshot_testnet.md#snapshot-set)) |
+| Source snapshot time | 2026-11-14 02:46:51 UTC |
+| Validated block height | 68,064,104 |
+| Validated block hash | `fcda97b5b45e6b6ace3427dc4f2a11caeb7c16aa4ee8e0ccf35ce9e9ba257cb7` |
+| Compressed size | 24,915,712,616 bytes (23.20 GiB) |
+| Uncompressed size | 43,735,945,036 bytes (40.73 GiB) |
+| SHA-256 | `27296d839a6b841a4c847cc64550766650c13edf48e80c5ccf989e705494b19e` |
 
-- [Download the snapshot](https://dogeos-rpc-snapshots.s3.us-west-2.amazonaws.com/testnet/dogecoin/dogeos-dogecoin-testnet-20260908194510.tar.gz)
-- [SHA-256 checksum](https://dogeos-rpc-snapshots.s3.us-west-2.amazonaws.com/testnet/dogecoin/dogeos-dogecoin-testnet-20260908194510.tar.gz.sha256)
-- [Snapshot manifest](https://dogeos-rpc-snapshots.s3.us-west-2.amazonaws.com/testnet/dogecoin/dogeos-dogecoin-testnet-20260908194510.manifest.json)
+- [Download the snapshot](https://dogeos-rpc-snapshots.s3.us-west-2.amazonaws.com/testnet/dogecoin/dogeos-dogecoin-testnet-20261114024603.tar.gz)
+- [SHA-256 checksum](https://dogeos-rpc-snapshots.s3.us-west-2.amazonaws.com/testnet/dogecoin/dogeos-dogecoin-testnet-20261114024603.tar.gz.sha256)
+- [Snapshot manifest](https://dogeos-rpc-snapshots.s3.us-west-2.amazonaws.com/testnet/dogecoin/dogeos-dogecoin-testnet-20261114024603.manifest.json)
 
 The archive contains only:
 
@@ -31,7 +33,7 @@ dogecoin/
 ```
 
 It excludes wallets, wallet backups, RPC credentials, configuration, peer
-identity/state, cookies, and application logs. Runtime configuration and RPC
+identity/state, mempool and fee estimates, cookies, and application logs. Runtime configuration and RPC
 credentials come from your local RPC package. This is not a wallet backup.
 
 ## Restore into a New Volume
@@ -70,8 +72,8 @@ if docker volume inspect "$DOGECOIN_VOLUME_NAME" >/dev/null 2>&1; then
 fi
 
 SNAPSHOT_DIR="$DATA_ROOT/.snapshot-cache/dogecoin"
-SNAPSHOT_FILE=dogeos-dogecoin-testnet-20260908194510.tar.gz
-SNAPSHOT_SHA256=639b8ed83bad78795d3cc06c9f528e2e6ed604dd76b077ebdbd17b3477549320
+SNAPSHOT_FILE=dogeos-dogecoin-testnet-20261114024603.tar.gz
+SNAPSHOT_SHA256=27296d839a6b841a4c847cc64550766650c13edf48e80c5ccf989e705494b19e
 mkdir -p "$SNAPSHOT_DIR"
 curl --fail --location --retry 5 --continue-at - \
   --output "$SNAPSHOT_DIR/$SNAPSHOT_FILE" \
@@ -144,7 +146,7 @@ docker compose --env-file .env.testnet exec -T dogecoin-node \
 
 docker compose --env-file .env.testnet exec -T dogecoin-node \
   /dogecoin/bin/dogecoin-cli -conf=/run/dogeos/dogecoin.conf \
-  -datadir=/data getblockhash 67878838
+  -datadir=/data getblockhash 68064104
 
 docker compose --env-file .env.testnet exec -T dogecoin-node \
   /dogecoin/bin/dogecoin-cli -conf=/run/dogeos/dogecoin.conf \
@@ -163,6 +165,8 @@ contains no wallet, Dogecoin can create a new local wallet on startup. Restore
 your own wallet separately if you need one; a chain snapshot cannot recover
 wallet keys.
 
-After Dogecoin is ready, continue with [L2Reth restoration](snapshot_testnet.md#l2reth-snapshot-recommended)
-or start the complete stack. Keep any previous Dogecoin volume until recovery
+After Dogecoin is ready, continue with the
+[L1 Interface snapshot](snapshot_testnet.md#l1-interface-snapshot) and then the
+[L2Reth snapshot](snapshot_testnet.md#l2reth-snapshot-recommended), or start the
+complete stack. Keep any previous Dogecoin volume until recovery
 is accepted.
