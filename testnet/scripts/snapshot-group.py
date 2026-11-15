@@ -75,10 +75,11 @@ def validate_manifest(group, network):
         if entry is None:
             continue
         require(isinstance(entry, dict), "component must be an object or null")
-        require(isinstance(entry.get("id"), str) and entry["id"], "component id is required")
+        # Publication labels: restore and start never read them.
+        for key in ("id", "source_revision"):
+            require(key not in entry or (isinstance(entry[key], str) and entry[key]),
+                    key + " must be a nonempty string when present")
         require(timestamp(entry.get("captured_at")) <= published, "capture must precede publication")
-        require(isinstance(entry.get("source_revision"), str) and entry["source_revision"],
-                "source_revision is required")
         images = entry.get("compatible_images")
         require(isinstance(images, list) and images and all(isinstance(x, str) and x for x in images),
                 "compatible_images must be a nonempty list")
@@ -339,10 +340,11 @@ class Stack:
         require(not (self.external_doge and group["components"]["dogecoin"]),
                 "cannot restore bundled Dogecoin while L1 is configured to use an external node")
 
-    def endpoint(self, target):
-        ports = self.config["services"]["l1-interface"].get("ports", [])
+    def endpoint(self, target, service="l1-interface"):
+        ports = self.config["services"][service].get("ports", [])
         match = next((p for p in ports if int(p["target"]) == target), None)
-        require(match is not None, "L1 port must be published for host startup checks: " + str(target))
+        require(match is not None, ("L1" if service == "l1-interface" else "L2Reth") +
+                " port must be published for host startup checks: " + str(target))
         host = match.get("host_ip") or "127.0.0.1"
         if host in ("0.0.0.0", "::"):
             host = "127.0.0.1"
@@ -406,7 +408,8 @@ class Pending(Exception):
     pass
 
 
-MEMORY_SETTINGS = {"dogecoin-node": "DOGECOIN_MEM_LIMIT", "l1-interface": "L1_INTERFACE_MEM_LIMIT"}
+MEMORY_SETTINGS = {"dogecoin-node": "DOGECOIN_MEM_LIMIT", "l1-interface": "L1_INTERFACE_MEM_LIMIT",
+                   "l2reth-node": "L2RETH_MEM_LIMIT"}
 
 
 def crash_check(stack, service):
@@ -467,6 +470,38 @@ def check_points(points, height, get_hash):
                 "checkpoint hash mismatch at height " + str(point["height"]) + "; downstream remains stopped")
 
 
+def check_l2_checkpoint(stack, group):
+    """Compare the L2 checkpoint hash once L2Reth serves RPC. Nothing can read
+    it from the stopped database, so this runs after the start and stops the
+    node again when it serves another chain."""
+    entry = (group or {}).get("components", {}).get("l2reth")
+    if not entry:
+        return
+    point = entry["checkpoint"]
+    try:
+        l2 = stack.endpoint(8545, "l2reth-node")
+    except ValueError:
+        print("L2Reth checkpoint not verified: its HTTP RPC port is not published to this host.")
+        return
+    crashes = crash_check(stack, "l2reth-node")
+
+    def l2_ready():
+        height = int(rpc(l2, "eth_blockNumber"), 16)
+        if height < point["height"]:
+            # Retained or reset data may legitimately be syncing towards the
+            # checkpoint; a hash can only be compared once the block exists.
+            print("L2Reth checkpoint not verified: head " + str(height) + " is below checkpoint height " +
+                  str(point["height"]))
+            return
+        actual = (rpc(l2, "eth_getBlockByNumber", [hex(point["height"]), False]) or {}).get("hash") or ""
+        if actual.removeprefix("0x").lower() != point["hash"]:
+            stack.compose("stop", "l2reth-node")
+            raise ValueError("L2Reth checkpoint hash mismatch at height " + str(point["height"]) +
+                             "; l2reth-node was stopped")
+        print("L2Reth checkpoint verified at height " + str(point["height"]))
+    wait_for("L2Reth RPC and checkpoint", l2_ready, crashes)
+
+
 def start(stack, group=None):
     if group is None and stack.state.exists():
         state = json.loads(stack.state.read_text())
@@ -510,6 +545,7 @@ def start(stack, group=None):
                      lambda h: (rpc(l1, "eth_getBlockByNumber", [hex(h), False]) or {}).get("hash"))
     wait_for("L1 historical sync, replay readiness and checkpoints", l1_ready, l1_crashes)
     stack.compose("up", "-d", "--no-deps", "l2reth-node")
+    check_l2_checkpoint(stack, group)
     print("L2Reth started; verify L2 sync before serving RPC traffic.")
 
 

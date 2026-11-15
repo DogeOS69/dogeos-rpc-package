@@ -86,7 +86,7 @@ from the frozen source data.
 |-------|-------------|
 | `schema_version` | `2` |
 | `group_id`, `network`, `published_at` | Match the catalog descriptor and network; timestamp is UTC with `Z` |
-| `identity.genesis_sha256` | SHA-256 of the exact package L2 genesis file bytes |
+| `identity.genesis_sha256` | SHA-256 of the exact package L2 genesis file bytes. Any byte change to that file, including settings that leave the genesis block hash unchanged, makes published groups incompatible; publish a group only against a released genesis file |
 | `identity.protocol_context_sha256` | SHA-256 of the exact package protocol-context file bytes |
 | `components` | All three keys: `dogecoin`, `l1-interface`, `l2reth`; use JSON `null` for no snapshot |
 
@@ -94,14 +94,14 @@ Each non-null component requires:
 
 | Field | Requirement |
 |-------|-------------|
-| `id`, `source_revision` | Identify the artifact and the producing source revision |
+| `id`, `source_revision` | Optional labels for publication records: an artifact name and the image or revision that wrote the data. Nonempty strings when present; restore and start never read them |
 | `captured_at` | UTC time the data stopped changing, not compression/upload completion |
 | `compatible_images` | Nonempty list of exact image references that can open the data, as `docker compose config --images` prints them (including any `@sha256:` digest) |
-| `checkpoint.height`, `checkpoint.hash` | Data tip: Dogecoin, synthetic L1, or L2 height and block hash |
+| `checkpoint.height`, `checkpoint.hash` | Data tip: Dogecoin, synthetic L1, or L2 height and block hash. Dogecoin and L1 hashes gate the staged start; the L2 hash is compared once L2Reth serves RPC, and a mismatch stops `l2reth-node` |
 | `requires` | Dogecoin: `{}`; L1 Interface: `{"dogecoin": <checkpoint>}`; L2Reth: `{"l1-interface": <checkpoint>}` |
 | `archive.url`, `archive.sha256` | HTTPS `.tar.gz` URL and lowercase SHA-256 |
 | `archive.size_bytes`, `archive.uncompressed_bytes` | Positive download and extracted-size values for disk checks |
-| `replay` | L1 only: `validated_up_to`, `discovered_up_to`, and `state_hash` |
+| `replay` | L1 only: `validated_up_to`, `discovered_up_to`, and `state_hash`. Copy them from the `replay_manifest` row of the captured `replay.sqlite` (`state_hash` is its `validated_tip_state_hash`); a group restore compares all three with the extracted database before replacing data |
 
 Heights are nonnegative JSON integers. Hashes are 64 lowercase hex characters
 without `0x`. All present components inherit the group network and protocol
@@ -186,7 +186,9 @@ replay and DA artifacts. Test actual historical RPC and DA reads after restore.
 ### L1 Interface Publication Metadata
 
 The L1 component's `checkpoint` identifies the synthetic L1 tip and `requires`
-identifies its Dogecoin dependency. Include replay progress and state hash.
+identifies its Dogecoin dependency. Include replay progress and state hash,
+read from the frozen `replay.sqlite`; a group whose values differ from its
+archive cannot be restored.
 Record bootstrap identity, source image/revision, and the results of clean
 shutdown, integrity checks and restore/start testing in publication records.
 All three component checkpoints and dependency hashes must come from the

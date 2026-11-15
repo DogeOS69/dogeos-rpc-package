@@ -52,6 +52,7 @@ class FakeStack:
         self.existing_volumes = set()
         self.stale_volume = False
         self.containers = {}
+        self.l2_published = True
 
     def volume_exists(self, name):
         return name in self.existing_volumes
@@ -70,7 +71,11 @@ class FakeStack:
     def compose(self, *args):
         self.calls.append(args)
 
-    def endpoint(self, port):
+    def endpoint(self, port, service="l1-interface"):
+        if service == "l2reth-node":
+            if not self.l2_published:
+                raise ValueError("L2Reth port must be published for host startup checks: " + str(port))
+            return "http://l2:" + str(port)
         return "http://l1:" + str(port)
 
     def doge(self, method, params=None):
@@ -206,6 +211,18 @@ class GroupTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 groups.validate_manifest(group, ROOT.name)
 
+    def test_publication_labels_are_optional(self):
+        group = manifest()
+        for entry in group["components"].values():
+            del entry["id"], entry["source_revision"]
+        groups.validate_manifest(group, ROOT.name)
+        for key in ("id", "source_revision"):
+            for value in ("", 7):
+                group = manifest()
+                group["components"]["l2reth"][key] = value
+                with self.assertRaisesRegex(ValueError, key):
+                    groups.validate_manifest(group, ROOT.name)
+
     def test_older_upstream_allowed_but_gate_waits(self):
         group = manifest()
         group["components"]["dogecoin"]["checkpoint"]["height"] = 90
@@ -257,7 +274,8 @@ class GroupTests(unittest.TestCase):
         self.assertEqual(json.loads(self.stack.state.read_text())["status"], "complete")
         self.assertFalse(any(c[0] == "up" for c in self.stack.calls))
 
-    def test_group_runs_real_component_restore_with_pinned_metadata(self):
+    def real_l1_group(self):
+        """A one-component group over the L1 fixture archive, restored by the real worker."""
         from test_l1_snapshot import SnapshotTests
         fixture = SnapshotTests()
         fixture.setUp()
@@ -282,12 +300,26 @@ class GroupTests(unittest.TestCase):
         env = dict(PATH=str(fixture.root / "bin") + os.pathsep + os.environ["PATH"],
                    TEST_CONFIG=str(fixture.root / "config.json"), TEST_STOP=str(stop_log),
                    TEST_FAIL_STOP="0", PYTHONDONTWRITEBYTECODE="1")
-        with patch.object(groups, "ROOT", package), patch.dict(os.environ, env):
+        return stack, group, target, patch.object(groups, "ROOT", package), patch.dict(os.environ, env)
+
+    def test_group_runs_real_component_restore_with_pinned_metadata(self):
+        stack, group, target, package, env = self.real_l1_group()
+        with package, env:
             groups.restore(stack, group, True, True)
         self.assertTrue((target / "replay.sqlite").exists())
         state = json.loads(stack.state.read_text())
         self.assertEqual(state["applied"], ["l1-interface"])
         self.assertEqual(state["status"], "complete")
+
+    def test_group_replay_mismatch_keeps_existing_l1_data(self):
+        stack, group, target, package, env = self.real_l1_group()
+        group["components"]["l1-interface"]["replay"]["state_hash"] = "d" * 64
+        (target / "marker").write_text("live data")
+        with package, env, self.assertRaises(subprocess.CalledProcessError):
+            groups.restore(stack, group, True, True)
+        self.assertEqual((target / "marker").read_text(), "live data")
+        state = json.loads(stack.state.read_text())
+        self.assertEqual((state["status"], state["applied"]), ("restoring", []))
 
     def test_failed_restore_blocks_start_and_different_group(self):
         with patch.object(groups.subprocess, "run", side_effect=subprocess.CalledProcessError(1, ["restore"])):
@@ -428,6 +460,52 @@ class GroupTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "hash mismatch"):
                 groups.start(self.stack, manifest())
         self.assertNotIn(("up", "-d", "--no-deps", "l2reth-node"), self.stack.calls)
+
+    def start_with_l2(self, l2_height, l2_hash):
+        """Run a start whose upstream gates pass; return its output."""
+        def health(url):
+            return {"historical_sync": "completed", "ready": True}
+        def rpc(url, method, params=None):
+            if url.startswith("http://l2:"):
+                return hex(l2_height) if method == "eth_blockNumber" else {"hash": "0x" + l2_hash}
+            return "0x14" if method == "eth_blockNumber" else {"hash": "0x" + "a" * 64}
+        output = io.StringIO()
+        with patch.object(groups, "http_json", health), patch.object(groups, "rpc", rpc), redirect_stdout(output):
+            groups.start(self.stack, manifest())
+        return output.getvalue()
+
+    def test_l2_checkpoint_verified_after_start(self):
+        output = self.start_with_l2(10, "A" * 64)
+        self.assertIn("L2Reth checkpoint verified at height 10", output)
+        self.assertEqual(self.stack.calls[-1], ("up", "-d", "--no-deps", "l2reth-node"))
+
+    def test_l2_hash_mismatch_stops_l2(self):
+        with self.assertRaisesRegex(ValueError, "L2Reth checkpoint hash mismatch at height 10"):
+            self.start_with_l2(10, "b" * 64)
+        self.assertEqual(self.stack.calls[-2:], [("up", "-d", "--no-deps", "l2reth-node"), ("stop", "l2reth-node")])
+
+    def test_l2_below_checkpoint_is_reported_not_awaited(self):
+        output = self.start_with_l2(9, "b" * 64)
+        self.assertIn("head 9 is below checkpoint height 10", output)
+        self.assertNotIn(("stop", "l2reth-node"), self.stack.calls[-1:])
+
+    def test_unpublished_l2_rpc_skips_checkpoint(self):
+        self.stack.l2_published = False
+        output = self.start_with_l2(10, "b" * 64)
+        self.assertIn("L2Reth checkpoint not verified", output)
+        self.assertEqual(self.stack.calls[-1], ("up", "-d", "--no-deps", "l2reth-node"))
+
+    def test_start_without_l2_snapshot_skips_l2_checkpoint(self):
+        def health(url):
+            return {"historical_sync": "completed", "ready": True}
+        def rpc(url, method, params=None):
+            self.assertFalse(url.startswith("http://l2:"))
+            return "0x14" if method == "eth_blockNumber" else {"hash": "0x" + "a" * 64}
+        group = manifest()
+        group["components"]["l2reth"] = None
+        with patch.object(groups, "http_json", health), patch.object(groups, "rpc", rpc):
+            groups.start(self.stack, group)
+        self.assertEqual(self.stack.calls[-1], ("up", "-d", "--no-deps", "l2reth-node"))
 
     def upgrade_package(self):
         # A later release changes service images and genesis fork settings.

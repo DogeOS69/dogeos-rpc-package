@@ -33,6 +33,10 @@ class SnapshotTests(unittest.TestCase):
             conn = sqlite3.connect(path)
             conn.execute("CREATE TABLE fixture(value TEXT)")
             conn.execute("INSERT INTO fixture VALUES ('snapshot data')")
+            if name == "replay.sqlite":
+                conn.execute("CREATE TABLE replay_manifest(id INTEGER PRIMARY KEY, validated_up_to INTEGER, "
+                             "discovered_up_to INTEGER, validated_tip_state_hash TEXT)")
+                conn.execute("INSERT INTO replay_manifest VALUES (1, 10, 10, ?)", ("c" * 64,))
             conn.commit()
             conn.close()
         (self.source / "replay.artifacts/eth_da_artifacts").mkdir()
@@ -125,6 +129,28 @@ class SnapshotTests(unittest.TestCase):
         (self.source / "replay.sqlite").write_bytes(b"not a SQLite database")
         with self.assertRaises(ValueError):
             validator.validate_extracted(self.source, self.history)
+
+    def test_group_replay_metadata_must_match_snapshot(self):
+        replay = {"validated_up_to": 10, "discovered_up_to": 10, "state_hash": "c" * 64}
+        validator.validate_extracted(self.source, self.history, replay)
+        for key, value in (("validated_up_to", 9), ("discovered_up_to", 11), ("state_hash", "d" * 64)):
+            with self.assertRaisesRegex(ValueError, "replay " + key + " does not match"):
+                validator.validate_extracted(self.source, self.history, {**replay, key: value})
+        # A component restore has no group metadata to compare.
+        validator.validate_extracted(self.source, self.history)
+
+    def test_replay_metadata_needs_a_replay_manifest(self):
+        replay = {"validated_up_to": 10, "discovered_up_to": 10, "state_hash": "c" * 64}
+        conn = sqlite3.connect(self.source / "replay.sqlite")
+        conn.execute("DELETE FROM replay_manifest")
+        conn.commit()
+        with self.assertRaisesRegex(ValueError, "no replay manifest row"):
+            validator.validate_extracted(self.source, self.history, replay)
+        conn.execute("DROP TABLE replay_manifest")
+        conn.commit()
+        conn.close()
+        with self.assertRaisesRegex(ValueError, "cannot read the replay manifest"):
+            validator.validate_extracted(self.source, self.history, replay)
 
     def test_fixed_config(self):
         self.assertEqual(validator.validate_config(self.config, "testnet"), self.history)

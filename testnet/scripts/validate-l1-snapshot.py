@@ -125,7 +125,31 @@ def validate_archive(archive, historical):
         require(HISTORY in files, f"snapshot is missing {HISTORY}")
 
 
-def validate_extracted(directory, historical):
+REPLAY_KEYS = ("validated_up_to", "discovered_up_to", "state_hash")
+
+
+def validate_replay(root, expected):
+    """Compare a group's replay metadata with the frozen replay database."""
+    require(isinstance(expected, dict), "replay metadata must be an object")
+    # Immutable/read-only, like the integrity check: never create WAL/SHM.
+    conn = sqlite3.connect((root / "replay.sqlite").resolve().as_uri() + "?mode=ro&immutable=1", uri=True)
+    try:
+        row = conn.execute("SELECT validated_up_to, discovered_up_to, validated_tip_state_hash "
+                           "FROM replay_manifest WHERE id = 1").fetchone()
+    except sqlite3.Error as error:
+        raise ValueError(f"cannot read the replay manifest from replay.sqlite: {error}") from None
+    finally:
+        conn.close()
+    require(row is not None, "replay.sqlite has no replay manifest row")
+    for key, actual in zip(REPLAY_KEYS, row):
+        if isinstance(actual, str):
+            actual = actual.lower()
+        require(expected.get(key) == actual,
+                f"replay {key} does not match the group manifest: snapshot has {actual}, "
+                f"manifest has {expected.get(key)}")
+
+
+def validate_extracted(directory, historical, replay=None):
     root = Path(directory)
     for name in DATABASES:
         require((root / name).is_file(), f"snapshot is missing {name}")
@@ -151,6 +175,8 @@ def validate_extracted(directory, historical):
             for chunk in iter(lambda: stream.read(1024 * 1024), b""):
                 digest.update(chunk)
         require(digest.hexdigest() == historical, "historical artifact does not match package bootstrap")
+    if replay is not None:
+        validate_replay(root, replay)
 
 
 def main():
@@ -159,6 +185,7 @@ def main():
     parser.add_argument("path", nargs="?")
     parser.add_argument("--network", choices=("testnet", "mainnet"), required=True)
     parser.add_argument("--historical", default="none", help="none, required, or expected SHA-256")
+    parser.add_argument("--replay", help="group manifest replay object (JSON) to compare with replay.sqlite")
     args = parser.parse_args()
     try:
         if args.mode == "config":
@@ -170,7 +197,8 @@ def main():
             if args.mode == "archive":
                 validate_archive(args.path, args.historical)
             else:
-                validate_extracted(args.path, args.historical)
+                validate_extracted(args.path, args.historical,
+                                   None if args.replay is None else json.loads(args.replay))
     except (ValueError, KeyError, OSError, sqlite3.Error, tarfile.TarError) as error:
         parser.exit(1, f"ERROR: {error}\n")
 

@@ -684,8 +684,15 @@ else
   done
 
   if [ "$COMPONENT" = l1-interface ]; then
+    # A group pins the replay progress and state hash of its L1 snapshot;
+    # compare them with the extracted database before it replaces live data.
+    L1_REPLAY_ARGS=()
+    if [ "${DOGEOS_GROUP_RESTORE:-}" = 1 ]; then
+      L1_REPLAY_ARGS=(--replay "$(printf '%s' "$DOGEOS_GROUP_ENTRY" | jqx -c '.replay')")
+    fi
     python3 "$NETWORK_DIR/scripts/validate-l1-snapshot.py" extracted "$EXTRACTED" \
-      --network "$NETWORK" --historical "$L1_HISTORICAL" || fail "invalid L1 Interface snapshot data"
+      --network "$NETWORK" --historical "$L1_HISTORICAL" ${L1_REPLAY_ARGS[@]+"${L1_REPLAY_ARGS[@]}"} ||
+      fail "invalid L1 Interface snapshot data"
   fi
 
   stop_services
