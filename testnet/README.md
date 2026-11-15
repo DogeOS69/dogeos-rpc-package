@@ -17,7 +17,7 @@ from `env.example`; Docker Compose and the scripts read it automatically.
 
 | Resource | Minimum | Recommended |
 |----------|---------|-------------|
-| RAM | 32 GB | 64 GB |
+| RAM | 32 GB, for a node restored from a snapshot | 64 GB |
 | CPU | 4 cores | 8 cores |
 | Disk | 300 GB SSD | 500 GB NVMe SSD |
 
@@ -30,12 +30,21 @@ a 32 GB host: the default service caps total 42 GB. Dogecoin and L1 Interface
 limits are adjustable with `DOGECOIN_MEM_LIMIT` and `L1_INTERFACE_MEM_LIMIT`.
 Swap is disabled, so a service that exceeds its limit can be OOM-killed.
 
-How much L2Reth needs depends on how the node is brought up. A node restored
-from a snapshot caught up and ran within a 6 GB limit. A sync from genesis
-needs far more in its history-index stages: with a 6 GB limit L2Reth was
-OOM-killed in a restart loop there, and it used about 14 GB to get through
-them. A 32 GB host cannot give L2Reth that much next to Dogecoin's 24 GB, so
-on a 32 GB host restore a snapshot instead of syncing from genesis.
+How much L2Reth needs depends on how the node is brought up. Measured on a
+4-core, 32 GB testnet host with no RPC traffic:
+
+- **Restored from a snapshot:** L2Reth caught up and followed the chain within
+  a 6 GB limit. That is what a 32 GB host has left after Dogecoin (24 GB) and
+  L1 Interface (2 GB).
+- **Synced from genesis:** 6 GB was not enough. In the history-index stages
+  the kernel killed L2Reth at the limit, again on every restart. The sync
+  finished only after the limit was raised to 8 GB and the container was
+  allowed to swap; L2Reth then held 9 to 10 GB, resident and swapped together,
+  when sampled. Its peak was not measured.
+
+So sync from genesis only on a host that can give L2Reth the default 16 GB,
+which a 32 GB host cannot. A sync from genesis was not run at exactly 16 GB;
+that limit is above the usage seen. On a 32 GB host, restore a snapshot.
 
 Keep `DOGECOIN_MEM_LIMIT` at its default of 24 GB. Dogecoin loads the whole
 testnet block index (over 67 million blocks) into memory at startup and needed

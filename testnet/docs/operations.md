@@ -73,10 +73,13 @@ services; smaller hosts need lower limits. This is a cap, not a reservation.
 Swap is disabled for the container, so exceeding the cap can cause an OOM kill.
 Apply changes with `python3 scripts/snapshot-group.py start` in a maintenance window.
 
-A node restored from a snapshot ran within a 6 GB limit. A sync from genesis
-does not: its history-index stages used about 14 GB, and with a 6 GB limit
-L2Reth was OOM-killed there on every restart until the limit was raised. The
-data already synced is kept, so raising the limit lets the same node continue.
+On a 32 GB test host, a node restored from a snapshot caught up within a
+6 GB limit. A sync from genesis did not fit: in the history-index stages the
+kernel killed L2Reth at 6 GB on every restart. It finished with an 8 GB limit
+and swap allowed for the container, holding 9 to 10 GB (resident and swapped
+together) when sampled; the peak was not measured. Keep the default 16 GB for
+a sync from genesis. The data already synced is kept, so raising the limit
+lets the same node continue.
 
 ### Dogecoin RPC Credentials
 
@@ -418,8 +421,12 @@ Dogecoin Docker volume.
   blocks. Until then L1 Interface exits about every 30 seconds with
   `Dogecoin sync failed: RPC client error`, and the startup helper reports the
   restarts. This is not an out-of-memory kill.
-- **L2Reth is killed during a sync from genesis (`OOMKilled`, exit code 137):**
-  the history-index stages need more memory than the earlier ones. Raise
+- **L2Reth restarts about every 30 seconds late in a sync from genesis,
+  without logging an error:** look for an out-of-memory kill. The kernel log
+  (`sudo dmesg -T | grep -i 'out of memory'`) names `rollup-node`, and
+  [Restart Monitoring](#restart-monitoring) shows how to watch for it; Docker
+  clears its own `OOMKilled` flag as soon as the container restarts. The
+  history-index stages need more memory than the earlier ones. Raise
   `L2RETH_MEM_LIMIT` (see [L2Reth Memory Limit](#l2reth-memory-limit)) and
   start again; the synced data is kept. If the host cannot spare the memory,
   restore a snapshot instead.
