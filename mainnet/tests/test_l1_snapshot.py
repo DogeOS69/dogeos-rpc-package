@@ -224,7 +224,7 @@ class SnapshotTests(unittest.TestCase):
         archive = self.archive()
         if component == "l2reth":
             with tarfile.open(archive, "w:gz") as out:
-                for name in ("db/mdbx.dat", "db/scroll.db", "static_files/header"):
+                for name in ("db/mdbx.dat", "db/scroll.db", "static_files/header", "rocksdb/CURRENT"):
                     item = tarfile.TarInfo("l2reth/" + name)
                     item.size = 1
                     out.addfile(item, io.BytesIO(b"x"))

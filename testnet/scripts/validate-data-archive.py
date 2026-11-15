@@ -26,8 +26,17 @@ def validate(archive, component, network):
                 raise ValueError("archive root must be a directory")
             relative = path.parts[1:]
             if component == "l2reth":
-                if relative and relative[0] in {"jwt.hex", "reth.toml", "genesis", "lost+found", "protocol_context.json"}:
+                if relative and relative[0] in {"jwt.hex", "reth.toml", "genesis", "lost+found", "protocol_context.json",
+                                                "known-peers.json"}:
                     raise ValueError("forbidden L2Reth tree: " + member.name)
+                if relative in (("db", "lock"), ("db", "mdbx.lck")):
+                    raise ValueError("database lock file: " + member.name)
+                if relative and relative[-1].endswith(("-wal", "-shm", "-journal")):
+                    raise ValueError("SQLite sidecar file: " + member.name)
+                # RocksDB info logs record the source host; numbered *.log WAL files are data.
+                if len(relative) == 2 and relative[0] == "rocksdb" and (
+                        relative[1] in {"LOG", "LOCK"} or relative[1].startswith("LOG.old.")):
+                    raise ValueError("RocksDB info log or lock file: " + member.name)
                 if any(x in {"nodekey", "discovery-secret", "p2p-secret-key", "l2reth-p2p.key", "l2reth-identity"} or x.startswith("keystore") for x in relative):
                     raise ValueError("node key/keystore: " + member.name)
             elif any(x in {"wallet.dat", "wallets", ".cookie", "peers.dat", "banlist.dat", ".lock"}
@@ -37,8 +46,9 @@ def validate(archive, component, network):
             (directories if member.isdir() else files).add(normalized)
     if component == "l2reth":
         required = {"l2reth/db/mdbx.dat", "l2reth/db/scroll.db"}
-        if "l2reth/static_files" not in directories:
-            raise ValueError("static_files must be a directory")
+        for name in ("static_files", "rocksdb"):
+            if "l2reth/" + name not in directories:
+                raise ValueError(name + " must be a directory")
     else:
         prefix = "dogecoin/" + ("testnet3/" if network == "testnet" else "")
         required = {prefix + "blocks/index/CURRENT", prefix + "chainstate/CURRENT"}
