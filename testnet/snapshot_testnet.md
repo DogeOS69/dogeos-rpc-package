@@ -9,7 +9,7 @@ old Docker volumes or stop an old Compose project with a different name.
 
 ## Common Prerequisites
 
-Run commands from the repository root. For a new installation, create the
+Run commands from the `testnet/` directory. For a new installation, create the
 Compose env file below. For recovery of an existing v0.3.0 installation, keep
 its `.env.testnet` and review the settings; do not overwrite it with a template.
 
@@ -167,7 +167,7 @@ l1-interface/
 └── replay.artifacts/     # derived from the replay database path
 ```
 
-These paths match `envs/testnet/l1-interface.env` with `${DATA_ROOT}/l1-interface`
+These paths match `config/l1-interface.env` with `${DATA_ROOT}/l1-interface`
 mounted at `/data`; do not change those settings when using the snapshot. The
 archive contains no configuration or credentials. The pinned historical artifact
 is not included; the Compose init job downloads and verifies it, and keeps the
@@ -224,7 +224,7 @@ and replay bootstrap database again, as described below.
 The supplied testnet configuration includes the public Ethereum RPC default.
 If the deployment needs another provider, configure
 `DOGEOS_L1_INTERFACE_ETHEREUM_DA__L1_RPC_URL` in
-`envs/testnet/l1-interface.local.env`, then run:
+`config/l1-interface.local.env`, then run:
 
 ```bash
 set -euo pipefail

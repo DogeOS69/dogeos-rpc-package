@@ -7,7 +7,7 @@ This update is for existing **v0.3.0 testnet RPC deployments**.
 - Upgrade the L2Reth image from `dogeos69/rollup-node:0.3.0-beta.0` to
   `dogeos69/rollup-node:v0.3.0-beta.1c`.
 - Add the `galileoTime`, `galileoV2Time`, and `tsukiTime` fork activation
-  settings to `configs/testnet/l2reth-genesis.json`.
+  settings to `config/l2reth-genesis.json`.
 
 ## Upgrade
 
@@ -17,7 +17,7 @@ remain running. L2 RPC will be briefly unavailable while L2Reth restarts.
 
 1. Update the existing deployment checkout to the package release containing
    this update. Both `docker-compose.yml` and
-   `configs/testnet/l2reth-genesis.json` must be updated together.
+   `config/l2reth-genesis.json` must be updated together.
 2. Keep the existing `.env.testnet`, Compose project name, `DATA_ROOT`,
    Dogecoin volume name, and RPC credentials. Do not replace the local env
    file with a template.

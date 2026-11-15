@@ -176,7 +176,7 @@ case "$CACHE_DIR" in
   *) CACHE_DIR="$(readlink -m "$PWD/$CACHE_DIR")" ;;
 esac
 
-# Paths below match envs/testnet/l1-interface.env:
+# Paths below match config/l1-interface.env:
 #   DOGEOS_L1_INTERFACE_DATABASE_URL            -> /data/l1-interface.sqlite
 #   DOGEOS_L1_INTERFACE_REPLAY_READ__SQLITE_PATH -> /data/replay.sqlite
 #   replay artifacts are derived from the replay path -> /data/replay.artifacts
