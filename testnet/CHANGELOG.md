@@ -69,11 +69,12 @@ independently; service images remain pinned by Compose. See
 [Snapshots and Recovery](docs/snapshots.md#l1-interface) for snapshot and
 no-snapshot initialization paths.
 
-L2Reth now defaults to a 16 GB memory cap (`L2RETH_MEM_LIMIT=16g`). Review
-this setting in `.env` for your host's memory and RPC workload, leaving room
-for the other services and the OS. An existing explicit override is preserved.
-Apply it with `python3 scripts/snapshot-group.py start` during a maintenance
-window. This applies changed limits and stops L1/L2 while upstream checks run.
+L2Reth now defaults to a 16 GB memory cap (`L2RETH_MEM_LIMIT=16g`), up from
+8 GB. **On a host with less than 64 GB of memory, set `L2RETH_MEM_LIMIT` in
+`.env` before you upgrade: `6g` on a 32 GB host.** See
+[Memory](README.md#memory). A value you already set is kept. Apply it with
+`python3 scripts/snapshot-group.py start` during a maintenance window. This
+applies changed limits and stops L1/L2 while upstream checks run.
 
 ### Testnet: what to do
 
@@ -86,6 +87,7 @@ P2P key before starting; it copies the node's existing key, keeping its node ID:
 git pull
 mv .env.testnet testnet/.env
 cd testnet
+# Less than 64 GB of memory: set L2RETH_MEM_LIMIT in .env first (6g on 32 GB).
 python3 scripts/p2p-identity.py init
 python3 scripts/snapshot-group.py start
 ```
