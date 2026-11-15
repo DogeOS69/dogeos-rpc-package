@@ -66,20 +66,19 @@ with this layout; no automatic migration is performed. See
 
 ### L2Reth Memory Limit
 
-`L2RETH_MEM_LIMIT` defaults to `16g` (16 GB). Set it in `.env` according to
-your machine's available memory and RPC workload, especially tracing traffic.
-Leave memory for Dogecoin, L1 Interface, the operating system, and other
-services; smaller hosts need lower limits. This is a cap, not a reservation.
-Swap is disabled for the container, so exceeding the cap can cause an OOM kill.
-Apply changes with `python3 scripts/snapshot-group.py start` in a maintenance window.
+`L2RETH_MEM_LIMIT` in `.env` caps the memory of `l2reth-node`. It is a cap,
+not a reservation. Swap is disabled for the container, so L2Reth is restarted
+when it reaches the cap.
 
-On a 32 GB test host, a node restored from a snapshot caught up within a
-6 GB limit. A sync from genesis did not fit: in the history-index stages the
-kernel killed L2Reth at 6 GB on every restart. It finished with an 8 GB limit
-and swap allowed for the container, holding 9 to 10 GB (resident and swapped
-together) when sampled; the peak was not measured. Keep the default 16 GB for
-a sync from genesis. The data already synced is kept, so raising the limit
-lets the same node continue.
+| Host memory | `L2RETH_MEM_LIMIT` | Use |
+|-------------|--------------------|-----|
+| 64 GB+ | `16g` (default) | Snapshot restore or sync from genesis; RPC and tracing traffic |
+| 32 GB | `6g` | A node restored from a snapshot |
+
+Raise the limit for heavy tracing traffic, and leave room for Dogecoin
+(24 GB), L1 Interface (2 GB) and the operating system. Apply a change with
+`python3 scripts/snapshot-group.py start` in a maintenance window; synced
+data is kept.
 
 ### Dogecoin RPC Credentials
 
@@ -315,10 +314,12 @@ error needs investigation; do not delete data or bypass readiness.
 **3. L2 catch-up:** after L1 is ready and the helper starts L2Reth, use
 [Verify Your RPC Node](verify-node.md) to compare its decimal head height with
 the reference. L2 remaining stopped during either upstream phase is expected.
-On a node syncing from genesis, `safe` and `finalized` stay at a few hundred
-blocks until the chain sync finishes and `L2 is now synced` appears in the
-L2Reth log; batch derivation resumes then and both heights catch up. A node
-restored from a snapshot shows the same pause, for minutes rather than hours.
+
+> [!NOTE]
+> **`safe` and `finalized` do not move until L2Reth has caught up.** This is
+> expected: batch derivation starts when `L2 is now synced` appears in the
+> L2Reth log. That takes minutes after a snapshot restore and hours during a
+> sync from genesis.
 
 | Observation | Interpretation / next action |
 |-------------|------------------------------|
@@ -414,22 +415,15 @@ Dogecoin Docker volume.
 - **L1 Interface restarts with `RPC error -28: Loading block index...`:**
   Dogecoin is still starting. Let index loading finish; L1 Interface retries
   automatically.
-- **L1 Interface restarts repeatedly after Dogecoin data was restored:** the
-  restored Dogecoin node is behind the height L1 Interface had indexed. It
-  recovers once Dogecoin catches up; no data reset is needed. Dogecoin can
-  sit at its snapshot height for several minutes before a peer sends it new
-  blocks. Until then L1 Interface exits about every 30 seconds with
-  `Dogecoin sync failed: RPC client error`, and the startup helper reports the
-  restarts. This is not an out-of-memory kill.
-- **L2Reth restarts about every 30 seconds late in a sync from genesis,
-  without logging an error:** look for an out-of-memory kill. The kernel log
-  (`sudo dmesg -T | grep -i 'out of memory'`) names `rollup-node`, and
-  [Restart Monitoring](#restart-monitoring) shows how to watch for it; Docker
-  clears its own `OOMKilled` flag as soon as the container restarts. The
-  history-index stages need more memory than the earlier ones. Raise
-  `L2RETH_MEM_LIMIT` (see [L2Reth Memory Limit](#l2reth-memory-limit)) and
-  start again; the synced data is kept. If the host cannot spare the memory,
-  restore a snapshot instead.
+- **L1 Interface restarts with `Dogecoin sync failed` after Dogecoin data was
+  restored:** Dogecoin has not yet moved past its snapshot height, which can
+  take several minutes. L1 Interface recovers once Dogecoin receives new
+  blocks; no data reset or memory change is needed.
+- **L2Reth restarts every 30 seconds or so during a sync from genesis, with no
+  error in its log:** L2Reth is reaching its memory limit. Set
+  `L2RETH_MEM_LIMIT=16g` (see [L2Reth Memory Limit](#l2reth-memory-limit)) and
+  start again; synced data is kept. On a host that cannot spare 16 GB, restore
+  a snapshot instead.
 - **L1 Interface health returns HTTP 503:** `historical_sync=in_progress` is
   expected during startup. Follow the logs until `/health` returns HTTP 200.
 - **Ethereum RPC returns plan or unsupported-chain errors:** the provider must

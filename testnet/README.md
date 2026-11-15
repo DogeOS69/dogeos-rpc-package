@@ -15,42 +15,38 @@ from `env.example`; Docker Compose and the scripts read it automatically.
 
 ## Hardware Requirements
 
-| Resource | Minimum | Recommended |
-|----------|---------|-------------|
-| RAM | 32 GB, for a node restored from a snapshot | 64 GB |
-| CPU | 4 cores | 8 cores |
-| Disk | 300 GB SSD | 500 GB NVMe SSD |
+| | Minimum | Recommended |
+|---|---------|-------------|
+| Memory | 32 GB | 64 GB+ |
+| CPU | 4 cores | 8 cores+ |
+| Disk | 300 GB SSD | 500 GB+ NVMe SSD |
 
-Default memory limits are tuned for a 64 GB host: `dogecoin-node` 24 GB,
-`l2reth-node` 16 GB, `l1-interface` 2 GB. Set `L2RETH_MEM_LIMIT` in `.env`
-according to your machine's memory and RPC workload; 16 GB is a default cap,
-not a reservation or a value suitable for every host. Leave memory for the
-other services and the operating system. In particular, lower the limits on
-a 32 GB host: the default service caps total 42 GB. Dogecoin and L1 Interface
-limits are adjustable with `DOGECOIN_MEM_LIMIT` and `L1_INTERFACE_MEM_LIMIT`.
-Swap is disabled, so a service that exceeds its limit can be OOM-killed.
+The minimum runs a node restored from a snapshot. Use the recommended
+configuration to sync from genesis or to serve heavy RPC and tracing traffic.
+Requirements grow with the chain and with your RPC workload.
 
-How much L2Reth needs depends on how the node is brought up. Measured on a
-4-core, 32 GB testnet host with no RPC traffic:
+### Memory
 
-- **Restored from a snapshot:** L2Reth caught up and followed the chain within
-  a 6 GB limit. That is what a 32 GB host has left after Dogecoin (24 GB) and
-  L1 Interface (2 GB).
-- **Synced from genesis:** 6 GB was not enough. In the history-index stages
-  the kernel killed L2Reth at the limit, again on every restart. The sync
-  finished only after the limit was raised to 8 GB and the container was
-  allowed to swap; L2Reth then held 9 to 10 GB, resident and swapped together,
-  when sampled. Its peak was not measured.
+Each service runs under a memory limit set in `.env`. A limit is a cap, not a
+reservation. Swap is disabled for the containers, so a service that reaches
+its limit is restarted.
 
-So sync from genesis only on a host that can give L2Reth the default 16 GB,
-which a 32 GB host cannot. A sync from genesis was not run at exactly 16 GB;
-that limit is above the usage seen. On a 32 GB host, restore a snapshot.
+| Setting | Default | 64 GB host | 32 GB host |
+|---------|---------|------------|------------|
+| `DOGECOIN_MEM_LIMIT` | `24g` | `24g` | `24g` |
+| `L2RETH_MEM_LIMIT` | `16g` | `16g` | `6g` |
+| `L1_INTERFACE_MEM_LIMIT` | `2g` | `2g` | `2g` |
 
-Keep `DOGECOIN_MEM_LIMIT` at its default of 24 GB. Dogecoin loads the whole
-testnet block index (over 67 million blocks) into memory at startup and needed
-about 20 GB to finish loading it. With a 16 GB limit it was OOM-killed (exit
-code 137) during "Loading block index" and restarted in a loop without logging
-an error. On a 32 GB host, lower `L2RETH_MEM_LIMIT` instead.
+- **Dogecoin:** keep `24g` on every host. Dogecoin loads the whole testnet
+  block index into memory at startup, about 20 GB. With a lower limit it
+  restarts in a loop while loading the index.
+- **L2Reth:** the defaults add up to 42 GB, so set `L2RETH_MEM_LIMIT`
+  explicitly on a host with less than 64 GB. Raise it for heavy tracing
+  traffic.
+
+> [!NOTE]
+> **A 32 GB host cannot sync L2Reth from genesis.** The final stages of that
+> sync need more memory than the host can spare. Restore a snapshot instead.
 
 ## Before You Start
 
@@ -97,7 +93,7 @@ Open `.env` in your editor and set:
 | Setting | What to choose |
 |---------|----------------|
 | `DATA_ROOT` | An absolute path on your mounted SSD, outside the repository; replace `/path/to/...` |
-| `L2RETH_MEM_LIMIT` | Review the default `16g` for your host, together with the other service limits above |
+| `L2RETH_MEM_LIMIT` | Keep the default `16g` on a 64 GB host; set `6g` on a 32 GB host (see [Memory](#memory)) |
 | `INTERNAL_BIND_ADDR` | Set `127.0.0.1` unless another trusted host needs Dogecoin/L1 RPC |
 | `DOGECOIN_RPC_USER`, `DOGECOIN_RPC_PASSWORD` | Set your own credentials for a new deployment; existing deployments must coordinate credential changes with their consumers |
 
@@ -171,15 +167,13 @@ data required by this network.
 **Without snapshots:** skip directly to step 4. This does not access the
 snapshot catalog. All three services can start without runtime snapshots;
 L1 Interface still downloads the package's pinned testnet history bootstrap.
-Initial synchronization can take a long time, and L2Reth needs the default
-16 GB memory limit for it (see the memory notes above).
+Syncing from genesis takes hours and needs a 64 GB host; see
+[Memory](#memory).
 
-During a sync from genesis the `safe` and `finalized` heights stay at a few
-hundred blocks for hours. This is expected: L2Reth first downloads and
-executes the whole chain, and derives batches from L1 only after that sync
-finishes. Both heights then advance on their own until they reach the head.
-In one test on a 4-core, 32 GB host the chain sync took about five hours and
-`safe` needed about two and a half more hours to reach the head.
+> [!NOTE]
+> **`safe` and `finalized` stay near genesis during the initial sync.** This
+> is expected: L2Reth derives batches from L1 only after its chain sync
+> finishes. Both heights then advance to the head on their own.
 
 **With snapshots:** first list the available groups:
 
