@@ -73,6 +73,11 @@ services; smaller hosts need lower limits. This is a cap, not a reservation.
 Swap is disabled for the container, so exceeding the cap can cause an OOM kill.
 Apply changes with `python3 scripts/snapshot-group.py start` in a maintenance window.
 
+A node restored from a snapshot ran within a 6 GB limit. A sync from genesis
+does not: its history-index stages used about 14 GB, and with a 6 GB limit
+L2Reth was OOM-killed there on every restart until the limit was raised. The
+data already synced is kept, so raising the limit lets the same node continue.
+
 ### Dogecoin RPC Credentials
 
 `DOGECOIN_RPC_USER` and `DOGECOIN_RPC_PASSWORD` are passed to `dogecoin-node`
@@ -307,6 +312,10 @@ error needs investigation; do not delete data or bypass readiness.
 **3. L2 catch-up:** after L1 is ready and the helper starts L2Reth, use
 [Verify Your RPC Node](verify-node.md) to compare its decimal head height with
 the reference. L2 remaining stopped during either upstream phase is expected.
+On a node syncing from genesis, `safe` and `finalized` stay at a few hundred
+blocks until the chain sync finishes and `L2 is now synced` appears in the
+L2Reth log; batch derivation resumes then and both heights catch up. A node
+restored from a snapshot shows the same pause, for minutes rather than hours.
 
 | Observation | Interpretation / next action |
 |-------------|------------------------------|
@@ -404,7 +413,16 @@ Dogecoin Docker volume.
   automatically.
 - **L1 Interface restarts repeatedly after Dogecoin data was restored:** the
   restored Dogecoin node is behind the height L1 Interface had indexed. It
-  recovers once Dogecoin catches up; no data reset is needed.
+  recovers once Dogecoin catches up; no data reset is needed. Dogecoin can
+  sit at its snapshot height for several minutes before a peer sends it new
+  blocks. Until then L1 Interface exits about every 30 seconds with
+  `Dogecoin sync failed: RPC client error`, and the startup helper reports the
+  restarts. This is not an out-of-memory kill.
+- **L2Reth is killed during a sync from genesis (`OOMKilled`, exit code 137):**
+  the history-index stages need more memory than the earlier ones. Raise
+  `L2RETH_MEM_LIMIT` (see [L2Reth Memory Limit](#l2reth-memory-limit)) and
+  start again; the synced data is kept. If the host cannot spare the memory,
+  restore a snapshot instead.
 - **L1 Interface health returns HTTP 503:** `historical_sync=in_progress` is
   expected during startup. Follow the logs until `/health` returns HTTP 200.
 - **Ethereum RPC returns plan or unsupported-chain errors:** the provider must

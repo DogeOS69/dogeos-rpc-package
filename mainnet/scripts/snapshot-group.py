@@ -427,9 +427,14 @@ def crash_check(stack, service):
             return ""
         if restarts > baseline:
             status += f", restarted {restarts - baseline} time(s) during this wait"
-        return (f"WARNING: the {service} container is {status}. Exit code 137 is usually an out-of-memory kill: check "
-                f"docker compose logs {service}, its exits (docs/operations.md#restart-monitoring) "
-                f"and {MEMORY_SETTINGS[service]} in .env")
+        note = (f"WARNING: the {service} container is {status}. Read docker compose logs {service} for the reason "
+                f"and check its exits (docs/operations.md#restart-monitoring). Exit code 137 is usually an "
+                f"out-of-memory kill: see {MEMORY_SETTINGS[service]} in .env.")
+        if service == "l1-interface":
+            # Seen after a restore: it exits every 30 seconds until Dogecoin receives new blocks.
+            note += (" L1 Interface also restarts while Dogecoin is not yet ahead of the height it had indexed, "
+                     "and recovers by itself (docs/operations.md#troubleshooting).")
+        return note
     return note
 
 

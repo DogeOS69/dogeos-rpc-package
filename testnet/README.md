@@ -30,6 +30,13 @@ a 32 GB host: the default service caps total 42 GB. Dogecoin and L1 Interface
 limits are adjustable with `DOGECOIN_MEM_LIMIT` and `L1_INTERFACE_MEM_LIMIT`.
 Swap is disabled, so a service that exceeds its limit can be OOM-killed.
 
+How much L2Reth needs depends on how the node is brought up. A node restored
+from a snapshot caught up and ran within a 6 GB limit. A sync from genesis
+needs far more in its history-index stages: with a 6 GB limit L2Reth was
+OOM-killed in a restart loop there, and it used about 14 GB to get through
+them. A 32 GB host cannot give L2Reth that much next to Dogecoin's 24 GB, so
+on a 32 GB host restore a snapshot instead of syncing from genesis.
+
 Keep `DOGECOIN_MEM_LIMIT` at its default of 24 GB. Dogecoin loads the whole
 testnet block index (over 67 million blocks) into memory at startup and needed
 about 20 GB to finish loading it. With a 16 GB limit it was OOM-killed (exit
@@ -155,7 +162,15 @@ data required by this network.
 **Without snapshots:** skip directly to step 4. This does not access the
 snapshot catalog. All three services can start without runtime snapshots;
 L1 Interface still downloads the package's pinned testnet history bootstrap.
-Initial synchronization can take a long time.
+Initial synchronization can take a long time, and L2Reth needs the default
+16 GB memory limit for it (see the memory notes above).
+
+During a sync from genesis the `safe` and `finalized` heights stay at a few
+hundred blocks for hours. This is expected: L2Reth first downloads and
+executes the whole chain, and derives batches from L1 only after that sync
+finishes. Both heights then advance on their own until they reach the head.
+In one test on a 4-core, 32 GB host the chain sync took about five hours and
+`safe` needed about two and a half more hours to reach the head.
 
 **With snapshots:** first list the available groups:
 
@@ -197,7 +212,8 @@ python3 scripts/snapshot-group.py start
 
 The helper starts Dogecoin and waits for initial sync, then starts L1 Interface
 and waits for historical sync and replay readiness, then starts L2Reth. It
-also verifies upstream checkpoints saved by a snapshot restore. **Returning
+also verifies upstream checkpoints saved by a snapshot restore and, once
+L2Reth serves RPC, the L2 checkpoint; a mismatch there stops L2Reth. **Returning
 success means L2Reth was started, not that L2 has caught up.**
 
 In a second terminal, enter `testnet/` and watch progress:
