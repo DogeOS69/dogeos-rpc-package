@@ -5,15 +5,17 @@ usage() {
   cat <<'USAGE'
 Reset the bind-mounted L1 Interface and L2Reth data directories.
 
-Usage:
-  scripts/reset-chain-data.sh [options] <env-file>
+Usage (in the testnet directory):
+  ./scripts/reset-chain-data.sh [options] [env-file]
+
+The env file defaults to .env in the testnet directory.
 
 Examples:
   # Recommended: move existing data to timestamped backup directories.
-  scripts/reset-chain-data.sh .env.testnet
+  ./scripts/reset-chain-data.sh
 
   # Irreversibly delete existing data instead of keeping backups.
-  scripts/reset-chain-data.sh --delete --yes .env.testnet
+  ./scripts/reset-chain-data.sh --delete --yes
 
 Options:
   --delete  Permanently delete the existing l1-interface and l2reth data.
@@ -23,8 +25,8 @@ Options:
   -h, --help
             Show this help.
 
-This script stops the Compose project before resetting data. It does not remove
-the Dogecoin named volume or DATA_ROOT/.snapshot-cache.
+This script stops the Compose project before resetting data. It does not touch
+the Dogecoin Docker volume or DATA_ROOT/.snapshot-cache.
 USAGE
 }
 
@@ -66,10 +68,10 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-[ -n "$ENV_FILE" ] || {
-  usage >&2
-  exit 1
-}
+NETWORK=testnet
+NETWORK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+# shellcheck source=testnet/scripts/lib/env.sh
+. "$NETWORK_DIR/scripts/lib/env.sh"
 
 if "$CONFIRMED" && ! "$DELETE"; then
   fail "--yes is only valid together with --delete"
@@ -82,46 +84,24 @@ fi
 require_command docker
 require_command readlink
 
-[ -f "$ENV_FILE" ] || fail "env file not found: $ENV_FILE"
+ENV_FILE_ABS="$(resolve_env_file "$ENV_FILE" "$NETWORK_DIR")"
+# Data must not live anywhere inside the repository checkout.
+REPO_ROOT_ABS="$(readlink -m "$NETWORK_DIR/..")"
 
-ENV_DIR="$(cd "$(dirname "$ENV_FILE")" && pwd -P)"
-ENV_FILE_ABS="$ENV_DIR/$(basename "$ENV_FILE")"
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-REPO_ROOT_ABS="$(readlink -m "$REPO_ROOT")"
+# DATA_ROOT as Compose resolves it (see scripts/lib/env.sh), so the directories
+# reset are the ones the stack mounts.
+COMPOSE_JSON="$(compose_config_json "$ENV_FILE_ABS" "$NETWORK_DIR")"
+DATA_ROOT="$(printf '%s' "$COMPOSE_JSON" | config_data_root)"
+[ -n "$DATA_ROOT" ] || fail "cannot determine DATA_ROOT from the Compose configuration"
+echo "Using env file: $ENV_FILE_ABS (NETWORK=$NETWORK, DATA_ROOT=$DATA_ROOT)"
 
-set -a
-# shellcheck disable=SC1090
-. "$ENV_FILE_ABS"
-set +a
+DATA_ROOT_ABS="$(check_data_path DATA_ROOT "$DATA_ROOT" "$REPO_ROOT_ABS")"
 
-[ -n "${DATA_ROOT:-}" ] || fail "DATA_ROOT must be set in $ENV_FILE"
+[ ! -e "$DATA_ROOT_ABS/.snapshot-group-state.json" ] ||
+  fail "data is managed by a snapshot group; use snapshot-group.py restore GROUP_ID --force instead of resetting dependency metadata"
 
-case "$DATA_ROOT" in
-  /*) ;;
-  *) fail "DATA_ROOT must be an absolute path, got: $DATA_ROOT" ;;
-esac
-
-DATA_ROOT_ABS="$(readlink -m "$DATA_ROOT")"
-
-case "$DATA_ROOT_ABS" in
-  /path/to|/path/to/*)
-    fail "replace the DATA_ROOT placeholder with your mounted data disk path: $DATA_ROOT_ABS"
-    ;;
-  /|/tmp|/var/tmp)
-    fail "DATA_ROOT is too broad or temporary: $DATA_ROOT_ABS"
-    ;;
-  "$REPO_ROOT_ABS"|"$REPO_ROOT_ABS"/*)
-    fail "DATA_ROOT must not be inside the repository: $DATA_ROOT_ABS"
-    ;;
-esac
-
-case "$DATA_ROOT_ABS" in
-  /mnt/wsl/*)
-    if ! grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null; then
-      fail "DATA_ROOT uses a WSL-only path on a non-WSL host: $DATA_ROOT_ABS"
-    fi
-    ;;
-esac
+# Preserve/migrate identity before any chain data can be moved or deleted.
+python3 "$NETWORK_DIR/scripts/p2p-identity.py" check --env-file "$ENV_FILE_ABS"
 
 L1_DIR="$DATA_ROOT_ABS/l1-interface"
 L2_DIR="$DATA_ROOT_ABS/l2reth"
@@ -132,13 +112,13 @@ L2_DIR="$DATA_ROOT_ABS/l2reth"
 echo "Data reset targets:"
 echo "  $L1_DIR"
 echo "  $L2_DIR"
-echo "Dogecoin named volume and snapshot cache will be preserved."
+echo "Dogecoin data, the P2P identity and the snapshot cache will be preserved."
 echo
 
 echo "Stopping Compose services..."
 (
-  cd "$REPO_ROOT_ABS"
-  docker compose --env-file "$ENV_FILE_ABS" down
+  cd "$NETWORK_DIR"
+  docker compose --project-directory "$NETWORK_DIR" --env-file "$ENV_FILE_ABS" down
 )
 
 if "$DELETE"; then
@@ -167,11 +147,5 @@ mkdir -p "$L1_DIR" "$L2_DIR"
 
 echo
 echo "Reset complete. Empty data directories were created; the services remain stopped."
-echo "To restore the testnet L2Reth snapshot without starting services:"
-printf '  %q --no-start %q\n' \
-  "$REPO_ROOT_ABS/scripts/restore-l2reth-snapshot.sh" \
-  "$ENV_FILE_ABS"
-echo "To start L2Reth and its dependencies without the bundled Dogecoin node:"
-printf '  cd %q && docker compose --env-file %q up -d l2reth-node\n' \
-  "$REPO_ROOT_ABS" \
-  "$ENV_FILE_ABS"
+echo "Next, start in dependency order (or restore a group first):"
+printf '  python3 %q start --env-file %q\n' "$NETWORK_DIR/scripts/snapshot-group.py" "$ENV_FILE_ABS"

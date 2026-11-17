@@ -33,8 +33,39 @@ read_secret() {
   printf '%s' "$secret_value"
 }
 
+# Snapshot paths are a package contract, not operator overrides. Fail before
+# creating data if a legacy env file or custom Compose config changes them.
+[ "${DOGEOS_L1_INTERFACE_DATABASE_URL:-}" = sqlite:///data/l1-interface.sqlite ] ||
+  fail "DATABASE_URL must be sqlite:///data/l1-interface.sqlite; remove custom data paths"
+[ "${DOGEOS_L1_INTERFACE_REPLAY_READ__SQLITE_PATH:-}" = /data/replay.sqlite ] ||
+  fail "REPLAY_READ__SQLITE_PATH must be /data/replay.sqlite; remove custom data paths"
+[ "${DOGEOS_L1_INTERFACE_EVENT_PLANE_ARTIFACT_PATH:-}" = /data/l1-interface-historical-artifact.sqlite ] ||
+  fail "testnet EVENT_PLANE_ARTIFACT_PATH must be /data/l1-interface-historical-artifact.sqlite"
+
 mkdir -p "$DATA_DIR"
 [ -w "$DATA_DIR" ] || fail "L1 Interface data directory is not writable: $DATA_DIR (check DATA_ROOT and host ownership)"
+
+# Operator overrides from .env (passed by docker-compose.yml). When set, they
+# win over config/l1-interface.env and the deprecated l1-interface.local.env
+# of earlier releases.
+if [ -n "${DOGEOS_RPC_PACKAGE_ETHEREUM_RPC_URL:-}" ]; then
+  DOGEOS_L1_INTERFACE_ETHEREUM_DA__L1_RPC_URL=$DOGEOS_RPC_PACKAGE_ETHEREUM_RPC_URL
+  export DOGEOS_L1_INTERFACE_ETHEREUM_DA__L1_RPC_URL
+fi
+if [ -n "${DOGEOS_RPC_PACKAGE_EXTERNAL_DOGECOIN_RPC_URL:-}" ]; then
+  DOGEOS_L1_INTERFACE_DOGECOIN_RPC__URL=$DOGEOS_RPC_PACKAGE_EXTERNAL_DOGECOIN_RPC_URL
+  export DOGEOS_L1_INTERFACE_DOGECOIN_RPC__URL
+  # Credentials stay unset unless given, as for an unauthenticated endpoint.
+  unset DOGEOS_L1_INTERFACE_DOGECOIN_RPC__USER DOGEOS_L1_INTERFACE_DOGECOIN_RPC__PASS
+  if [ -n "${DOGEOS_RPC_PACKAGE_EXTERNAL_DOGECOIN_RPC_USER:-}" ]; then
+    DOGEOS_L1_INTERFACE_DOGECOIN_RPC__USER=$DOGEOS_RPC_PACKAGE_EXTERNAL_DOGECOIN_RPC_USER
+    export DOGEOS_L1_INTERFACE_DOGECOIN_RPC__USER
+  fi
+  if [ -n "${DOGEOS_RPC_PACKAGE_EXTERNAL_DOGECOIN_RPC_PASSWORD:-}" ]; then
+    DOGEOS_L1_INTERFACE_DOGECOIN_RPC__PASS=$DOGEOS_RPC_PACKAGE_EXTERNAL_DOGECOIN_RPC_PASSWORD
+    export DOGEOS_L1_INTERFACE_DOGECOIN_RPC__PASS
+  fi
+fi
 
 dogecoin_rpc_url=${DOGEOS_L1_INTERFACE_DOGECOIN_RPC__URL:-}
 if [ -z "$dogecoin_rpc_url" ]; then

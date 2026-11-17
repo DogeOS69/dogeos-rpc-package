@@ -1,455 +1,339 @@
-# DogeOS RPC Package
+# DogeOS RPC Package: Testnet
 
-A Docker-based deployment of the DogeOS RPC stack for node and RPC operators. It runs a Dogecoin node, the L1 Interface, and an L2Reth client.
+A Docker Compose deployment of the DogeOS testnet RPC stack for RPC providers
+and node operators. It runs three services, each depending on the one before
+it:
 
-## What's New in v0.3.0
+- **Dogecoin** — a Dogecoin Core node.
+- **L1 Interface** — indexes Dogecoin and replays Ethereum DA data; L2Reth's
+  L1 endpoint.
+- **L2Reth** — syncs the DogeOS L2 chain and serves Ethereum-compatible RPC.
 
-v0.3.0 is a major upgrade from the v0.2.x line. Key changes for operators:
-
-- **Data Availability moved from Celestia to Ethereum.** The DA layer is now Ethereum-based. L2Reth reads blobs directly from the public S3 archive; L1 Interface uses the bundled public Ethereum Sepolia execution RPC for replay unless the operator overrides it. No Celestia node is run.
-- **L1 Interface storage format is not backward compatible with v0.2.x.** When migrating from v0.2.x, start it with fresh data; an init step downloads the pre-v0.3.0 history from S3 automatically. The configuration, container, and data steps in the [upgrade guide](upgrade_v0.3.0.md) apply to that migration.
-- **L2Reth is now the only supported L2 client.** The old package defaulted to L2Geth. Existing L2Geth operators must switch to L2Reth using its snapshot or a fresh sync; L2Geth databases cannot be reused as Reth databases.
-- **No L2 history break.** From L2Reth's perspective the block history is continuous across the upgrade. A brand-new L2Reth node syncing from genesis will sync through and catch up to the chain head normally.
-
-> [!NOTE]
-> L2 chain history remains continuous, but that does not establish database
-> compatibility between client versions. L2Reth storage also moved from a
-> named Docker volume to `${DATA_ROOT}/l2reth`; old volumes are not migrated
-> automatically. These migration steps apply to nodes upgrading from v0.2.x;
-> see the [v0.3.0 upgrade guide](upgrade_v0.3.0.md).
-
-## Upgrading an Existing Node
-
-For an existing **v0.3.0 testnet deployment**, follow the release notes for
-the target update. The [Galileo, Galileo V2, and Tsuki hardfork activation notes](release_notes_l2reth_v0.3.0-beta.1c.md)
-cover the latest image and chain configuration update: pull the new image and
-recreate only `l2reth-node`, retaining its existing data. Dogecoin and
-L1 Interface do not need to be restarted.
-
-For historical v0.2.x deployments, follow
-[Upgrading from v0.2.x to v0.3.0](upgrade_v0.3.0.md) **before pulling new code**.
-That migration requires stopping the old stack with its old Compose file and
-completing the documented data and configuration steps.
-
-The Quick Start below is for a new installation.
-
-## Services
-
-The testnet stack runs three services:
-
-- **Dogecoin** stores and syncs Dogecoin chain data in a named Docker volume.
-- **L1 Interface** indexes Dogecoin and replays Ethereum DA data. It initializes
-  its historical data automatically on first start.
-- **L2Reth** syncs the DogeOS L2 chain and serves Ethereum-compatible RPC.
-
-L2Reth and L1 Interface store their data under the `DATA_ROOT` you configure.
-The package includes the testnet network settings and peer addresses.
-
-L2Reth runs as a follower with `--consensus.exit-on-signer-rotation`. When the
-sequencer signer rotates on L1, the node logs
-`authorized signer rotated on L1; exiting for supervised restart` (with
-`exit_code=70`) and shuts down with exit code 70. Docker restarts it
-(`restart: unless-stopped`), and the restarted node reads the new signer from
-L1. Docker clears the exit code once the container runs again, so the log line
-is the record of a rotation restart.
-
-The node reads the signer from L1 Interface about every 12 seconds and exits
-only after three successful reads in a row return the same new signer; failed
-reads in between are skipped. With working reads, that is roughly 25 to 40 seconds after
-L1 Interface first returns the new signer. Failed reads never cause an exit:
-while L1 Interface is unreachable, L2Reth keeps running with the old signer and
-logs a warning after every 25 failed reads in a row. The node reads its signer
-once at startup, and the check starts from its own first successful read a
-moment later. A rotation that lands between those two reads is missed: the node
-keeps the old signer and does not exit until a later rotation. Restarting
-L2Reth picks up the new signer, without the rotation log line.
-
-The same policy brings a running L2Reth back after a host or Docker restart. A
-container stopped with `docker compose stop` stays stopped, and
-`docker compose down` removes it. An existing container keeps its old restart
-policy and shutdown time until it is recreated with
-`docker compose --env-file .env.testnet up -d --no-deps l2reth-node`, which
-briefly interrupts L2 RPC; `docker compose restart` does not apply them.
+This directory is self-contained and shares nothing with mainnet. **Run every
+command in this directory.** Your settings live in one file, `.env`, created
+from `env.example`; Docker Compose and the scripts read it automatically.
 
 ## Hardware Requirements
 
-### Minimum Specifications (Testnet)
+| | Minimum | Recommended |
+|---|---------|-------------|
+| Memory | 32 GB | 64 GB+ |
+| CPU | 4 cores | 8 cores+ |
+| Disk | 300 GB SSD | 500 GB+ NVMe SSD |
 
-| Resource | Minimum | Recommended |
-|----------|---------|-------------|
-| RAM | 32 GB | 64 GB |
-| CPU | 4 cores | 8 cores |
-| Disk | 300 GB SSD | 500 GB NVMe SSD |
+The minimum runs a node restored from a snapshot. Use the recommended
+configuration to sync from genesis or to serve heavy RPC and tracing traffic.
+Requirements grow with the chain and with your RPC workload.
 
-### Memory Limits
+### Memory
 
-Each service has a default memory limit configured in `docker-compose.yml`. The defaults are tuned for a **64 GB** host:
+Each service runs under a memory limit set in `.env`. A limit is a cap, not a
+reservation. Swap is disabled for the containers, so a service that reaches
+its limit is restarted.
 
-| Service | Default Limit | Notes |
-|---------|--------------|-------|
-| dogecoin-node | 24 GB | Largest consumer; RSS grows over time |
-| l2reth-node | 8 GB | RSS grows with RPC traffic |
-| l1-interface | 2 GB | Lightweight; higher usage during startup |
+| Setting | Default | 64 GB host | 32 GB host |
+|---------|---------|------------|------------|
+| `DOGECOIN_MEM_LIMIT` | `24g` | `24g` | `24g` |
+| `L2RETH_MEM_LIMIT` | `16g` | `16g` | `6g` |
+| `L1_INTERFACE_MEM_LIMIT` | `2g` | `2g` | `2g` |
 
-Memory limits can be adjusted in `.env.testnet` with `DOGECOIN_MEM_LIMIT`,
-`L2RETH_MEM_LIMIT`, and `L1_INTERFACE_MEM_LIMIT`. Keep the default Dogecoin
-limit unless you have measured its startup and steady-state requirements.
-Leave memory available for the host and other services.
+- **Dogecoin:** keep `24g` on every host. Dogecoin loads the whole testnet
+  block index into memory at startup, about 20 GB. With a lower limit it
+  restarts in a loop while loading the index.
+- **L2Reth:** the defaults add up to 42 GB, so set `L2RETH_MEM_LIMIT`
+  explicitly on a host with less than 64 GB. Raise it for heavy tracing
+  traffic.
 
-Container swap is disabled. A service that exceeds its memory limit can be
-OOM-killed.
+> [!NOTE]
+> **A 32 GB host cannot sync L2Reth from genesis.** The final stages of that
+> sync need more memory than the host can spare. Restore a snapshot instead.
+
+## Before You Start
+
+Use a Linux host with Docker Engine running and Docker Compose **2.24+**.
+The host scripts need Bash, Python **3.9+ with SQLite**, curl, GNU tar/coreutils,
+jq and `findmnt` (util-linux). Install these with your host's package manager
+before proceeding.
+Your login user must be able to run Docker commands. Check:
+
+```bash
+docker compose version
+docker info --format '{{.DockerRootDir}}'
+python3 -c 'import sys, sqlite3; assert sys.version_info >= (3, 9); print(sys.version, "SQLite", sqlite3.sqlite_version)'
+bash --version
+curl --version
+tar --version
+stat --version
+jq --version
+findmnt --version
+```
+
+`tar` and `stat` should report GNU versions. Run the deployment commands below
+in Bash. Allow outbound access to image registries, Dogecoin/L2 peers, Ethereum
+RPC and DA sources; snapshot/bootstrap downloads also require HTTPS access.
 
 ## Quick Start
 
-Run every command in this guide from the `testnet/` directory of the
-repository:
+These steps are for a **new testnet node**. For an existing node, first read
+[Upgrading](#upgrading) or [Snapshots and Recovery](docs/snapshots.md);
+restoring a snapshot stops services and can replace data.
+
+### 1. Configure `.env` and Storage
+
+From the repository root, enter `testnet/` once. If already there, omit `cd`:
 
 ```bash
 cd testnet
+if [ ! -e .env ]; then cp env.example .env; fi
+chmod 600 .env
 ```
 
-The commands below are for testnet. Do not substitute `.env.mainnet`: the
-current release does not ship a complete full-stack mainnet configuration.
-See [Mainnet status](#mainnet-status) before using the mainnet templates.
+Open `.env` in your editor and set:
 
-### 1. Configure the Compose Environment
+| Setting | What to choose |
+|---------|----------------|
+| `DATA_ROOT` | An absolute path on your mounted SSD, outside the repository; replace `/path/to/...` |
+| `L2RETH_MEM_LIMIT` | Keep the default `16g` on a 64 GB host; set `6g` on a 32 GB host (see [Memory](#memory)) |
+| `INTERNAL_BIND_ADDR` | Set `127.0.0.1` unless another trusted host needs Dogecoin/L1 RPC |
+| `DOGECOIN_RPC_USER`, `DOGECOIN_RPC_PASSWORD` | Set your own credentials for a new deployment; existing deployments must coordinate credential changes with their consumers |
 
-Copy the testnet template and review the stable Dogecoin RPC credentials,
-`DATA_ROOT`, ports, memory limits, and the Dogecoin volume name:
+The template preserves the earlier public `doge`/`password` credentials and
+publishes internal ports on all interfaces unless you set the bind address.
+Before starting, review [Network Security](docs/operations.md#network-security)
+and restrict L2 HTTP/WebSocket access to your gateway or trusted clients.
+
+**There are two data locations on testnet:**
+
+| Data | Location |
+|------|----------|
+| L2Reth, L1 Interface, snapshot download cache and restore journal | Under `DATA_ROOT` |
+| Dogecoin | Docker named volume, default `dogeos-rpc-package_dogecoin_data`, stored in Docker's data directory |
+
+Changing `DATA_ROOT` does **not** move Dogecoin data. Ensure both filesystems
+have enough space. A restore needs space for compressed downloads, extracted
+data and any old data kept as backups, plus room for chain growth. Check the
+actual mount and free space, substituting your chosen data path:
 
 ```bash
-if [ ! -e .env.testnet ]; then cp .env.example.testnet .env.testnet; fi
-# REQUIRED: fill in DATA_ROOT; review credentials and any port/memory overrides
-chmod 600 .env.testnet
+findmnt -T /your/mounted/data/path
+df -h /your/mounted/data/path
+DOCKER_DATA_DIR=$(docker info --format '{{.DockerRootDir}}')
+df -h "$DOCKER_DATA_DIR"
+# Validate .env and package configuration without starting services:
+docker compose config --quiet
 ```
 
-The templates retain the old Compose project names: `dogeos-rpc-package` for
-testnet and `dogeos-rpc-package-mainnet` for mainnet. Existing deployments
-should keep their actual project name and Dogecoin volume name, including
-any custom names; see the [upgrade guide](upgrade_v0.3.0.md).
+If Docker's data directory requires root access, run that `df` with `sudo`.
+For an existing volume, `docker volume inspect VOLUME_NAME` shows its mount
+location. Keep existing project/volume names: changing them can create a new,
+empty Dogecoin volume. See [Data Storage](docs/operations.md#data-storage).
 
-`DATA_ROOT` uses a `/path/to/...` placeholder. Replace it with an absolute path
-on your mounted data disk, outside the repository. Verify the disk mount
-before starting; otherwise chain data can fill the host's root disk. For
-example, use `findmnt -T /data` if your disk is mounted at `/data`.
+### Initialize P2P Identity
 
-Docker starts L2Reth and L1 Interface again when the host boots
-(`restart: unless-stopped`), so the data disk must be mounted before Docker
-starts; otherwise they can start on an empty directory on the root disk. Mount
-the disk at boot (for example through `/etc/fstab`) and make Docker wait for it
-with `sudo systemctl edit docker.service`, using your disk's mount point:
+Before any snapshot restore or startup, generate a persistent key or migrate
+an existing node's key:
 
-```ini
-[Unit]
-RequiresMountsFor=/data
+```bash
+python3 scripts/p2p-identity.py init
 ```
 
-The restore script and Compose create their data directories as needed.
-`DATA_ROOT` controls L2Reth and L1 Interface storage; Dogecoin continues to use
-its named Docker volume.
+The key lives at `${DATA_ROOT}/l2reth-identity/discovery-secret`, outside
+replaceable chain data; `L2RETH_P2P_KEY_FILE` can select a different private
+file. Back it up securely. Existing nodes must migrate their original identity
+before replacing any data. See [P2P Identity](docs/p2p-identity.md) for import
+and migration instructions.
 
-For compatibility with the earlier testnet package, `DOGECOIN_RPC_USER`
-defaults to `doge` and `DOGECOIN_RPC_PASSWORD` defaults to `password`. Change
-them once in the local `.env.testnet` if desired and keep them stable. Compose
-supplies the same values to both `dogecoin-node` and L1 Interface as secrets,
-so the credentials are configured only once. Supported characters are letters,
-digits, and `._~:@%+=,-`. The defaults are public knowledge: never expose the
-Dogecoin RPC port to an untrusted network while using them.
+To request allowlisting before the first sync, follow
+[Collect Information for Operations](docs/p2p-identity.md#collect-information-for-operations):
+use Geth's standard `devp2p key to-enode` command to read the public key, confirm
+fixed outbound IPs/CIDRs from your host and NAT configuration, and submit the
+public key/CIDRs to DogeOS operations. A single fixed IPv4 is submitted as `/32`.
+The guide includes the exact commands and an alternative using the running
+node's native log/IPC API. Outbound CIDRs are not node settings in `.env`;
+a public inbound endpoint is optional and separate from outbound allowlisting.
 
 ### 2. Check the Ethereum RPC
 
-The package uses `https://ethereum-sepolia-rpc.publicnode.com` by default.
-No extra configuration is required. If you need a different provider, follow
-[Custom Ethereum RPC](#custom-ethereum-rpc) before starting the stack.
+The default upstream is Ethereum **Sepolia**, chain ID `11155111`, at
+`https://ethereum-sepolia-rpc.publicnode.com`. It supplies L1 Interface's DA
+reads; it is different from the DogeOS RPC that you will serve.
+To change it, set `DOGEOS_ETHEREUM_RPC_URL` in `.env` and follow
+[Custom Ethereum RPC](docs/operations.md#custom-ethereum-rpc). The provider must
+support execution methods including `eth_getBlockByHash`, and the historical
+data required by this network.
 
-### 3. Restore the Snapshots (Recommended for New Nodes)
+### 3. Choose Snapshots or Sync from Scratch
 
-If the bundled Dogecoin node has no existing chain data, first follow the
-[Dogecoin testnet snapshot guide](snapshot_dogecoin_testnet.md) to restore its
-chain data into a new named volume. Existing Dogecoin nodes should keep their
-current volume; they do not need snapshot replacement.
+**Without snapshots:** skip directly to step 4. This does not access the
+snapshot catalog. All three services can start without runtime snapshots;
+L1 Interface still downloads the package's pinned testnet history bootstrap.
+Syncing from genesis takes hours and needs a 64 GB host; see
+[Memory](#memory).
 
-For a new testnet RPC node, restore the published L1 Interface and L2Reth
-databases instead of rebuilding them from scratch. Both belong to the same
-[snapshot set](snapshot_testnet.md#snapshot-set) and are restored in this
-order:
+> [!NOTE]
+> **`safe` and `finalized` stay near genesis during the initial sync.** This
+> is expected: L2Reth derives batches from L1 only after its chain sync
+> finishes. Both heights then advance to the head on their own.
 
-```bash
-./scripts/restore-l1-interface-snapshot.sh --no-start .env.testnet
-./scripts/restore-l2reth-snapshot.sh --no-start .env.testnet
-```
-
-The scripts download the published snapshots, verify their SHA-256 and archive
-layout, and restore them to `${DATA_ROOT}/l1-interface` and `${DATA_ROOT}/l2reth`.
-Downloads are resumable and cached under `${DATA_ROOT}/.snapshot-cache`.
-`--no-start` leaves service startup for the next step. The L1 Interface snapshot
-requires Dogecoin at block 68,064,014 or higher before `l1-interface` starts; a
-Dogecoin node restored from the snapshot above meets this. The L1 Interface
-snapshot is optional: without it, the L1 Interface initializes from its bootstrap
-files on first start, which takes longer.
-
-See the [testnet snapshot guide](snapshot_testnet.md) for replacement and
-recovery options.
-
-### 4. Start Services
-
-Start the complete testnet stack, including the bundled Dogecoin node:
+**With snapshots:** first list the available groups:
 
 ```bash
-docker compose --env-file .env.testnet up -d
+python3 scripts/snapshot-group.py list
 ```
 
-L1 Interface initializes its historical data and catches up during startup.
-Allow Dogecoin to load its block index and the services to finish syncing
-before returning RPC traffic.
+Each group shows its components (or `absent`), capture times, checkpoint
+heights, download/extracted sizes and compatibility with your `.env` and
+package configuration. Choose a group marked `MATCH`, preferably with all
+three components for a fresh node. `MATCH` checks release identity, images and
+upstream configuration; it does not guarantee sufficient disk space or that
+existing data can be replaced. Heights belong to different chains and cannot
+be compared across services.
+
+Replace `GROUP_ID` with the selected ID:
+
+```bash
+python3 scripts/snapshot-group.py restore GROUP_ID --no-start
+```
+
+A group may omit any component; the omitted service uses eligible existing
+data or initializes normally. Nothing is borrowed from another group. If
+retaining an existing populated Dogecoin volume, choose a group **without a
+Dogecoin snapshot**. Do not use `--force` as part of a fresh installation.
+The catalog must use schema 2; an empty/unavailable catalog does not prevent
+an intentional no-snapshot startup. A failed restore, checksum error or
+incompatible group must be resolved; do not bypass it by deleting the restore
+journal. See [restore failure recovery](docs/snapshots.md#restore-order-and-service-dependencies).
+
+### 4. Start Services and Follow Progress
+
+Keep this foreground command running, preferably in a persistent terminal
+session such as tmux on a remote host:
+
+```bash
+python3 scripts/snapshot-group.py start
+```
+
+The helper starts Dogecoin and waits for initial sync, then starts L1 Interface
+and waits for historical sync and replay readiness, then starts L2Reth. It
+also verifies upstream checkpoints saved by a snapshot restore and, once
+L2Reth serves RPC, the L2 checkpoint; a mismatch there stops L2Reth. **Returning
+success means L2Reth was started, not that L2 has caught up.**
+
+In a second terminal, enter `testnet/` and watch progress:
+
+```bash
+docker compose ps -a
+docker compose logs --tail=100 -f dogecoin-node l1-interface l2reth-node
+```
+
+`Waiting for ...` and retries every five seconds are expected while an
+upstream service catches up; this may take hours or longer. L1/L2 being stopped
+while their upstream catches up is expected. If the same error persists with
+no progress, follow [Check Synchronization Progress](docs/operations.md#check-synchronization-progress)
+for Dogecoin height/IBD queries, L1 indexing/replay indicators and failure clues.
+
+Ctrl-C interrupts the helper but leaves already-started containers running;
+downstream services are not automatically started. Run the same `start`
+command to resume. It first stops L1 and L2, so **do not use it merely to check
+status** on a serving node. A failed restore must first be retried with its
+saved group ID as described in the recovery guide.
+
+Use this helper for cold startup and recovery. Plain `docker compose up -d`
+and Docker daemon auto-restart do not run its host-side checkpoint sequence.
+
+Once L2Reth has initialized P2P, verify its identity against the public key
+you submitted (or collect it now if you skipped the offline query):
+
+```bash
+docker compose logs --no-color l2reth-node | grep 'P2P networking initialized'
+```
+
+The 128 hex characters between `enode://` and `@` are the P2P public key to
+submit to DogeOS operations, together with your confirmed outbound CIDRs.
+The enode IP is not proof of the outbound source IP. Wait for IP/public-key
+allowlisting before expecting peers and completing RPC verification.
+See [Collect Information for Operations](docs/p2p-identity.md#collect-information-for-operations)
+for CIDR confirmation, log availability and the local API alternative.
 
 ### 5. Verify Services
 
-Check container state and L1 Interface readiness:
+Check L1 startup and replay readiness (adjust the host if you changed its bind
+address; these health ports are fixed by the package):
 
 ```bash
-docker compose --env-file .env.testnet ps -a
 curl --fail http://localhost:9090/health
+curl --fail http://localhost:9090/api/v1/health/ready
 ```
 
-The ready response reports `"status":"ready"`. If it reports
-`"historical_sync":"in_progress"`, wait and check again. Containers being
-`Running` does not mean the node has finished syncing. Then verify L2Reth
-using your configured HTTP port (`8545` by default):
+Both should return HTTP 200: `/health` should report `status=ready` and
+`historical_sync=completed`; the readiness endpoint should report `ready=true`.
+A growing L2 block height alone is not proof that the node is ready for users.
+Follow [Verify Your RPC Node](docs/verify-node.md) to check the chain ID, sync
+status, peers, head lag and a common block hash against a trusted DogeOS
+reference RPC **before routing traffic**. The default reference is
+`https://rpc.testnet.dogeos.com`; run `python3 scripts/verify-rpc.py` for three
+checks over at least one minute. Keep monitoring head lag afterwards.
+
+## Everyday Operations
+
+Run these in `testnet/` with the same `.env`:
 
 ```bash
-curl --fail \
-  -H 'content-type: application/json' \
-  --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
-  http://localhost:8545
+# Status and recent logs (does not restart anything)
+docker compose ps -a
+docker compose logs --tail=100 l2reth-node
+# Stop the stack, keeping its data
+docker compose stop l2reth-node l1-interface dogecoin-node
+# Start again with dependency checks
+python3 scripts/snapshot-group.py start
 ```
 
-Repeat the block-number query after a short interval to confirm it advances.
+After editing `.env`, use `start` during a maintenance window to apply changes;
+`docker compose restart` does not reload the configuration.
 
-For snapshot recovery and replacement procedures, see the
-[testnet snapshot guide](snapshot_testnet.md). Mainnet snapshot automation is
-not available in this release; see [mainnet snapshot status](../mainnet/snapshot_mainnet.md).
+## Upgrading
 
-## Mainnet Status
+Follow the [changelog](CHANGELOG.md): each entry states the commands to run.
+Keep your `.env`, project name, Dogecoin volume, and RPC credentials. Nodes set
+up before the per-network directories (with `.env.testnet` in the repository
+root) move once, as the changelog describes. Nodes still on the v0.2.x package
+start with the archived [v0.3.0 upgrade guide](docs/history/upgrade-v0.3.0.md).
 
-This release supports the complete RPC stack on **testnet only**. Mainnet
-full-stack deployment and snapshots are not supported. Do not start this stack
-with `.env.mainnet` or use testnet data for mainnet.
+## Documentation
 
-Existing mainnet operators should keep their current configuration and Dogecoin
-volume. See [mainnet snapshot status](../mainnet/snapshot_mainnet.md).
+- [Verify Your RPC Node](docs/verify-node.md) — checks before serving traffic
+- [P2P Identity and Allowlisting](docs/p2p-identity.md) — setup, migration and public information for operations
+- [Operations](docs/operations.md) — configuration, security, endpoints,
+  maintenance, troubleshooting, data storage
+- [Snapshots and Recovery](docs/snapshots.md) — restoring snapshots, resetting
+  and recovering data
+- [Snapshot Publishing](docs/snapshot-publishing.md) — index format and
+  publishing process (for the team that publishes snapshots)
+- [Changelog](CHANGELOG.md)
 
-## Service Endpoints
+For package contributors, `./scripts/check.sh` checks shell scripts, Compose
+configuration, fixed L1 data layout, documentation
+links and offline snapshot/restore behavior. CI runs it on every pull request.
 
-- **Dogecoin RPC**: `http://localhost:44555` (testnet)
-- **L1 Interface RPC**: `http://localhost:8547` (L1 Ethereum client for L2Reth)
-- **L1 Interface Health**: `http://localhost:9090/health`
-- **L2Reth HTTP RPC**: `http://localhost:${L2_HTTP_PORT}` (`8545` by default on testnet)
-- **L2Reth WebSocket**: `ws://localhost:${L2_WS_PORT}` (`8546` by default on testnet)
+## Components
 
-## Network Security
+| Service | Runs |
+|---------|------|
+| `dogecoin-node` | Dogecoin Core |
+| `l1-interface` | DogeOS L1 Interface |
+| `l2reth-node` | DogeOS rollup node (DogeOS69/dogeos-rollup-node) |
 
-Compose currently publishes service ports on all host interfaces. Do not expose
-Dogecoin RPC, L1 Interface RPC/health, or L2Reth HTTP/WebSocket directly to the
-public internet. L2Reth exposes powerful `debug` and `trace` methods, and the
-Dogecoin credentials are stored only in the Git-ignored local Compose env, but
-RPC authentication is not a substitute for network isolation.
+Image versions are set only in `docker-compose.yml`; list them with
+`docker compose config --images`. The [changelog](CHANGELOG.md) records each
+version change. Service behavior described in this documentation (health
+endpoints, startup ordering, L1 reorg handling) was checked against the images
+pinned there.
 
-Use host/cloud firewalls, a private network or VPN, and an authenticated reverse
-proxy where remote RPC access is required. Normally only the intended P2P ports
-should be internet-reachable:
-
-- Dogecoin P2P: `${DOGECOIN_P2P_PORT}` (`44556` on testnet)
-- L2Reth P2P: `${L2_P2P_PORT}` TCP and UDP (`30303` by default)
-
-To change the bundled Dogecoin RPC credentials, edit
-`DOGECOIN_RPC_USER`/`DOGECOIN_RPC_PASSWORD` once in the local Compose env and
-recreate both `dogecoin-node` and `l1-interface`. Do not edit `dogecoin.conf`:
-both containers consume the same Compose Secrets at startup. Changing these
-values restarts Dogecoin and also requires every external consumer to update,
-so keep them stable unless a coordinated rotation is intended.
-
-## Configuration
-
-Edit these local files for your deployment:
-
-| File | Settings |
-|------|----------|
-| `.env.testnet` | Project name, data path, Dogecoin volume and RPC credentials, ports, memory limits |
-| `config/l1-interface.local.env` | Optional Ethereum RPC or external Dogecoin RPC overrides |
-
-Both files are gitignored. Keep them private and include them in your
-configuration backups. Keep the project name, Dogecoin volume name, and RPC
-credentials unchanged when upgrading an existing node.
-
-Use the supplied genesis, protocol context, and peer settings. No configuration
-generation or entrypoint-script edits are required for normal operation.
-
-### Custom Ethereum RPC
-
-Create the optional override file only if it does not already exist:
-
-```bash
-if [ ! -e config/l1-interface.local.env ]; then
-  cp config/l1-interface.local.env.example config/l1-interface.local.env
-fi
-chmod 600 config/l1-interface.local.env
-```
-
-Uncomment and set this variable in that file:
-
-```bash
-DOGEOS_L1_INTERFACE_ETHEREUM_DA__L1_RPC_URL=https://your-sepolia-execution-rpc
-```
-
-The provider must support Sepolia (chain ID `11155111`) and execution methods
-including `eth_getBlockByHash`. Keep endpoint API keys in the local override
-file. If services are already running, [recreate L1 Interface](#apply-environment-changes)
-to apply the change.
-
-<details>
-<summary>Advanced: use an external Dogecoin RPC</summary>
-
-For temporary troubleshooting, set the external Dogecoin URL, user, and password
-in `config/l1-interface.local.env`, using its example file. Confirm that
-the external node serves the required testnet history and is reachable from
-L1 Interface before switching.
-
-Stop the bundled node, then recreate L1 Interface and start L2Reth:
-
-```bash
-docker compose --env-file .env.testnet stop dogecoin-node
-docker compose --env-file .env.testnet up -d --force-recreate l1-interface
-docker compose --env-file .env.testnet up -d l2reth-node
-```
-
-To run only L1 Interface, omit the last command. Targeted startup does not start
-the bundled Dogecoin node. Keep its volume for switching back.
-
-To return to the bundled node, remove the external Dogecoin overrides, keep the
-original volume and credentials in `.env.testnet`, and run:
-
-```bash
-docker compose --env-file .env.testnet up -d dogecoin-node
-docker compose --env-file .env.testnet up -d --force-recreate l1-interface
-docker compose --env-file .env.testnet up -d l2reth-node
-```
-
-</details>
-
-## Maintenance
-
-### Logs
-
-```bash
-docker compose --env-file .env.testnet logs -f [service_name]
-```
-
-Useful checks:
-
-```bash
-# L1 Interface readiness
-curl --fail http://localhost:9090/health
-
-# Established L2Reth P2P sessions (hexadecimal result)
-curl --fail \
-  -H 'content-type: application/json' \
-  --data '{"jsonrpc":"2.0","method":"net_peerCount","params":[],"id":1}' \
-  http://localhost:8545
-```
-
-### Apply Environment Changes
-
-`docker compose restart` does not reload env files. Recreate the affected
-service after changing `l1-interface.local.env` or another service env file:
-
-```bash
-docker compose --env-file .env.testnet up -d --force-recreate l1-interface
-```
-
-### Restart Monitoring
-
-Docker restarts L2Reth after every exit except a manual stop or kill
-(`docker compose stop`, `down` or `kill`), so a node that keeps failing never
-stays down on its own. A signer rotation
-exits with code 70 (see [Services](#services)). A running node that finishes
-shutting down after `docker compose stop` or a host shutdown exits with code 0;
-after a host shutdown, Docker starts it again at boot. Exit 137 means Docker
-killed the process: an out-of-memory kill, a stop while the node still waits for
-L1 Interface, or a stop that outlasts the 30-second grace period. Any other
-exit, and a 137 you did not cause by stopping the node, is a failure. Docker
-resets its restart back-off after a run of 10 seconds or more, so a node that
-fails later than that restarts again right away, without end.
-
-```bash
-# Restarts since the container was last started by hand, recreated, or
-# started by a Docker daemon start. oom=true means the last exit was an
-# out-of-memory kill; Docker clears it when the container starts again.
-docker inspect -f '{{.RestartCount}} oom={{.State.OOMKilled}}' \
-  "$(docker compose --env-file .env.testnet ps -q l2reth-node)"
-
-# Each exit (die, with its code) and out-of-memory kill (oom) as it happens
-docker events --filter event=die --filter event=oom \
-  --filter container="$(docker compose --env-file .env.testnet ps -q l2reth-node)" \
-  --format '{{.Time}} {{.Action}} exitCode={{.Actor.Attributes.exitCode}}'
-```
-
-Alert when the restart count rises by 3 or more within 30 minutes, on any `oom`
-event, or on any exit other than 70 that you did not request. Also compare the
-node's head with an RPC you trust (the block number and the block hash at that
-height): this catches a node that keeps running but stops syncing.
-
-### Troubleshooting
-
-- **L1 Interface restarts with `RPC error -28: Loading block index...`:**
-  Dogecoin is still starting. Check its logs and allow index loading to finish;
-  L1 Interface retries automatically. This alone does not require a data reset.
-- **L1 Interface health returns HTTP 503:** Read the response body. A status of
-  `historical_sync=in_progress` is expected during startup. Follow logs until
-  `/health` returns HTTP 200 and `status=ready`.
-- **Ethereum RPC returns plan or unsupported-chain errors:** The configured
-  provider project must permit Sepolia and `eth_getBlockByHash`. Update
-  `DOGEOS_L1_INTERFACE_ETHEREUM_DA__L1_RPC_URL`, recreate L1 Interface, and
-  confirm replay advances beyond the previous workflow transaction number.
-- **L2Reth stays at `Waiting for L1 interface`:** L2Reth's entrypoint waits for
-  an `eth_chainId` response from L1 Interface. Check L1 Interface health and
-  logs first.
-- **L2Reth keeps restarting, and the exits are not the signer-rotation log line
-  (code 70):** run `docker compose --env-file .env.testnet stop l2reth-node`; it
-  stays down across reboots. Save the logs with
-  `docker compose --env-file .env.testnet logs --since 2h l2reth-node > l2reth-node.log`
-  and look for `fail-stopping`, `Fatal error in consensus engine`,
-  `panicked at`, or `genesis hash in the storage does not match`. Do not reset
-  or restore data until someone has read them.
-- **`net_peerCount` is `0x0`:** Confirm every enode hostname resolves, TCP/UDP
-  port 30303 is reachable, and `L2RETH_NETWORK_ID` matches the remote peers.
-  Configured enodes are not proof of completed devp2p handshakes.
-- **An env edit appears to have no effect:** `docker compose restart` preserves
-  the old container environment. Use `up -d --force-recreate` for the affected
-  service.
-- **Snapshot checksum fails:** Do not bypass the check. Confirm that URL and
-  SHA-256 were updated together. The restore script preserves a bad cached
-  archive with an `.invalid-<timestamp>` suffix and downloads a fresh copy.
-
-### Stop Services
-
-```bash
-docker compose --env-file .env.testnet down
-```
-
-Service shutdown preserves chain data. Do not use `down -v` when you want to
-keep the Dogecoin volume.
-
-For data replacement or recovery, follow the
-[testnet recovery guide](snapshot_testnet.md). Data resets are not part of a
-normal shutdown or upgrade.
-
-## Data Storage
-
-L2Reth uses `${DATA_ROOT}/l2reth`; L1 Interface uses
-`${DATA_ROOT}/l1-interface`. Dogecoin uses `DOGECOIN_VOLUME_NAME` in Docker's
-volume storage, independently of `DATA_ROOT`.
-
-Keep data outside the repository and retain the existing Dogecoin volume when
-upgrading. This Compose file supports one complete stack per host; changing
-only the project name and L2 ports is not sufficient to run a second stack.
+| File | Purpose |
+|------|---------|
+| `docker-compose.yml` | Services, images, ports, data layout, and the one-time download of the pre-v0.3.0 testnet history for L1 Interface |
+| `env.example` | Template for your `.env` |
+| `config/` | Chain and service configuration, maintained by the package: `dogecoin.conf`, `l2reth-genesis.json`, `protocol_context.json`, `l2reth.env` (peers, P2P network ID, L1 endpoint, blob archive), `l1-interface.env` |
+| `scripts/` | Service entrypoints (including the L2Reth flags for this version), `snapshot-group.py` (group selection, restore and ordered startup), `restore-snapshot.sh`, `reset-chain-data.sh`, `add-l2reth-peer.sh`, `check.sh` |
+| `docs/` | Operations, snapshots and recovery, snapshot publishing, history |
+| `CHANGELOG.md` | What changed and what operators must do |
