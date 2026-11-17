@@ -608,6 +608,16 @@ class GroupTests(unittest.TestCase):
                     groups.main()
         self.assertFalse(self.stack.calls)
 
+    def test_failed_identity_check_exits_without_a_second_error(self):
+        failed = groups.subprocess.CalledProcessError(1, ["p2p-identity.py"])
+        with patch.object(groups, "Stack", return_value=self.stack), \
+                patch.object(groups.subprocess, "run", side_effect=failed), \
+                patch.object(groups.sys, "argv", ["snapshot-group.py", "start"]):
+            with self.assertRaises(SystemExit) as raised:
+                groups.main()
+        self.assertEqual(raised.exception.code, 1)
+        self.assertFalse(self.stack.calls)
+
     def test_start_recreates_dogecoin_attached_to_another_volume(self):
         self.stack.stale_volume = True
         def health(url):
