@@ -35,7 +35,9 @@ def settings(config):
     require(path.is_absolute() and not path.is_symlink(), "P2P key path must be absolute and not a symlink")
     path = path.resolve()
     require(not path.is_relative_to(ROOT.parent.resolve()) and not str(path).startswith("/path/to/"),
-            "P2P key must be outside the repository; replace placeholder paths")
+            f"P2P key path {path} is a placeholder or inside the repository. Set DATA_ROOT (or "
+            "L2RETH_P2P_KEY_FILE) in .env to an absolute path outside the repository; a relative "
+            "path resolves against this network directory. See CHANGELOG.md for existing nodes")
     # Reset/restore replaces these trees. Never put the identity in one of them.
     for name in ("l2reth", "l1-interface", "dogecoin", ".snapshot-cache"):
         require(not path.is_relative_to(data_path.parent / name),
@@ -126,4 +128,8 @@ if __name__ == "__main__":
     except (ValueError, OSError, KeyError, StopIteration, TypeError, subprocess.SubprocessError) as error:
         # Never print a subprocess command, private key bytes or provider response.
         message = str(error) if isinstance(error, ValueError) and not isinstance(error, json.JSONDecodeError) else type(error).__name__
+        if isinstance(error, PermissionError) and error.filename:
+            # A local path, never key material.
+            message = (f"permission denied: {error.filename}. Run as a user that can write DATA_ROOT "
+                       "and read the key (for example with sudo), and use the same user for snapshot-group.py")
         raise SystemExit("ERROR: " + message)

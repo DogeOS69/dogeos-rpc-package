@@ -270,7 +270,9 @@ class Stack:
         self.data = Path(next(v["source"] for v in mounts if v["target"] == "/l2reth" and v["type"] == "bind")).parent.resolve()
         require(self.data.is_absolute() and self.data not in (Path("/"), Path("/tmp").resolve(), Path("/var/tmp").resolve()) and
                 not self.data.is_relative_to(ROOT.parent) and not str(self.data).startswith("/path/to/"),
-                "DATA_ROOT must be a real external data directory")
+                f"DATA_ROOT resolves to {self.data}, which is a placeholder, a temporary directory or inside "
+                "the repository. Set DATA_ROOT in .env to an absolute path outside the repository; a relative "
+                "path resolves against this network directory. See CHANGELOG.md for existing nodes")
         self.state = self.data / ".snapshot-group-state.json"
         self.l1env = services["l1-interface"].get("environment", {})
         self.external_doge = self.l1env.get("DOGEOS_RPC_PACKAGE_EXTERNAL_DOGECOIN_RPC_URL") or ""
@@ -704,6 +706,10 @@ if __name__ == "__main__":
     except (ValueError, KeyError, TypeError, OSError, subprocess.SubprocessError) as error:
         # Do not print subprocess argv or provider URLs: they can contain credentials.
         message = str(error) if isinstance(error, ValueError) else type(error).__name__
+        if isinstance(error, PermissionError) and error.filename:
+            # A local path; subprocess argv and URLs are still never printed.
+            message = (f"permission denied: {error.filename}. Run as a user that can write DATA_ROOT "
+                       "(for example with sudo), the same one that ran p2p-identity.py init")
         sys.exit("ERROR: " + message)
     except KeyboardInterrupt:
         sys.exit("Interrupted; downstream services are not automatically started.")

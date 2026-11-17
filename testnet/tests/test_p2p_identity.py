@@ -4,7 +4,9 @@ import importlib.util
 import contextlib
 import io
 import json
+import os
 from pathlib import Path
+import runpy
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -98,6 +100,31 @@ class IdentityTests(unittest.TestCase):
             identity.main()
         self.assertEqual(identity.read_key(self.key), first)
         self.assertNotIn(first.decode(), output.getvalue())
+
+    def test_key_inside_repository_names_path_and_guide(self):
+        # A relative or in-repository DATA_ROOT of an earlier layout ends up here.
+        cfg = self.config()
+        inside = ROOT / "data/l2reth-identity/discovery-secret"
+        cfg["services"]["l2reth-node"]["volumes"][0]["source"] = str(ROOT / "data/l2reth")
+        cfg["services"]["l2reth-node"]["volumes"][1]["source"] = str(inside)
+        with self.assertRaises(ValueError) as raised:
+            identity.settings(cfg)
+        self.assertIn(str(inside), str(raised.exception))
+        self.assertIn("CHANGELOG.md", str(raised.exception))
+
+    def test_cli_permission_error_names_path_and_remedy(self):
+        if os.geteuid() == 0:
+            self.skipTest("root is not subject to directory permissions")
+        self.root.chmod(0o555)
+        self.addCleanup(self.root.chmod, 0o755)
+        with patch("sys.argv", ["p2p-identity.py", "init"]), \
+                patch("subprocess.check_output", return_value=json.dumps(self.config())), \
+                self.assertRaises(SystemExit) as raised:
+            runpy.run_path(str(ROOT / "scripts/p2p-identity.py"), run_name="__main__")
+        message = str(raised.exception)
+        self.assertIn("permission denied: " + str(self.key.parent), message)
+        self.assertIn("sudo", message)
+        self.assertFalse(self.key.exists())
 
     def test_compose_normalization_omits_false_create_host_path(self):
         cfg = self.config()
