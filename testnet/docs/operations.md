@@ -113,8 +113,9 @@ DOGEOS_ETHEREUM_RPC_URL=https://your-sepolia-execution-rpc
 The provider must support Sepolia (chain ID `11155111`) and execution methods
 including `eth_getBlockByHash`. Apply it with `python3 scripts/snapshot-group.py start`.
 
-Earlier releases set overrides in `envs/testnet/l1-interface.local.env` in the
-repository root. That file is still read but deprecated: move its values to
+Earlier releases set overrides in `l1-interface.local.env`, kept in
+`envs/testnet/` in the repository root or in `config/` in this directory. The
+file is still read from either place but deprecated: move its values to
 `.env` (`DOGEOS_L1_INTERFACE_ETHEREUM_DA__L1_RPC_URL` becomes
 `DOGEOS_ETHEREUM_RPC_URL`, `DOGEOS_L1_INTERFACE_DOGECOIN_RPC__URL`/`__USER`/`__PASS`
 become `DOGEOS_EXTERNAL_DOGECOIN_RPC_URL`/`_USER`/`_PASSWORD`) and delete it.

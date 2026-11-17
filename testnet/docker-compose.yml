@@ -122,10 +122,13 @@ services:
     oom_score_adj: -100
     env_file:
       - ./config/l1-interface.env
-      # Deprecated: the operator override file of earlier releases (relative to
-      # the repository root), still read after l1-interface.env. Use the .env
-      # settings below instead.
+      # Deprecated: the operator override file of earlier releases, still read
+      # after l1-interface.env from either place it was kept: envs/testnet/ in
+      # the repository root, or config/ in this directory (which wins if both
+      # exist). Use the .env settings below instead.
       - path: ../envs/testnet/l1-interface.local.env
+        required: false
+      - path: ./config/l1-interface.local.env
         required: false
     # Optional operator overrides from .env; the entrypoint applies the ones
     # that are set, ahead of l1-interface.env and the deprecated file.
