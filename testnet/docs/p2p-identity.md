@@ -76,6 +76,11 @@ causes an error; locate and explicitly import the original key. If your old
 setup passed a P2P key via `L2RETH_EXTRA_ARGS`, remove that override and import
 its key before continuing. The script will not silently rotate an identity.
 
+`init` creates the key directory under `DATA_ROOT`, and `snapshot-group.py`
+later reads the key and writes its lock and journal there. If Docker created
+`DATA_ROOT`, it belongs to root: run both with `sudo`, and use the same user
+each time.
+
 After migrating and checking the key, use staged startup during a maintenance
 window to recreate containers with the new mount. Then verify the public key
 from native node information against your existing allowlist record:

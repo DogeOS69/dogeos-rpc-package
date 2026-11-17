@@ -81,16 +81,51 @@ applies changed limits and stops L1/L2 while upstream checks run.
 Testnet now lives in the `testnet/` directory and runs from there. Move your
 settings file once; the containers, the Dogecoin volume, `DATA_ROOT`, and the
 RPC credentials stay the same, and no data is migrated. Create the persistent
-P2P key before starting; it copies the node's existing key, keeping its node ID:
+P2P key before starting; it copies the node's existing key, keeping its node ID.
+
+Before updating, record what the running deployment resolves to. In the
+repository root:
+
+```bash
+docker compose --env-file .env.testnet config \
+  | grep -E '^ *name:|source: .*/(l2reth|l1-interface)$' | sort -u \
+  > /tmp/dogeos-layout-before.txt
+```
+
+Update, move the settings file, and check that the new layout resolves to the
+same project name, Dogecoin volume and data directories:
 
 ```bash
 git pull
 mv .env.testnet testnet/.env
 cd testnet
+docker compose config \
+  | grep -E '^ *name:|source: .*/(l2reth|l1-interface)$' | sort -u \
+  | diff /tmp/dogeos-layout-before.txt - && echo "Layout unchanged"
+```
+
+Continue only after `Layout unchanged`; otherwise see
+[If the layout check differs](#if-the-layout-check-differs). Then create the
+key and start:
+
+```bash
 # Less than 64 GB of memory: set L2RETH_MEM_LIMIT in .env first (6g on 32 GB).
 python3 scripts/p2p-identity.py init
 python3 scripts/snapshot-group.py start
 ```
+
+Both helpers write under `DATA_ROOT`: the key directory, a lock file and the
+restore journal. If your user cannot write there, which is the case when Docker
+created the directory, run both with `sudo` and use the same user for later
+runs.
+
+If your settings file is already at `testnet/.env.testnet`, record the layout
+in `testnet/` instead of the repository root, and rename the file with
+`mv .env.testnet .env` there. If you pulled before recording the layout,
+compare by hand: `docker compose ls -a` shows the old project name,
+`docker volume ls` the Dogecoin volume, and
+`docker inspect --format '{{json .Mounts}}' CONTAINER` the directories the old
+containers mount.
 
 Run all later commands inside `testnet/`. **Update anything that runs Compose
 from the repository root** — cron jobs, systemd units, deploy or monitoring
@@ -113,9 +148,10 @@ and can be removed.
 
 Recommended follow-ups:
 
-- **Move overrides into `testnet/.env`.** If you have
-  `envs/testnet/l1-interface.local.env`, move its values to `testnet/.env` and
-  delete it; the file is still read but deprecated:
+- **Move overrides into `testnet/.env`.** If you have an
+  `l1-interface.local.env`, in `envs/testnet/` or in `testnet/config/`, move
+  its values to `testnet/.env` and delete it; the file is still read from
+  either place but deprecated:
 
   | Old setting in `l1-interface.local.env` | New setting in `.env` |
   |-----------------------------------------|-----------------------|
@@ -134,6 +170,39 @@ Recommended follow-ups:
   `scripts/restore-l2reth-snapshot.sh` is gone.
 - Documentation and the changelog are now in `testnet/` as well; the root
   directory only has a short README.
+
+#### If the layout check differs
+
+Do not start the stack until the comparison is clean. A different project name
+makes Compose create a second set of containers instead of updating the
+existing ones, and a different volume or directory starts an empty node that
+syncs from scratch while the existing data stays unused. Correct
+`testnet/.env` and rerun the comparison; no data is moved:
+
+- **A `name:` line differs.** The old project name did not come from the
+  settings file. Set `COMPOSE_PROJECT_NAME` to the top-level `name:` value in
+  the recorded file. If the `dogecoin_data` line still differs, set
+  `DOGECOIN_VOLUME_NAME` to its recorded value.
+- **The `source:` lines differ.** `DATA_ROOT` is a relative path. Compose
+  resolves it against the directory of the Compose file, which is now
+  `testnet/`. Set `DATA_ROOT` to the recorded absolute path, without the
+  trailing `/l2reth`.
+
+`p2p-identity.py` and `snapshot-group.py` also refuse a `DATA_ROOT` inside this
+repository, even when the comparison is clean. Move that directory out once,
+during the maintenance window:
+
+```bash
+docker compose stop
+sudo mv /recorded/absolute/data/root /your/mounted/data/path/dogeos-testnet
+# Set DATA_ROOT=/your/mounted/data/path/dogeos-testnet in .env, then:
+python3 scripts/p2p-identity.py init
+python3 scripts/snapshot-group.py start
+```
+
+`mv` is immediate within one filesystem; across filesystems it copies all
+L2Reth and L1 Interface data, so check free space first. The Dogecoin volume is
+not affected.
 
 ### Changes
 

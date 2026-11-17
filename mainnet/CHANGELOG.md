@@ -83,7 +83,8 @@ missing. The prepared layout:
   with testnet.
 - One settings file, `mainnet/.env`, created from `env.example`.
 - All service data under `DATA_ROOT`, including Dogecoin in
-  `${DATA_ROOT}/dogecoin`.
+  `${DATA_ROOT}/dogecoin`. A Dogecoin Docker volume created from the earlier
+  root layout is not used and is left untouched.
 - Dogecoin RPC and L1 Interface ports published on `127.0.0.1` by default;
   Dogecoin wallet disabled; an explicit RPC password is required.
 - Dogecoin memory: 8 GB limit and 4 GB reservation by default (testnet uses
