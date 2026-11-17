@@ -17,3 +17,6 @@ secrets/*/dogecoin_rpc_password
 **/l2reth-p2p.key
 **/nodekey
 **/.p2p-key-*
+
+# Python bytecode written when the helper scripts run.
+__pycache__/
