@@ -38,7 +38,7 @@ credentials come from your local RPC package. This is not a wallet backup.
 
 ## Restore into a New Volume
 
-Run these commands in Bash from the repository root, stopping on any error.
+Run these commands in Bash from the `testnet/` directory, stopping on any error.
 First prepare `.env.testnet` as described in [Quick Start](README.md#quick-start).
 Preserve an existing local env file instead of overwriting it with a template.
 

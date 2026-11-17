@@ -7,7 +7,7 @@ services:
     memswap_limit: ${DOGECOIN_MEM_LIMIT:-24g}
     oom_score_adj: -100
     volumes:
-      - ./configs/${NETWORK}/dogecoin.conf:/etc/dogeos/dogecoin.conf:ro
+      - ./config/dogecoin.conf:/etc/dogeos/dogecoin.conf:ro
       - ./scripts/dogecoin_entrypoint.sh:/entrypoint.sh:ro
       - dogecoin_data:/data
     secrets:
@@ -35,9 +35,9 @@ services:
     memswap_limit: ${L2RETH_MEM_LIMIT:-8g}
     oom_score_adj: -100
     env_file:
-      - ./envs/${NETWORK}/l2reth.env
+      - ./config/l2reth.env
     volumes:
-      - ./configs/${NETWORK}/l2reth-genesis.json:/l2reth/genesis/genesis.json:ro
+      - ./config/l2reth-genesis.json:/l2reth/genesis/genesis.json:ro
       - ./scripts/l2reth_entrypoint.sh:/entrypoint.sh:ro
       - type: bind
         source: ${DATA_ROOT:?DATA_ROOT must be set}/l2reth
@@ -63,8 +63,8 @@ services:
     memswap_limit: ${L1_INTERFACE_MEM_LIMIT:-2g}
     oom_score_adj: -100
     env_file:
-      - ./envs/${NETWORK}/l1-interface.env
-      - path: ./envs/${NETWORK}/l1-interface.local.env
+      - ./config/l1-interface.env
+      - path: ./config/l1-interface.local.env
         required: false
     environment:
       DOGEOS_RPC_PACKAGE_DOGECOIN_RPC_URL: http://dogecoin-node:${DOGECOIN_RPC_PORT}
@@ -72,8 +72,8 @@ services:
       - /bin/sh
       - /entrypoint.sh
     volumes:
-      - ./configs/${NETWORK}/l2reth-genesis.json:/app/genesis/genesis.json:ro
-      - ./configs/${NETWORK}/protocol_context.json:/app/protocol_context.json:ro
+      - ./config/l2reth-genesis.json:/app/genesis/genesis.json:ro
+      - ./config/protocol_context.json:/app/protocol_context.json:ro
       - ./scripts/l1-interface_entrypoint.sh:/entrypoint.sh:ro
       - type: bind
         source: ${DATA_ROOT:?DATA_ROOT must be set}/l1-interface

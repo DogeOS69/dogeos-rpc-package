@@ -11,13 +11,13 @@ new version removes Geth and Celestia services; follow the order below.
 Dogecoin keeps its existing chain data. Only L2Reth and L1 Interface use new
 data directories. Do not run `down -v`, volume prune, or a data-reset script.
 
-Run the commands from the repository root, stopping if any command fails.
+Run the commands from the `testnet/` directory, stopping if any command fails.
 The examples assume the old default installation: `.env` and project
 `dogeos-rpc-package`.
 
 **Custom deployments:** before updating, save your existing env file and any
 modified configuration outside the repository, especially the Dogecoin RPC
-credentials in `configs/testnet/dogecoin.conf`. Keep your actual project and
+credentials in `config/dogecoin.conf`. Keep your actual project and
 Dogecoin volume names. Use your existing env file and any `-p` / `-f` options
 when stopping the old services below.
 
@@ -65,7 +65,7 @@ placeholder in `DATA_ROOT` with your own data disk path before continuing.**
 
 Keep `NETWORK=testnet`. Remove the old `COMPOSE_PROFILES` setting and retain
 any custom L2 ports or memory limits. If you changed Dogecoin ports, preserve
-the matching listen ports in `configs/testnet/dogecoin.conf` as well.
+the matching listen ports in `config/dogecoin.conf` as well.
 Confirm the data disk is mounted and has space for the snapshot, extracted
 data, and continued growth. `DATA_ROOT` does not change where Docker stores
 the existing Dogecoin volume.
@@ -136,7 +136,7 @@ node before accepting the upgrade. Keep all old data volumes.
   variables such as `COMPOSE_PROJECT_NAME`, `COMPOSE_PROFILES`, `COMPOSE_FILE`,
   and `DATA_ROOT` do not override your intended env file.
 - Keep provider endpoints and external Dogecoin overrides in
-  `envs/testnet/l1-interface.local.env`, following its example file. The bundled
+  `config/l1-interface.local.env`, following its example file. The bundled
   node gets shared credentials from `.env.testnet`. Supported credential
   characters are letters, digits, and `._~:@%+=,-`.
 - If Compose rejects optional env files or environment-backed secrets, update
