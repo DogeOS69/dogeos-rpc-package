@@ -299,13 +299,6 @@ up before the per-network directories (with `.env.testnet` in the repository
 root) move once, as the changelog describes. Nodes still on the v0.2.x package
 start with the archived [v0.3.0 upgrade guide](docs/history/upgrade-v0.3.0.md).
 
-Before upgrading to a TsukiV2-capable client, obtain the network's approved
-genesis configuration. Current clients require `tsukiV2Time` when `tsukiTime`
-is set, with `tsukiV2Time` no earlier than `tsukiTime`. The checked-in Testnet
-genesis does not yet include the approved activation time; wait for that
-configuration before deploying such a client. Use the same activation time as
-the network and preserve its existing fork times and chain data.
-
 ## Documentation
 
 - [Verify Your RPC Node](docs/verify-node.md) — checks before serving traffic
