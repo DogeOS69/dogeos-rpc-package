@@ -227,8 +227,10 @@ not affected.
 - **L2Reth genesis.** Removed the retired `l1DataFeeBufferCheck` setting from
   `config/l2reth-genesis.json`. It was `false`, which the pinned image also
   assumes when the setting is absent, so the genesis block, chain data and
-  sync state are unaffected. No action is needed; the file is picked up the
-  next time `l2reth-node` is recreated.
+  sync state are unaffected. Running nodes need no action; the file is picked
+  up the next time `l2reth-node` is recreated. Snapshot groups record the
+  hash of this file: a group published before this change is reported as
+  incompatible, so restore from a group published for this version.
 - **Snapshots.** `scripts/snapshot-group.py` selects one schema-2 group, pins
   its component archives, checks compatibility and restores with dependency
   checkpoints. Use it for current deployments. The component script remains
